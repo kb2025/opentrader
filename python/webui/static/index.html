@@ -324,6 +324,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#f59e0b"></span>
         Strategy Assignment
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-plan-optimizer')" data-page="page-plan-optimizer">
+        <span class="nav-dot" style="background:#06b6d4"></span>
+        Portfolio Optimizer
+      </div>
     </div>
     <div class="nav-group" data-group="resources">
       <div class="nav-label">Resources</div>
@@ -3067,6 +3071,149 @@ select option{background:var(--surface2)}
     </div>
 
     <!-- ════════════════════════════════════════
+         PAGE: Portfolio Optimizer
+    ════════════════════════════════════════ -->
+    <div class="page" id="page-plan-optimizer">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);white-space:nowrap">Portfolio Optimizer</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="font-size:11px;color:var(--dim)">MVO · Min Variance · Risk Parity · Inv-Vol · Max Diversification</span>
+      </div>
+
+      <!-- Controls card -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><span class="card-title">Parameters</span></div>
+        <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;padding:16px">
+
+          <!-- Method -->
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Optimization Method</label>
+            <select id="opt-method" style="width:100%;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px">
+              <option value="max_sharpe">Max Sharpe (MVO)</option>
+              <option value="min_variance">Min Variance</option>
+              <option value="risk_parity">Risk Parity</option>
+              <option value="equal_vol">Equal Volatility (Inv-Vol)</option>
+              <option value="max_div">Max Diversification</option>
+            </select>
+          </div>
+
+          <!-- Capital -->
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Total Capital ($)</label>
+            <input type="number" id="opt-capital" value="10000" min="100" step="500"
+              style="width:100%;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;box-sizing:border-box">
+          </div>
+
+          <!-- Lookback -->
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Lookback Period</label>
+            <select id="opt-lookback" style="width:100%;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px">
+              <option value="63">3 months (63 days)</option>
+              <option value="126">6 months (126 days)</option>
+              <option value="252" selected>1 year (252 days)</option>
+              <option value="504">2 years (504 days)</option>
+            </select>
+          </div>
+
+          <!-- Risk-free rate -->
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Risk-Free Rate (%)</label>
+            <input type="number" id="opt-rf" value="4.5" min="0" max="20" step="0.1"
+              style="width:100%;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;box-sizing:border-box">
+          </div>
+
+          <!-- Max weight cap -->
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Max Weight per Asset (%)</label>
+            <input type="number" id="opt-maxw" value="100" min="5" max="100" step="5"
+              style="width:100%;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;box-sizing:border-box">
+          </div>
+
+          <!-- Tickers -->
+          <div style="grid-column:1/-1">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <label style="font-size:11px;color:var(--muted)">Tickers (comma-separated)</label>
+              <button class="btn btn-ghost btn-xs" onclick="_optLoadSignalTickers()" style="font-size:10px">↙ From Signals</button>
+            </div>
+            <input type="text" id="opt-tickers" placeholder="e.g. AAPL, MSFT, GOOGL, AMZN, NVDA"
+              style="width:100%;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;box-sizing:border-box">
+          </div>
+
+          <!-- Run button -->
+          <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px">
+            <button class="btn" id="opt-run-btn" onclick="_optRun()"
+              style="background:var(--blue);color:#fff;border:none;padding:8px 22px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">
+              ▶ Optimize
+            </button>
+            <span id="opt-status" style="font-size:11px;color:var(--muted)"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results (hidden until run) -->
+      <div id="opt-results" style="display:none">
+
+        <!-- Summary stats -->
+        <div class="stat-grid" style="margin-bottom:16px" id="opt-stats-grid"></div>
+
+        <!-- Two-column: weights table + correlation heatmap -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;align-items:start">
+
+          <!-- Allocation table -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Allocation</span>
+              <span id="opt-method-badge" style="font-size:10px;color:var(--dim)"></span>
+            </div>
+            <div class="card-body table-wrap" style="padding:0">
+              <table id="opt-alloc-table">
+                <thead><tr>
+                  <th>Ticker</th>
+                  <th style="text-align:right">Weight</th>
+                  <th style="text-align:right">Amount</th>
+                  <th style="text-align:right">Ann. Vol</th>
+                  <th style="text-align:right">Ann. Ret</th>
+                  <th style="text-align:right">Risk %</th>
+                </tr></thead>
+                <tbody id="opt-alloc-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Correlation heatmap -->
+          <div class="card">
+            <div class="card-header"><span class="card-title">Correlation Matrix</span></div>
+            <div class="card-body" style="padding:14px;overflow-x:auto">
+              <div id="opt-corr-heatmap"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Risk contribution bar -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><span class="card-title">Risk Contribution</span>
+            <span style="font-size:10px;color:var(--dim)">% of portfolio variance</span>
+          </div>
+          <div class="card-body" style="padding:14px">
+            <div id="opt-risk-bars"></div>
+          </div>
+        </div>
+
+        <!-- Weight distribution bar -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">Weight Distribution</span></div>
+          <div class="card-body" style="padding:14px">
+            <div id="opt-weight-bar"></div>
+          </div>
+        </div>
+
+      </div><!-- /opt-results -->
+
+    </div><!-- /page-plan-optimizer -->
+
+    <!-- ════════════════════════════════════════
          PAGE: Library
     ════════════════════════════════════════ -->
     <div class="page" id="page-resources-library">
@@ -3502,6 +3649,7 @@ const PAGE_TITLES = {
   'page-plan-engineer':      'Strategy Engineer',
   'page-plan-library':       'Strategy Library',
   'page-plan-assignment':    'Strategy Assignment',
+  'page-plan-optimizer':    'Portfolio Optimizer',
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
 };
@@ -3635,6 +3783,7 @@ function navigate(pageId) {
     case 'page-plan-engineer':      loadEngineerPage();     break;
     case 'page-plan-library':       loadLibraryPage();      break;
     case 'page-plan-assignment':    loadAssignmentPage();   break;
+    case 'page-plan-optimizer':    loadOptimizerPage();    break;
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
   }
@@ -12040,6 +12189,208 @@ async function _loadNavOrder() {
 let _assignData       = [];   // current enriched assignments from API
 let _assignStrategies = [];   // strategy library cache
 let _assignAccounts   = [];   // parsed from accounts API
+// ── Portfolio Optimizer ───────────────────────────────────────────────────────
+
+const _OPT_METHOD_LABELS = {
+  max_sharpe:   'Max Sharpe (MVO)',
+  min_variance: 'Min Variance',
+  risk_parity:  'Risk Parity',
+  equal_vol:    'Equal Volatility',
+  max_div:      'Max Diversification',
+};
+
+function loadOptimizerPage() {
+  // Nothing to auto-load; user initiates with Optimize button
+}
+
+async function _optLoadSignalTickers() {
+  try {
+    const d = await apiFetch('/api/portfolio/signals-tickers');
+    const tickers = (d.tickers || []).slice(0, 20).join(', ');
+    document.getElementById('opt-tickers').value = tickers;
+    document.getElementById('opt-status').textContent =
+      `Loaded ${d.tickers.length} ticker${d.tickers.length !== 1 ? 's' : ''} from recent signals`;
+  } catch(e) {
+    document.getElementById('opt-status').textContent = 'Could not load signal tickers';
+  }
+}
+
+async function _optRun() {
+  const btn    = document.getElementById('opt-run-btn');
+  const status = document.getElementById('opt-status');
+  const results= document.getElementById('opt-results');
+
+  const tickerRaw = document.getElementById('opt-tickers').value.trim();
+  if (!tickerRaw) { status.textContent = 'Enter at least 2 tickers first'; return; }
+
+  const tickers = tickerRaw.split(/[\s,;]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+  if (tickers.length < 2) { status.textContent = 'Need at least 2 tickers'; return; }
+
+  const method   = document.getElementById('opt-method').value;
+  const capital  = parseFloat(document.getElementById('opt-capital').value) || 10000;
+  const lookback = parseInt(document.getElementById('opt-lookback').value) || 252;
+  const rf       = parseFloat(document.getElementById('opt-rf').value) / 100 || 0.045;
+  const maxw     = parseFloat(document.getElementById('opt-maxw').value) / 100 || 1.0;
+
+  btn.disabled = true;
+  btn.textContent = '…Running';
+  status.textContent = `Fetching ${lookback}-day history for ${tickers.length} tickers…`;
+  results.style.display = 'none';
+
+  try {
+    const data = await apiFetch('/api/portfolio/optimize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getToken(), tickers, method, total_capital: capital,
+                              lookback_days: lookback, risk_free_rate: rf, max_weight: maxw }),
+    });
+    status.textContent = `Optimized ${data.tickers.length} assets · ${data.data_rows} trading days`;
+    _optRenderResults(data);
+    results.style.display = '';
+  } catch(e) {
+    status.textContent = `Error: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Optimize';
+  }
+}
+
+function _optRenderResults(d) {
+  const p = d.portfolio;
+  const pct = v => (v * 100).toFixed(2) + '%';
+  const usd = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  // Summary stat cards
+  const retColor  = p.expected_return >= 0 ? 'var(--green)' : 'var(--red)';
+  const shrColor  = p.sharpe >= 1 ? 'var(--green)' : p.sharpe >= 0.5 ? 'var(--amber)' : 'var(--muted)';
+  document.getElementById('opt-stats-grid').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Expected Return</div>
+      <div class="stat-value" style="color:${retColor}">${pct(p.expected_return)}</div>
+      <div class="stat-sub" style="font-size:10px;color:var(--muted);margin-top:3px">annualized</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Expected Volatility</div>
+      <div class="stat-value" style="color:var(--amber)">${pct(p.volatility)}</div>
+      <div class="stat-sub" style="font-size:10px;color:var(--muted);margin-top:3px">annualized</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Sharpe Ratio</div>
+      <div class="stat-value" style="color:${shrColor}">${p.sharpe.toFixed(3)}</div>
+      <div class="stat-sub" style="font-size:10px;color:var(--muted);margin-top:3px">rf=${(d.risk_free_rate*100).toFixed(1)}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Capital Deployed</div>
+      <div class="stat-value">${usd(d.total_capital)}</div>
+      <div class="stat-sub" style="font-size:10px;color:var(--muted);margin-top:3px">${d.tickers.length} assets · ${d.data_rows}d history</div>
+    </div>`;
+
+  document.getElementById('opt-method-badge').textContent = _OPT_METHOD_LABELS[d.method] || d.method;
+
+  // Allocation table — sorted by weight desc
+  const sorted = Object.entries(d.assets).sort((a,b) => b[1].weight - a[1].weight);
+  document.getElementById('opt-alloc-tbody').innerHTML = sorted.map(([ticker, a]) => {
+    const wPct    = (a.weight * 100).toFixed(2);
+    const barW    = Math.round(a.weight * 100);
+    const retSign = a.annual_return >= 0 ? '+' : '';
+    return `<tr>
+      <td><strong>${ticker}</strong></td>
+      <td style="text-align:right">
+        <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+          <div style="width:50px;height:4px;background:var(--surface2);border-radius:2px">
+            <div style="width:${barW}%;height:100%;background:var(--blue);border-radius:2px"></div>
+          </div>
+          <span style="font-size:11px;font-weight:700">${wPct}%</span>
+        </div>
+      </td>
+      <td style="text-align:right;font-size:12px;font-weight:600">${usd(a.allocation)}</td>
+      <td style="text-align:right;font-size:11px;color:var(--amber)">${pct(a.annual_vol)}</td>
+      <td style="text-align:right;font-size:11px;color:${a.annual_return>=0?'var(--green)':'var(--red)'}">${retSign}${pct(a.annual_return)}</td>
+      <td style="text-align:right;font-size:11px;color:var(--muted)">${pct(a.risk_contrib)}</td>
+    </tr>`;
+  }).join('');
+
+  // Correlation heatmap
+  _optRenderHeatmap(d.tickers, d.correlation);
+
+  // Risk contribution bars
+  _optRenderRiskBars(sorted);
+
+  // Weight distribution stacked bar
+  _optRenderWeightBar(sorted);
+}
+
+function _optRenderHeatmap(tickers, corr) {
+  const n    = tickers.length;
+  const size = Math.max(28, Math.min(52, Math.floor(420 / n)));
+  const cell = (v, i, j) => {
+    const abs  = Math.abs(v);
+    const heat = i === j ? 60 : Math.round(abs * 80);
+    const bg   = i === j
+      ? `rgba(100,100,100,0.35)`
+      : v > 0
+        ? `rgba(59,130,246,${(abs*0.75).toFixed(2)})`
+        : `rgba(239,68,68,${(abs*0.75).toFixed(2)})`;
+    const fg = abs > 0.4 || i === j ? '#fff' : 'var(--fg)';
+    return `<div style="width:${size}px;height:${size}px;background:${bg};display:flex;align-items:center;justify-content:center;
+      font-size:${size>36?'10':'9'}px;color:${fg};font-weight:600;border:1px solid var(--surface)">${v.toFixed(2)}</div>`;
+  };
+  const labelCell = t => `<div style="width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);font-weight:700;overflow:hidden">${t.slice(0,4)}</div>`;
+  let html = `<div style="display:inline-grid;grid-template-columns:repeat(${n+1},${size}px);gap:1px">`;
+  // Header row
+  html += `<div style="width:${size}px;height:${size}px"></div>`;
+  tickers.forEach(t => html += labelCell(t));
+  // Data rows
+  tickers.forEach((t,i) => {
+    html += labelCell(t);
+    corr[i].forEach((v,j) => html += cell(v,i,j));
+  });
+  html += '</div>';
+  document.getElementById('opt-corr-heatmap').innerHTML = html;
+}
+
+function _optRenderRiskBars(sorted) {
+  const colors = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#a855f7','#06b6d4','#f97316','#84cc16','#ec4899','#8b5cf6'];
+  const html = sorted.map(([ticker, a], i) => {
+    const pct = (a.risk_contrib * 100).toFixed(1);
+    const w   = Math.max(1, Math.round(a.risk_contrib * 100));
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+      <span style="font-size:11px;font-weight:600;width:52px;text-align:right;color:var(--fg)">${ticker}</span>
+      <div style="flex:1;height:18px;background:var(--surface2);border-radius:3px;overflow:hidden">
+        <div style="width:${w}%;height:100%;background:${colors[i%colors.length]};border-radius:3px;
+          display:flex;align-items:center;padding-left:6px;box-sizing:border-box">
+          <span style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap">${pct}%</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('opt-risk-bars').innerHTML = html;
+}
+
+function _optRenderWeightBar(sorted) {
+  const colors = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#a855f7','#06b6d4','#f97316','#84cc16','#ec4899','#8b5cf6'];
+  // Stacked horizontal bar
+  const segments = sorted.map(([ticker, a], i) => {
+    const w = (a.weight * 100).toFixed(2);
+    return `<div style="flex:${a.weight};background:${colors[i%colors.length]};height:28px;display:flex;
+      align-items:center;justify-content:center;min-width:20px" title="${ticker}: ${w}%">
+      <span style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden">
+        ${a.weight > 0.06 ? ticker : ''}</span>
+    </div>`;
+  }).join('');
+  const legend = sorted.map(([ticker, a], i) =>
+    `<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--fg)">
+      <div style="width:10px;height:10px;background:${colors[i%colors.length]};border-radius:2px;flex-shrink:0"></div>
+      ${ticker} ${(a.weight*100).toFixed(1)}%
+    </div>`
+  ).join('');
+  document.getElementById('opt-weight-bar').innerHTML = `
+    <div style="display:flex;border-radius:5px;overflow:hidden;margin-bottom:12px">${segments}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">${legend}</div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 let _assignExclusions = { sectors: [], tickers: [] };
 
 async function loadAssignmentPage() {

@@ -8623,6 +8623,64 @@ async def trigger_options_scan(token: str = ""):
     return {"ok": True, "message": "Options scan triggered"}
 
 
+# ── Portfolio Optimization ────────────────────────────────────────────────────
+
+@app.post("/api/portfolio/optimize")
+async def portfolio_optimize(body: dict):
+    """
+    Run portfolio optimization (MVO / Risk Parity / Inv-Vol / Max-Div).
+
+    Body fields:
+      tickers        list[str]   required, 2–30 symbols
+      method         str         one of: max_sharpe, min_variance, risk_parity, equal_vol, max_div
+      total_capital  float       dollars to allocate (default 10000)
+      lookback_days  int         trading days of history (default 252)
+      risk_free_rate float       annualized (default 0.045)
+      max_weight     float       max single-asset weight 0–1 (default 1.0 = uncapped)
+    """
+    # Auth is handled by the HTTP middleware (query ?token= or session cookie).
+    tickers = body.get("tickers", [])
+    if not tickers or len(tickers) < 2:
+        raise HTTPException(400, "Need at least 2 tickers")
+
+    from .portfolio_optimizer import optimize
+
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: optimize(
+                tickers       = tickers,
+                method        = body.get("method",         "max_sharpe"),
+                total_capital = float(body.get("total_capital", 10_000)),
+                lookback_days = int(body.get("lookback_days",   252)),
+                risk_free_rate= float(body.get("risk_free_rate", 0.045)),
+                max_weight    = float(body.get("max_weight",     1.0)),
+            ),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.error("portfolio_optimize.error", error=str(e))
+        raise HTTPException(500, f"Optimization failed: {e}")
+
+    return result
+
+
+@app.get("/api/portfolio/signals-tickers")
+async def portfolio_signals_tickers(token: str = ""):
+    """Return unique tickers from the 50 most recent predictor signals."""
+    check_token(token)
+    redis   = await get_redis()
+    entries = await redis.xrevrange(STREAMS["signals"], "+", "-", count=50)
+    seen, tickers = set(), []
+    for _eid, fields in entries:
+        t = (fields.get("ticker") or "").upper().strip()
+        if t and t not in seen:
+            seen.add(t)
+            tickers.append(t)
+    return {"tickers": tickers}
+
+
 # ── Portfolio NAV history ─────────────────────────────────────────────────────
 
 @app.post("/api/portfolio/snapshot")

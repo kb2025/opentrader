@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.55] - 2026-04-28
+
+### Added
+- **Portfolio Optimizer page** — new "Portfolio Optimizer" entry in the Trading Plan nav group; five allocation strategies: Max Sharpe (MVO/Markowitz), Min Variance, Risk Parity (equal risk contribution), Equal Volatility (inverse-vol weighting), and Max Diversification; parameter controls for total capital, lookback window (90–504 days), risk-free rate, and per-asset weight cap; results show per-asset weight/allocation/annual-return/volatility/risk-contribution table, stacked weight bar, risk-contribution bar chart, and correlation heat-map with color-coded cells; "Load from Signals" button pre-fills tickers from recent predictor signals; Sharpe/volatility/return portfolio summary cards
+- **`python/webui/portfolio_optimizer.py`** — standalone optimizer module using scipy SLSQP; fetches daily log-returns via yfinance; drops tickers with <80% data coverage; iterative weight-cap redistribution; returns full JSON including correlation matrix and per-asset risk contributions
+- **`POST /api/portfolio/optimize`** and **`GET /api/portfolio/signals-tickers`** endpoints added to WebUI backend; optimizer runs in a thread-pool executor to avoid blocking the async event loop
+- **scipy** added to `requirements.txt` and installed in webui container
+
 ## [3.6.54] - 2026-04-28
 
 ### Added
