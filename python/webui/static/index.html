@@ -12908,6 +12908,7 @@ function _divRenderAccountCards(accounts) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px">
         <div><span style="color:var(--muted)">Payers</span><br><strong style="color:var(--fg)">${payers.length}</strong></div>
         <div><span style="color:var(--muted)">Annual</span><br><strong style="color:var(--green)">$${annInc.toFixed(0)}</strong></div>
+        ${a.buying_power != null ? `<div style="grid-column:1/-1;margin-top:2px"><span style="color:var(--muted)">Buying Power</span><br><strong style="color:var(--blue)">${_fmtUsd(a.buying_power)}</strong></div>` : ''}
       </div>
     </div>`;
   });

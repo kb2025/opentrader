@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.51] - 2026-04-28
+
+### Changed
+- **Equity Dividend Income: broker account chips now show Buying Power** — buying power is extracted from the broker balance response and displayed as a full-width blue row below Payers / Annual in each account card
+
 ## [3.6.50] - 2026-04-28
 
 ### Changed

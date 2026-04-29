@@ -6696,11 +6696,16 @@ async def div_holdings(token: str = ""):
                 "projected_annual_income":  ann_income,
                 "projected_monthly_income": ann_income / 12,
             })
+        bal = acct.get("balances", {})
+        margin = bal.get("margin") or {}
+        bp_raw = (bal.get("buying_power") or bal.get("cash_power")
+                  or margin.get("stock_buying_power") or None)
         accounts_out.append({
-            "label":        lbl,
-            "display_name": display_name,
-            "mode":         acct.get("mode", ""),
-            "positions":    positions_out,
+            "label":         lbl,
+            "display_name":  display_name,
+            "mode":          acct.get("mode", ""),
+            "buying_power":  float(bp_raw) if bp_raw not in (None, "", "None") else None,
+            "positions":     positions_out,
         })
 
     fwd_yield = (total_annual / total_value * 100) if total_value > 0 else 0.0
