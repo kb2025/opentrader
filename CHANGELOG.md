@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.56] - 2026-04-29
+
+### Added
+- **Shadow Account page** (`python/webui/shadow_account.py`) — Counterfactual P&L analysis that answers "what did discipline lapses cost?" across four categories: Noise Trades (low-confidence entries that lost), Early Exits (left gains on the table), Late Exits (held through a profitable window into a loss), and Overtrading (repeat entries same ticker/day); runs against the full trade history for any date range and account filter
+- **LLM rule extraction** — after scoring all trades, the LLM (OpenRouter) extracts 3–5 specific, quantified discipline rules from winner/loser patterns (e.g., "Skip confidence < 0.70", "Never hold a loss past 2%"); each rule is immediately backtested against the full trade set and returned with `backtested_gain` and `trades_affected`
+- **Counterfactual top-5** — ranked list of the 5 trades with the largest discipline gaps (ideal P&L vs actual P&L), with category badge and gap amount
+- **`shadow_runs` DB table** — persists every analysis run; run history is shown on the page and clicking any row reloads the full result without re-running
+- **`POST /api/shadow/run`**, **`GET /api/shadow/history`**, **`GET /api/shadow/run/{id}`** — three new WebUI endpoints; analysis runs in-process with yfinance OHLCV fetched concurrently per ticker; open positions (status='fill') use current close price as exit for unrealized P&L analysis
+
 ## [3.6.55] - 2026-04-28
 
 ### Added

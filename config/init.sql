@@ -327,3 +327,23 @@ CREATE TABLE IF NOT EXISTS daily_loss_log (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (log_date, account_label)
 );
+
+-- ── Shadow Account: Counterfactual P&L Runs ──────────────────────────────────
+-- Each row is one analysis run. trades_detail JSONB holds the full scored list.
+CREATE TABLE IF NOT EXISTS shadow_runs (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    ts              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    date_from       DATE        NOT NULL,
+    date_to         DATE        NOT NULL,
+    account_label   TEXT,
+    trade_count     INT,
+    actual_pnl      NUMERIC,
+    ideal_pnl       NUMERIC,
+    discipline_cost NUMERIC,
+    categories      JSONB,      -- {noise_trade, early_exit, late_exit, overtrading, clean}
+    rules           JSONB,      -- LLM-extracted + backtested rules
+    top5            JSONB,      -- counterfactual top-5 trades
+    trades_detail   JSONB       -- full scored trade list
+);
+CREATE INDEX IF NOT EXISTS shadow_runs_ts    ON shadow_runs (ts DESC);
+CREATE INDEX IF NOT EXISTS shadow_runs_dates ON shadow_runs (date_from, date_to);

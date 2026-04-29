@@ -9829,6 +9829,106 @@ async def get_trader_risk_data(account: str = "", token: str = ""):
     }
 
 
+# ── Shadow Account ────────────────────────────────────────────────────────────
+
+@app.post("/api/shadow/run")
+async def shadow_run(body: dict):
+    """
+    Run a Shadow Account / Counterfactual P&L analysis.
+
+    Body fields:
+      date_from      str   ISO date (default: 30 days ago)
+      date_to        str   ISO date (default: today)
+      account_label  str   optional account filter
+    """
+    from .shadow_account import run_analysis as _shadow_run
+
+    pool = await _get_db_pool()
+    today  = date.today()
+    d_from = date.fromisoformat(body.get("date_from") or str(today - timedelta(days=30)))
+    d_to   = date.fromisoformat(body.get("date_to")   or str(today))
+    acct   = body.get("account_label") or None
+
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+
+    try:
+        result = await _shadow_run(pool, d_from, d_to, acct, openrouter_key)
+    except Exception as e:
+        log.error("shadow_run.error", error=str(e))
+        raise HTTPException(500, f"Shadow analysis failed: {e}")
+
+    if "error" in result:
+        raise HTTPException(404, result["error"])
+
+    try:
+        run_id = await pool.fetchval(
+            """
+            INSERT INTO shadow_runs
+              (date_from, date_to, account_label, trade_count, actual_pnl,
+               ideal_pnl, discipline_cost, categories, rules, top5, trades_detail)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb)
+            RETURNING id
+            """,
+            d_from, d_to, acct,
+            result["trade_count"], result["actual_pnl"], result["ideal_pnl"],
+            result["discipline_cost"],
+            json.dumps(result["categories"]),
+            json.dumps(result["rules"]),
+            json.dumps(result["counterfactual_top5"]),
+            json.dumps(result["trades"]),
+        )
+        result["run_id"] = str(run_id)
+    except Exception as e:
+        log.warning("shadow_run.persist_fail", error=str(e))
+        result["run_id"] = None
+
+    return result
+
+
+@app.get("/api/shadow/history")
+async def shadow_history(limit: int = 20, token: str = ""):
+    check_token(token)
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """
+        SELECT id, ts, date_from, date_to, account_label, trade_count,
+               actual_pnl, ideal_pnl, discipline_cost, categories
+        FROM shadow_runs
+        ORDER BY ts DESC
+        LIMIT $1
+        """,
+        limit,
+    )
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("categories",):
+            if isinstance(d.get(k), str):
+                try:
+                    d[k] = json.loads(d[k])
+                except Exception:
+                    pass
+        out.append(d)
+    return out
+
+
+@app.get("/api/shadow/run/{run_id}")
+async def shadow_run_detail(run_id: str, token: str = ""):
+    check_token(token)
+    pool = await _get_db_pool()
+    row = await pool.fetchrow("SELECT * FROM shadow_runs WHERE id=$1::uuid", run_id)
+    if not row:
+        raise HTTPException(404, "Run not found")
+    d = dict(row)
+    for k in ("categories", "rules", "top5", "trades_detail"):
+        if isinstance(d.get(k), str):
+            try:
+                d[k] = json.loads(d[k])
+            except Exception:
+                pass
+    return d
+
+
 # ── Serve frontend ────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
