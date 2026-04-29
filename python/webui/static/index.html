@@ -331,6 +331,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#a78bfa"></span>
         Library
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-resources-backtester')" data-page="page-resources-backtester">
+        <span class="nav-dot" style="background:#60a5fa"></span>
+        Backtester
+      </div>
     </div>
     <div class="nav-group" data-group="platform">
       <div class="nav-label">Platform</div>
@@ -1373,6 +1377,35 @@ select option{background:var(--surface2)}
             </tr></thead>
             <tbody id="td-fills-tbody">
               <tr><td colspan="11" class="empty-state">Waiting for data…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Predictor Signals card ──────────────────────────── -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <span class="card-title">Predictor Signals</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span id="pred-sig-meta" style="font-size:10px;color:var(--dim)"></span>
+            <button class="btn btn-ghost btn-xs" onclick="loadPredictorSignals()">&#8635;</button>
+          </div>
+        </div>
+        <div class="card-body table-wrap" style="max-height:420px;overflow-y:auto;padding:0">
+          <table id="pred-sig-table">
+            <thead><tr>
+              <th style="white-space:nowrap">Time</th>
+              <th>Ticker</th>
+              <th>Dir</th>
+              <th style="min-width:110px">Composite</th>
+              <th style="min-width:130px">ML Score</th>
+              <th>Val Acc</th>
+              <th>OVTLYR</th>
+              <th>Analyst</th>
+              <th>Sentiment</th>
+            </tr></thead>
+            <tbody id="pred-sig-tbody">
+              <tr><td colspan="9" class="empty-state">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -3156,6 +3189,44 @@ select option{background:var(--surface2)}
 
     </div>
 
+    <div class="page" id="page-resources-backtester">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--fg)">Strategy Backtester</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">EMA 10/21 crossover · Backtrader · 0.1% commission + slippage · includes Sortino, Calmar, Recovery Factor and statistical validation</div>
+        </div>
+      </div>
+
+      <!-- Controls row -->
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap">
+        <input id="bt-page-ticker" class="select-input"
+          style="width:110px;font-size:13px;text-transform:uppercase"
+          placeholder="Ticker…"
+          oninput="this.value=this.value.toUpperCase()"
+          onkeydown="if(event.key==='Enter')runPageBacktest()">
+        <select id="bt-page-period" class="select-input" style="width:96px;font-size:13px">
+          <option value="1y">1 Year</option>
+          <option value="2y" selected>2 Years</option>
+          <option value="3y">3 Years</option>
+          <option value="5y">5 Years</option>
+        </select>
+        <select id="bt-page-direction" class="select-input" style="width:84px;font-size:13px">
+          <option value="long" selected>Long</option>
+          <option value="short">Short</option>
+          <option value="both">Both</option>
+        </select>
+        <button id="bt-page-btn" class="btn btn-primary btn-sm" onclick="runPageBacktest()">Run Backtest</button>
+        <div id="bt-page-status" style="font-size:12px;color:var(--muted)"></div>
+      </div>
+
+      <!-- Results -->
+      <div id="bt-page-results" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;min-height:60px">
+        <div style="color:var(--muted);font-size:12px">Enter a ticker above and click Run Backtest.</div>
+      </div>
+
+    </div><!-- /page-resources-backtester -->
+
   </div><!-- end .content -->
 </div><!-- end .main -->
 
@@ -3431,7 +3502,8 @@ const PAGE_TITLES = {
   'page-plan-engineer':      'Strategy Engineer',
   'page-plan-library':       'Strategy Library',
   'page-plan-assignment':    'Strategy Assignment',
-  'page-resources-library':  'Library',
+  'page-resources-library':    'Library',
+  'page-resources-backtester': 'Backtester',
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3547,7 +3619,7 @@ function navigate(pageId) {
     case 'page-platform-ssl':       loadSslPage();       break;
     case 'page-platform-profile':   loadProfilePage();   break;
     case 'page-platform-config':    loadConfigPage();    break;
-    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); break;
+    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); loadPredictorSignals(); break;
     case 'page-trading-unified':    loadUnifiedPositions(); break;
 
     case 'page-trading-trades':     loadTradesPage();    break;
@@ -3563,7 +3635,8 @@ function navigate(pageId) {
     case 'page-plan-engineer':      loadEngineerPage();     break;
     case 'page-plan-library':       loadLibraryPage();      break;
     case 'page-plan-assignment':    loadAssignmentPage();   break;
-    case 'page-resources-library':  loadLibraryResourcePage(); break;
+    case 'page-resources-library':    loadLibraryResourcePage(); break;
+    case 'page-resources-backtester': loadBacktesterPage();      break;
   }
 }
 
@@ -10215,7 +10288,7 @@ function _btTab(btnEl, tab) {
   // when multiple bt results panels are in the DOM simultaneously
   const panel = btnEl ? btnEl.closest('[data-bt-panel]') : null;
   const scope = panel || document;
-  ['summary','trades','chart'].forEach(t => {
+  ['summary','trades','chart','validate'].forEach(t => {
     const el = scope.querySelector(`[data-bt-tab="${t}"]`);
     if (el) el.style.display = t === tab ? 'block' : 'none';
   });
@@ -10427,6 +10500,7 @@ function _svgMonthlyBars(monthly, w, h) {
   </svg>`;
 }
 
+let _btValCtr = 0;
 function _renderBtResults(r) {
   const ret  = r.total_return;
   const retC = ret > 0 ? 'var(--green)' : 'var(--red)';
@@ -10436,6 +10510,7 @@ function _renderBtResults(r) {
   const equityChart  = _svgEquityCurve(r.equity_curve, 600, 130);
   const monthlyChart = _svgMonthlyBars(r.monthly_returns, 600, 90);
   const annRet  = r.annualized_return != null ? `${r.annualized_return > 0 ? '+' : ''}${r.annualized_return}%` : '—';
+  const vtId    = 'btvl' + (++_btValCtr);
 
   const engineBadge = isReal
     ? `<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(74,222,128,0.12);color:var(--green);border:1px solid rgba(74,222,128,0.3);margin-left:6px">Backtrader</span>`
@@ -10451,16 +10526,19 @@ function _renderBtResults(r) {
         style="padding:6px 14px;font-size:12px;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer">Trades (${r.total_trades || 0})</button>
       ${isReal ? `<button class="bt-tab-btn" data-tab="chart" onclick="_btTab(this,'chart')"
         style="padding:6px 14px;font-size:12px;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer">Chart</button>` : ''}
+      <button class="bt-tab-btn" data-tab="validate" onclick="_btTab(this,'validate')"
+        style="padding:6px 14px;font-size:12px;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer">Validate</button>
     </div>`;
 
   // ── Summary tab ────────────────────────────────────────────────────────
+  const fmtN = (v, dp=4) => v != null ? (+v).toFixed(dp) : '—';
   const summaryTab = `
     <div data-bt-tab="summary">
       <div style="display:flex;align-items:center;margin-bottom:12px">
         <span style="font-size:12px;color:var(--muted)">Strategy Performance${engineBadge}</span>
         ${r.ticker ? `<span style="font-size:11px;color:var(--dim);margin-left:8px">· ${r.ticker}</span>` : ''}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
         <div class="stat-card" style="padding:12px">
           <div class="stat-label">Total Return</div>
           <div class="stat-value" style="color:${retC}">${ret > 0 ? '+' : ''}${ret}%</div>
@@ -10486,6 +10564,32 @@ function _renderBtResults(r) {
           <div class="stat-value">${r.total_trades}</div>
         </div>
       </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+        <div class="stat-card" style="padding:12px">
+          <div class="stat-label">Sortino</div>
+          <div class="stat-value">${fmtN(r.sortino,3)}</div>
+        </div>
+        <div class="stat-card" style="padding:12px">
+          <div class="stat-label">Calmar</div>
+          <div class="stat-value">${fmtN(r.calmar,3)}</div>
+        </div>
+        <div class="stat-card" style="padding:12px">
+          <div class="stat-label">Recovery Factor</div>
+          <div class="stat-value">${fmtN(r.recovery_factor,3)}</div>
+        </div>
+        <div class="stat-card" style="padding:12px">
+          <div class="stat-label">Profit Factor</div>
+          <div class="stat-value">${fmtN(r.profit_factor,2)}</div>
+        </div>
+        <div class="stat-card" style="padding:12px">
+          <div class="stat-label">P/L Ratio</div>
+          <div class="stat-value">${fmtN(r.profit_loss_ratio,2)}</div>
+        </div>
+        <div class="stat-card" style="padding:12px">
+          <div class="stat-label">Avg Hold Days</div>
+          <div class="stat-value">${r.avg_hold_days != null ? r.avg_hold_days : '—'}</div>
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
         <div style="font-size:11px;color:var(--muted)">Final Capital<br><strong style="color:var(--fg)">$${(r.final_cap||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></div>
         <div style="font-size:11px;color:var(--muted)">Initial Capital<br><strong style="color:var(--fg)">$${(r.initial_cap||10000).toLocaleString()}</strong></div>
@@ -10503,6 +10607,33 @@ function _renderBtResults(r) {
         · ${r.period || '252 trading days'} · Stop ${stopVal}% / TP ${tpVal}%
         · Min confidence ${r.confidence != null ? (r.confidence*100).toFixed(0) : '—'}%
       </div>
+    </div>`;
+
+  // ── Validate tab ───────────────────────────────────────────────────────
+  const vtParams = JSON.stringify({
+    stop_pct:   r.stop_pct   || 1.5,
+    tp_pct:     r.tp_pct     || 3.0,
+    confidence: r.confidence || 0.70,
+    direction:  r.direction  || 'long',
+    max_pos:    500,
+  }).replace(/"/g, '&quot;');
+  const validateTab = `
+    <div data-bt-tab="validate" style="display:none">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+        <input id="${vtId}-ticker" class="select-input" value="${r.ticker || ''}"
+          style="width:100px;font-size:12px;text-transform:uppercase" placeholder="Ticker">
+        <select id="${vtId}-period" class="select-input" style="width:80px;font-size:12px">
+          <option value="1y">1 Year</option>
+          <option value="2y" selected>2 Years</option>
+          <option value="3y">3 Years</option>
+          <option value="5y">5 Years</option>
+        </select>
+        <button class="btn btn-primary btn-xs" onclick="_runBtValidation('${vtId}','${vtParams}')">
+          Run Statistical Validation
+        </button>
+        <span style="font-size:11px;color:var(--muted)">Walk-forward · Monte Carlo 1 000× · Bootstrap 90% CI · ~20–40 s</span>
+      </div>
+      <div id="${vtId}-results"></div>
     </div>`;
 
   // ── Trades tab ─────────────────────────────────────────────────────────
@@ -10572,7 +10703,232 @@ function _renderBtResults(r) {
         : '<div style="color:var(--muted);font-size:12px;padding:16px 0">Chart not available for this backtest result.</div>'}
     </div>` : '';
 
-  return tabs + summaryTab + tradesTab + chartTab + '</div>';
+  return tabs + summaryTab + tradesTab + chartTab + validateTab + '</div>';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Backtester Page
+// ══════════════════════════════════════════════════════════════════════════════
+
+function loadBacktesterPage() {
+  const el = document.getElementById('bt-page-ticker');
+  if (el) setTimeout(() => el.focus(), 80);
+}
+
+async function runPageBacktest() {
+  const ticker  = (document.getElementById('bt-page-ticker')?.value || '').trim().toUpperCase();
+  const period  = document.getElementById('bt-page-period')?.value  || '2y';
+  const dir     = document.getElementById('bt-page-direction')?.value || 'long';
+  const btn     = document.getElementById('bt-page-btn');
+  const status  = document.getElementById('bt-page-status');
+  const results = document.getElementById('bt-page-results');
+
+  if (!ticker) { toast('warn', 'No Ticker', 'Enter a ticker symbol first'); return; }
+
+  btn.disabled       = true;
+  btn.textContent    = 'Running…';
+  status.textContent = `Fetching ${ticker} ${period} data…`;
+  results.innerHTML  = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Running backtest — this may take 15–30 seconds…</div>';
+
+  try {
+    const token = getToken();
+    const res = await fetch('/api/backtest/quick', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ticker, period, direction: dir, token }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`); }
+    const r = await res.json();
+    results.innerHTML  = _renderBtResults(r);
+    status.textContent = `Done · ${r.total_trades} trade${r.total_trades !== 1 ? 's' : ''}`;
+    _btCtx = null;
+    _lastAiBacktest = { results: r, stratName: ticker };
+  } catch (e) {
+    results.innerHTML  = `<div style="color:var(--red);font-size:12px;padding:8px">${e.message}</div>`;
+    status.textContent = '';
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Run Backtest';
+  }
+}
+
+async function _runBtValidation(vtId, vtParamsEncoded) {
+  const ticker = (document.getElementById(vtId + '-ticker')?.value || '').trim().toUpperCase();
+  const period = document.getElementById(vtId + '-period')?.value || '2y';
+  const area   = document.getElementById(vtId + '-results');
+  if (!ticker) { toast('warn', 'No Ticker', 'Enter a ticker symbol'); return; }
+
+  let stratParams = {};
+  try { stratParams = JSON.parse(vtParamsEncoded.replace(/&quot;/g, '"')); } catch (_) {}
+
+  area.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Running validation — walk-forward windows + 1 000 Monte Carlo permutations + 1 000 bootstrap samples… this may take 20–45 seconds.</div>';
+
+  try {
+    const token = getToken();
+    const res = await fetch('/api/backtest/validate', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ticker, period, ...stratParams, token }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`); }
+    const data = await res.json();
+    area.innerHTML = _renderValidationResults(data);
+  } catch (e) {
+    area.innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px">${e.message}</div>`;
+  }
+}
+
+function _renderValidationResults(d) {
+  const wf   = d.walk_forward  || {};
+  const mc   = d.monte_carlo   || {};
+  const bs   = d.bootstrap     || {};
+  const base = d.base          || {};
+
+  // ── Walk-Forward ──────────────────────────────────────────────────────
+  const wfSummary = wf.summary || {};
+  const consistent = wfSummary.consistent;
+  const consistBadge = consistent != null
+    ? `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;margin-left:8px;${consistent ? 'background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.3)' : 'background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.3)'}">${consistent ? 'Consistent' : 'Inconsistent'}</span>`
+    : '';
+
+  const wfRows = (wf.windows || []).map(w => {
+    const sh = w.sharpe;
+    const shC = sh == null ? 'var(--muted)' : (sh > 0 ? 'var(--green)' : 'var(--red)');
+    const retC = (w.total_return || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+    return w.error
+      ? `<tr><td style="padding:5px 8px;color:var(--dim)">${w.window}</td><td style="padding:5px 8px">${w.start}</td><td style="padding:5px 8px">${w.end}</td><td colspan="5" style="padding:5px 8px;color:var(--red);font-size:11px">${w.error}</td></tr>`
+      : `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:5px 8px;color:var(--dim)">${w.window}</td>
+          <td style="padding:5px 8px;font-size:11px">${w.start}</td>
+          <td style="padding:5px 8px;font-size:11px">${w.end}</td>
+          <td style="padding:5px 8px;font-weight:600;color:${shC}">${sh != null ? sh.toFixed(3) : '—'}</td>
+          <td style="padding:5px 8px;color:${retC}">${(w.total_return||0) >= 0 ? '+' : ''}${(w.total_return||0).toFixed(2)}%</td>
+          <td style="padding:5px 8px;color:var(--red)">-${(w.max_drawdown||0).toFixed(2)}%</td>
+          <td style="padding:5px 8px">${(w.win_rate||0).toFixed(1)}%</td>
+          <td style="padding:5px 8px;color:var(--dim)">${w.total_trades||0}</td>
+        </tr>`;
+  }).join('');
+
+  const wfSection = `
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:var(--fg);margin-bottom:10px;display:flex;align-items:center">
+        Walk-Forward (${wfSummary.n_splits || '—'} windows)${consistBadge}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">Mean Sharpe</div>
+          <div style="font-size:16px;font-weight:700;color:${(wfSummary.mean_sharpe||0)>0?'var(--green)':'var(--red)'}">${(wfSummary.mean_sharpe||0).toFixed(3)}</div>
+        </div>
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">Sharpe Std</div>
+          <div style="font-size:16px;font-weight:700;color:var(--fg)">${(wfSummary.std_sharpe||0).toFixed(3)}</div>
+        </div>
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">% Windows +ve</div>
+          <div style="font-size:16px;font-weight:700;color:${(wfSummary.pct_positive_sharpe||0)>=50?'var(--green)':'var(--red)'}">${(wfSummary.pct_positive_sharpe||0).toFixed(0)}%</div>
+        </div>
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">Worst Window</div>
+          <div style="font-size:16px;font-weight:700;color:var(--red)">${(wfSummary.worst_window_sharpe||0).toFixed(3)}</div>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);background:var(--surface2)">
+              <th style="padding:5px 8px;text-align:left;color:var(--muted)">#</th>
+              <th style="padding:5px 8px;text-align:left;color:var(--muted)">Start</th>
+              <th style="padding:5px 8px;text-align:left;color:var(--muted)">End</th>
+              <th style="padding:5px 8px;text-align:left;color:var(--muted)">Sharpe</th>
+              <th style="padding:5px 8px;text-align:left;color:var(--muted)">Return</th>
+              <th style="padding:5px 8px;text-align:left;color:var(--muted)">Max DD</th>
+              <th style="padding:5px 8px;text-align:left;color:var(--muted)">Win Rate</th>
+              <th style="padding:5px 8px;text-align:left;color:var(--muted)">Trades</th>
+            </tr>
+          </thead>
+          <tbody>${wfRows || '<tr><td colspan="8" style="padding:8px;color:var(--muted)">No window data</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  // ── Monte Carlo ───────────────────────────────────────────────────────
+  const mcVerdict   = mc.verdict   || 'unknown';
+  const mcSig       = mc.significant;
+  const verdictColor = mcVerdict === 'significant' ? 'var(--green)' : mcVerdict === 'marginal' ? '#fbbf24' : 'var(--red)';
+  const verdictBg    = mcVerdict === 'significant' ? 'rgba(74,222,128,.1)' : mcVerdict === 'marginal' ? 'rgba(251,191,36,.1)' : 'rgba(248,113,113,.1)';
+  const verdictBorder = mcVerdict === 'significant' ? 'rgba(74,222,128,.3)' : mcVerdict === 'marginal' ? 'rgba(251,191,36,.3)' : 'rgba(248,113,113,.3)';
+
+  const mcSection = mc.error ? `<div style="color:var(--muted);font-size:12px;margin-bottom:16px">Monte Carlo: ${mc.error}</div>` : `
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:var(--fg);margin-bottom:10px">
+        Monte Carlo Permutation (${(mc.n_permutations||1000).toLocaleString()}×)
+        <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;margin-left:8px;background:${verdictBg};color:${verdictColor};border:1px solid ${verdictBorder};text-transform:capitalize">${mcVerdict}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">Real Sharpe</div>
+          <div style="font-size:16px;font-weight:700;color:var(--fg)">${(mc.real_sharpe||0).toFixed(4)}</div>
+        </div>
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">p-value</div>
+          <div style="font-size:16px;font-weight:700;color:${verdictColor}">${(mc.p_value||0).toFixed(4)}</div>
+        </div>
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">Null Median</div>
+          <div style="font-size:16px;font-weight:700;color:var(--muted)">${(mc.perm_sharpe_median||0).toFixed(4)}</div>
+        </div>
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">Null 95th pct</div>
+          <div style="font-size:16px;font-weight:700;color:var(--muted)">${(mc.perm_sharpe_p95||0).toFixed(4)}</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">
+        p-value = fraction of ${(mc.n_permutations||1000).toLocaleString()} random Sharpes ≥ real Sharpe.
+        <strong style="color:var(--fg)">p &lt; 0.05</strong> = statistically significant edge.
+        Null distribution range: [${(mc.perm_sharpe_p5||0).toFixed(3)}, ${(mc.perm_sharpe_p95||0).toFixed(3)}].
+      </div>
+    </div>`;
+
+  // ── Bootstrap CI ──────────────────────────────────────────────────────
+  const bsPositive = bs.positive_ci;
+  const bsBadge = bsPositive != null
+    ? `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;margin-left:8px;${bsPositive ? 'background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.3)' : 'background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.3)'}">${bsPositive ? 'CI entirely positive' : 'CI crosses zero'}</span>`
+    : '';
+
+  const bsSection = bs.error ? `<div style="color:var(--muted);font-size:12px;margin-bottom:16px">Bootstrap: ${bs.error}</div>` : `
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:var(--fg);margin-bottom:10px">
+        Bootstrap Sharpe CI (${bs.ci_level || '90%'} · ${(bs.n_samples||1000).toLocaleString()} samples)${bsBadge}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">Real Sharpe</div>
+          <div style="font-size:16px;font-weight:700;color:var(--fg)">${(bs.real_sharpe||0).toFixed(4)}</div>
+        </div>
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">CI Lower</div>
+          <div style="font-size:16px;font-weight:700;color:${(bs.ci_lower||0)>0?'var(--green)':'var(--red)'}">${(bs.ci_lower||0).toFixed(4)}</div>
+        </div>
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">CI Median</div>
+          <div style="font-size:16px;font-weight:700;color:var(--fg)">${(bs.ci_median||0).toFixed(4)}</div>
+        </div>
+        <div class="stat-card" style="padding:10px">
+          <div class="stat-label">CI Upper</div>
+          <div style="font-size:16px;font-weight:700;color:var(--green)">${(bs.ci_upper||0).toFixed(4)}</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">
+        ${bs.ci_level || '90%'} confidence interval on the Sharpe ratio via bootstrap resampling.
+        A <strong style="color:var(--fg)">positive lower bound</strong> (CI entirely above zero) indicates a robust positive edge across resampled return sequences.
+      </div>
+    </div>`;
+
+  const footer = `<div style="font-size:10px;color:var(--dim);border-top:1px solid var(--border);padding-top:8px">
+    Completed in ${d.elapsed_seconds != null ? d.elapsed_seconds + 's' : '—'} · ${base.ticker || ''} ${base.period || ''}
+  </div>`;
+
+  return wfSection + mcSection + bsSection + footer;
 }
 
 async function confirmUpdateDeployment(familyId) {
@@ -10730,6 +11086,119 @@ function calNav(dir) {
 // ══════════════════════════════════════════════════════════════════════════════
 // OVTLYR Market Signal Chips (SPY / QQQ in topbar)
 // ══════════════════════════════════════════════════════════════════════════════
+// ── Predictor Signals ────────────────────────────────────────────────────────
+
+async function loadPredictorSignals() {
+  const tbody = document.getElementById('pred-sig-tbody');
+  const meta  = document.getElementById('pred-sig-meta');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Loading…</td></tr>';
+  try {
+    const sigs = await apiFetch('/api/signals?limit=50');
+    if (!sigs || sigs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No signals yet — run the predictor to generate signals</td></tr>';
+      if (meta) meta.textContent = '';
+      return;
+    }
+    if (meta) meta.textContent = `${sigs.length} signal${sigs.length !== 1 ? 's' : ''} · most recent first`;
+
+    tbody.innerHTML = sigs.map(s => {
+      const conf     = parseFloat(s.confidence) || 0;
+      const mlConf   = s.ml_confidence != null ? parseFloat(s.ml_confidence) : null;
+      const mlAcc    = s.ml_val_accuracy != null ? parseFloat(s.ml_val_accuracy) : null;
+      const ruleBase = s.ml_rule_base   != null ? parseFloat(s.ml_rule_base)   : null;
+      const ovScore  = s.ovtlyr_score   != null ? parseFloat(s.ovtlyr_score)   : null;
+
+      // Time cell
+      const tsMs  = typeof s.ts === 'number' ? s.ts : parseInt(String(s.ts).split('-')[0]) || 0;
+      const dt    = tsMs ? new Date(tsMs) : null;
+      const timeStr = dt ? dt.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', hour12:false}) : '—';
+      const dateStr = dt ? dt.toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '';
+
+      // Direction chip
+      const isLong  = (s.direction||'').toLowerCase() === 'long';
+      const dirChip = `<span class="chip ${isLong ? 'chip-green' : 'chip-red'}" style="font-size:10px">${isLong ? '▲ Long' : '▼ Short'}</span>`;
+
+      // Composite confidence bar (rule+ML blended)
+      const confPct  = Math.round(conf * 100);
+      const barColor = conf >= 0.75 ? 'var(--green)' : conf >= 0.65 ? 'var(--amber)' : 'var(--red)';
+      const confBar  = `<div style="display:flex;align-items:center;gap:6px">
+        <div style="flex:1;height:5px;border-radius:3px;background:var(--surface2);min-width:60px">
+          <div style="width:${confPct}%;height:100%;border-radius:3px;background:${barColor}"></div>
+        </div>
+        <span style="font-size:11px;font-weight:700;color:${barColor};white-space:nowrap">${confPct}%</span>
+      </div>`;
+
+      // ML badge
+      let mlCell = '<span style="color:var(--dim);font-size:11px">—</span>';
+      if (mlConf !== null) {
+        const mlPct    = Math.round(mlConf * 100);
+        const rulePct  = ruleBase !== null ? Math.round(ruleBase * 100) : null;
+        // Color: green if ML reinforces direction, red if it disagrees, amber if neutral
+        const mlAgreement = isLong
+          ? (mlConf >= 0.55 ? 'green' : mlConf <= 0.45 ? 'red' : 'amber')
+          : (mlConf <= 0.45 ? 'green' : mlConf >= 0.55 ? 'red' : 'amber');
+        const mlColor = mlAgreement === 'green' ? 'var(--green)' : mlAgreement === 'red' ? 'var(--red)' : 'var(--amber)';
+        const mlArrow = mlAgreement === 'green' ? '▲' : mlAgreement === 'red' ? '▼' : '~';
+        const tooltip = rulePct !== null
+          ? `title="Rule-based: ${rulePct}% → ML: ${mlPct}% → Composite: ${confPct}%"`
+          : `title="ML confidence: ${mlPct}%"`;
+        mlCell = `<div ${tooltip} style="cursor:default">
+          <span style="font-size:11px;font-weight:700;color:${mlColor}">${mlArrow} ${mlPct}%</span>
+          ${rulePct !== null ? `<span style="font-size:10px;color:var(--dim);margin-left:4px">rule ${rulePct}%</span>` : ''}
+        </div>`;
+      }
+
+      // Val accuracy cell
+      let accCell = '<span style="color:var(--dim);font-size:11px">—</span>';
+      if (mlAcc !== null) {
+        const accPct   = Math.round(mlAcc * 100);
+        const accColor = mlAcc >= 0.58 ? 'var(--green)' : mlAcc >= 0.52 ? 'var(--amber)' : 'var(--dim)';
+        accCell = `<span style="font-size:11px;color:${accColor};font-weight:600">${accPct}%</span>`;
+      }
+
+      // OVTLYR score
+      const ovCell = ovScore != null
+        ? `<span style="font-size:11px;font-weight:600;color:var(--fg)">${Math.round(ovScore)}</span>`
+        : '<span style="color:var(--dim)">—</span>';
+
+      // Analyst
+      const anMap = { strong_buy:'↑↑', buy:'↑', hold:'→', sell:'↓', strong_sell:'↓↓', none:'—' };
+      const anColor = { strong_buy:'var(--green)', buy:'var(--green)', hold:'var(--muted)',
+                        sell:'var(--red)', strong_sell:'var(--red)', none:'var(--dim)' };
+      const an = (s.analyst_consensus||'none').toLowerCase().replace(' ','_');
+      const anCell = `<span style="font-size:11px;color:${anColor[an]||'var(--dim)'}">${anMap[an]||'—'}</span>`;
+
+      // Sentiment
+      const sentColor = { bullish:'var(--green)', bearish:'var(--red)', neutral:'var(--muted)' };
+      const sent = (s.sentiment_label||'neutral').toLowerCase();
+      const sentCell = `<span style="font-size:11px;color:${sentColor[sent]||'var(--muted)'}">${sent||'—'}</span>`;
+
+      // LLM reason tooltip on ticker
+      const llmTip = s.llm_reason ? ` title="${_escHtml(s.llm_reason)}"` : '';
+
+      return `<tr>
+        <td style="white-space:nowrap">
+          <span style="font-size:11px;font-weight:600;color:var(--fg)">${timeStr}</span>
+          <br><span style="font-size:10px;color:var(--dim)">${dateStr}</span>
+        </td>
+        <td><strong${llmTip} style="cursor:${s.llm_reason?'help':'default'}">${_escHtml(s.ticker||'—')}</strong>
+          ${s.asset_class === 'etf' ? '<span style="font-size:9px;color:var(--dim);margin-left:3px">ETF</span>' : ''}
+        </td>
+        <td>${dirChip}</td>
+        <td>${confBar}</td>
+        <td>${mlCell}</td>
+        <td>${accCell}</td>
+        <td>${ovCell}</td>
+        <td>${anCell}</td>
+        <td>${sentCell}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">Error loading signals: ${e.message}</td></tr>`;
+  }
+}
+
 async function loadOvtlyrMarketSignals() {
   const token = getToken();
   try {

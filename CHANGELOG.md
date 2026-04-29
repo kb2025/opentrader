@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.54] - 2026-04-28
+
+### Added
+- **Predictor Signals card on Trading Dashboard** — full table of recent predictor signals with composite confidence bar, ML Score badge (▲/~/▼ colored by agreement with direction, rule-base % alongside), Val Accuracy %, OVTLYR raw score, analyst consensus, and sentiment columns; ticker cell shows LLM reason on hover; auto-loads on page navigate and has a manual refresh button
+- **`/api/signals` endpoint fixed** — previously parsed old envelope format and returned empty fields; now reads the predictor's flat stream format (ticker, direction, confidence, metadata JSON) and surfaces all ML fields (ml_confidence, ml_val_accuracy, ml_model_count, ml_rule_base, llm_reason)
+
 ## [3.6.53] - 2026-04-28
 
 ### Added

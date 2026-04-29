@@ -1418,31 +1418,55 @@ async def get_trade_summary():
 # ── API — Signals ─────────────────────────────────────────────────────────────
 
 @app.get("/api/signals")
-async def get_signals(limit: int = 30):
+async def get_signals(limit: int = 50):
     redis = await get_redis()
     entries = await redis.xrevrange(STREAMS["signals"], "+", "-", count=limit)
     signals = []
     for entry_id, fields in entries:
         try:
-            payload = json.loads(fields.get("payload", "{}"))
-            p = payload.get("payload", payload)
-            signals.append({
-                "id":                entry_id,
-                "ts":                fields.get("ts_utc", ""),
-                "sender":            fields.get("sender", ""),
-                "ticker":            p.get("ticker", ""),
-                "asset_class":       p.get("asset_class", ""),
-                "direction":         p.get("direction", ""),
-                "confidence":        p.get("confidence", ""),
-                "entry":             p.get("entry", ""),
-                "stop":              p.get("stop", ""),
-                "target":            p.get("target", ""),
-                "source":            p.get("source", ""),
-                "ttl_ms":            p.get("ttl_ms", ""),
-                "analyst_consensus": p.get("analyst_consensus", ""),
-                "sentiment":         p.get("sentiment", ""),
-                "intel_summary":     p.get("intel_summary", ""),
-            })
+            # Predictor publishes flat fields: ticker, direction, confidence,
+            # asset_class, source, ttl_ms, metadata (JSON).
+            # Older envelope format has a "payload" key — support both.
+            if "ticker" in fields:
+                meta = json.loads(fields.get("metadata", "{}"))
+                ts_ms = int(entry_id.split("-")[0])
+                signals.append({
+                    "id":                 entry_id,
+                    "ts":                 ts_ms,
+                    "ticker":             fields.get("ticker", ""),
+                    "asset_class":        fields.get("asset_class", ""),
+                    "direction":          fields.get("direction", ""),
+                    "confidence":         float(fields.get("confidence", 0)),
+                    "source":             fields.get("source", "predictor"),
+                    "entry":              float(fields.get("entry", 0) or 0) or None,
+                    "stop":               float(fields.get("stop",  0) or 0) or None,
+                    "target":             float(fields.get("target", 0) or 0) or None,
+                    "ovtlyr_score":       meta.get("ovtlyr_score"),
+                    "analyst_consensus":  meta.get("analyst_consensus", "none"),
+                    "sentiment_label":    meta.get("sentiment_label", "neutral"),
+                    "intel_summary":      meta.get("intel_summary", ""),
+                    "ml_confidence":      meta.get("ml_confidence"),
+                    "ml_val_accuracy":    meta.get("ml_val_accuracy"),
+                    "ml_model_count":     meta.get("ml_model_count"),
+                    "ml_composite_weight":meta.get("ml_composite_weight"),
+                    "ml_rule_base":       meta.get("ml_rule_base"),
+                    "llm_reason":         meta.get("llm_reason", ""),
+                })
+            else:
+                payload = json.loads(fields.get("payload", "{}"))
+                p = payload.get("payload", payload)
+                signals.append({
+                    "id":                entry_id,
+                    "ts":                fields.get("ts_utc", ""),
+                    "ticker":            p.get("ticker", ""),
+                    "asset_class":       p.get("asset_class", ""),
+                    "direction":         p.get("direction", ""),
+                    "confidence":        p.get("confidence", ""),
+                    "source":            p.get("source", ""),
+                    "analyst_consensus": p.get("analyst_consensus", ""),
+                    "sentiment_label":   p.get("sentiment", ""),
+                    "intel_summary":     p.get("intel_summary", ""),
+                })
         except Exception:
             pass
     return signals
@@ -4943,6 +4967,12 @@ def _bt_run_in_process(params: dict) -> dict:
     return run_backtest(params)
 
 
+def _bt_validate_in_process(params: dict) -> dict:
+    """Top-level wrapper for validation — required for ProcessPoolExecutor pickling."""
+    from webui.backtest_validator import run_validation
+    return run_validation(params)
+
+
 async def _run_backtest_task(job_id: str, version_dict: dict, body: BacktestRunBody,
                               family_id: str, version: int):
     _bt_jobs[job_id]["status"] = "running"
@@ -5190,6 +5220,64 @@ async def quick_backtest(body: BacktestRunBody):
         return results
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Backtest timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BacktestValidateBody(BaseModel):
+    ticker:          str
+    period:          str   = "2y"
+    initial_capital: float = 10_000.0
+    stop_pct:        float = 1.5
+    tp_pct:          float = 3.0
+    confidence:      float = 0.70
+    direction:       str   = "long"
+    max_pos:         float = 500.0
+    n_splits:        int   = 0      # 0 = auto-size walk-forward windows
+    n_perms:         int   = 1000   # Monte Carlo permutations
+    n_bootstrap:     int   = 1000   # Bootstrap samples
+    token:           str   = ""
+
+
+@app.post("/api/backtest/validate")
+async def validate_backtest(body: BacktestValidateBody):
+    """Statistical validation of the EMA crossover strategy on a given ticker.
+
+    Runs three tests sequentially inside a single worker process:
+      1. Walk-forward — equal-window consistency check across market regimes.
+      2. Monte Carlo permutation — p-value test: is Sharpe better than random?
+      3. Bootstrap CI — 90 % confidence interval on the Sharpe ratio.
+
+    Also returns expanded base metrics: Sortino, Calmar, Recovery Factor,
+    Profit/Loss ratio, Profit Factor, avg trade PnL, avg hold days.
+
+    Typical runtime: 15–45 s depending on period and n_splits.
+    Timeout: 300 s.
+    """
+    check_token(body.token)
+    params = {
+        "ticker":          body.ticker,
+        "period":          body.period,
+        "initial_capital": body.initial_capital,
+        "stop_pct":        body.stop_pct,
+        "tp_pct":          body.tp_pct,
+        "confidence":      body.confidence,
+        "direction":       body.direction,
+        "max_pos":         body.max_pos,
+        "n_splits":        body.n_splits,
+        "n_perms":         body.n_perms,
+        "n_bootstrap":     body.n_bootstrap,
+    }
+    loop = asyncio.get_event_loop()
+    try:
+        with ProcessPoolExecutor(max_workers=1) as pool:
+            results = await asyncio.wait_for(
+                loop.run_in_executor(pool, _bt_validate_in_process, params),
+                timeout=300,
+            )
+        return results
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Validation timed out (300 s limit)")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
