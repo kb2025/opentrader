@@ -20,6 +20,7 @@ from shared.envelope import SignalPayload
 from notifier.agentmail import Notifier
 
 from .scorer import score_tickers, apply_stops, ScoredTicker
+from .ml_predictor import MLEnsemble
 
 log = structlog.get_logger("predictor")
 
@@ -74,12 +75,18 @@ MAX_SIGNALS     = int(os.getenv("MAX_SIGNALS_PER_RUN",     "10"))
 _llm_key = os.getenv("OPENROUTER_API_KEY", "")
 USE_LLM = bool(_llm_key) and not _llm_key.startswith("your_")
 
+# ML ensemble
+ML_ENABLED     = os.getenv("ML_ENABLED", "true").lower() not in ("false", "0", "no")
+ML_WEIGHT      = float(os.getenv("ML_WEIGHT",      "0.35"))   # ML contribution
+ML_MIN_VAL_ACC = float(os.getenv("ML_MIN_VAL_ACC", "0.52"))  # discard model if val accuracy below this
+
 
 class PredictorAgent(BaseAgent):
 
     def __init__(self):
         super().__init__("predictor")
         self._db: Optional[asyncpg.Connection] = None
+        self._ml  = MLEnsemble() if ML_ENABLED else None
 
     async def run(self):
         await self.setup()
@@ -261,7 +268,12 @@ class PredictorAgent(BaseAgent):
 
         log.info("predictor.scored", candidates=len(candidates))
 
-        # ── 3. Optional LLM enhancement ──────────────────────────────────────
+        # ── 3a. Optional ML ensemble enhancement ─────────────────────────────
+        if self._ml and candidates:
+            self._ml.clear_old_cache()
+            candidates = await self._ml_enhance(candidates)
+
+        # ── 3b. Optional LLM enhancement ─────────────────────────────────────
         if self._use_llm and candidates:
             candidates = await self._llm_enhance(candidates[:15])
 
@@ -318,6 +330,10 @@ class PredictorAgent(BaseAgent):
                     "earnings_date":       s.metadata.get("earnings_date"),
                     "earnings_days_away":  s.metadata.get("earnings_days_away"),
                     "intel_summary":       s.metadata.get("summary", ""),
+                    "ml_confidence":       s.metadata.get("ml_confidence"),
+                    "ml_val_accuracy":     s.metadata.get("ml_val_accuracy"),
+                    "ml_model_count":      s.metadata.get("ml_model_count"),
+                    "ml_composite_weight": s.metadata.get("ml_composite_weight"),
                 },
             )
             await self.redis.xadd(
@@ -338,6 +354,58 @@ class PredictorAgent(BaseAgent):
 
         # ── 6. Persist to TimescaleDB ─────────────────────────────────────────
         await self._save_signals(signals)
+
+    async def _ml_enhance(self, candidates: list[ScoredTicker]) -> list[ScoredTicker]:
+        """
+        Run ML ensemble in parallel for all candidates and blend confidence.
+
+        Composite formula (applied only when val_accuracy ≥ ML_MIN_VAL_ACC):
+            composite = rule_conf * (1 - ML_WEIGHT) + ml_conf * ML_WEIGHT
+
+        Candidates where ML training fails are returned unchanged so the
+        rule-based + LLM pipeline continues unaffected.
+        """
+        loop = asyncio.get_event_loop()
+
+        # Fire all predictions in parallel
+        tasks   = [self._ml.predict(t.ticker, t.direction, loop) for t in candidates]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        enhanced = []
+        applied  = 0
+        for t, ml_result in zip(candidates, results):
+            if isinstance(ml_result, Exception) or not ml_result:
+                enhanced.append(t)
+                continue
+
+            ml_conf  = ml_result.get("ml_confidence")
+            val_acc  = ml_result.get("val_accuracy", 0.0)
+            n_models = ml_result.get("model_count", 0)
+
+            if ml_conf is None or val_acc < ML_MIN_VAL_ACC:
+                # Model didn't meet quality bar — leave confidence unchanged
+                enhanced.append(t)
+                continue
+
+            rule_conf = t.confidence
+            composite = round(rule_conf * (1 - ML_WEIGHT) + ml_conf * ML_WEIGHT, 4)
+            composite = max(0.0, min(1.0, composite))
+
+            t.confidence = composite
+            t.metadata.update({
+                "ml_confidence":       round(ml_conf, 4),
+                "ml_val_accuracy":     round(val_acc, 4),
+                "ml_model_count":      n_models,
+                "ml_composite_weight": ML_WEIGHT,
+                "ml_rule_base":        round(rule_conf, 4),
+            })
+            applied += 1
+            enhanced.append(t)
+
+        enhanced.sort(key=lambda x: x.confidence, reverse=True)
+        log.info("predictor.ml_enhance", total=len(candidates), ml_applied=applied,
+                 ml_weight=ML_WEIGHT)
+        return enhanced
 
     async def _llm_enhance(self, candidates: list[ScoredTicker]) -> list[ScoredTicker]:
         """

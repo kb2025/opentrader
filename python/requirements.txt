@@ -28,3 +28,6 @@ aiogram>=3.7.0
 
 # ── Options Monitor ───────────────────────────
 matplotlib>=3.8.0
+
+# ── ML Predictor Ensemble ─────────────────────
+scikit-learn>=1.4.0

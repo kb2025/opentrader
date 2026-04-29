@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.53] - 2026-04-28
+
+### Added
+- **ML Predictor Ensemble** (`predictor/ml_predictor.py`) — walk-forward RandomForest + GradientBoosting + Ridge ensemble trained daily per ticker on 2 years of OHLCV data with 12 engineered features (momentum returns, RSI, MACD histogram, Bollinger position, SMA20/50/200, volume ratio, ATR, candle body); blended with rule-based confidence as a 35%/65% weighted composite before LLM refinement; models cached in-memory per calendar day; gracefully degrades when sklearn is unavailable or validation accuracy < 52%
+- **scikit-learn** added to `requirements.txt` and installed in predictor container
+- ML metadata (`ml_confidence`, `ml_val_accuracy`, `ml_model_count`, `ml_composite_weight`) propagated through signal payloads to TimescaleDB and Redis streams
+- Env-var controls: `ML_ENABLED`, `ML_WEIGHT` (default 0.35), `ML_MIN_VAL_ACC` (default 0.52)
+
 ## [3.6.52] - 2026-04-28
 
 ### Fixed
