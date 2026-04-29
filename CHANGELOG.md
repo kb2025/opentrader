@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.52] - 2026-04-28
+
+### Fixed
+- **Webull Margin Account buying power** — `cash_power` is returned as the string `'0.00'` (truthy) so `or` never reached `margin_power`; now converts to float first so margin accounts correctly report their `margin_power` value
+
 ## [3.6.51] - 2026-04-28
 
 ### Changed

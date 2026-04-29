@@ -109,7 +109,7 @@ class WebullPositions:
         return {
             "cash":         float(assets.get("cash_balance",          assets.get("total_cash_balance", 0)) or 0),
             "net_value":    float(assets.get("net_liquidation_value",  assets.get("total_asset", 0))        or 0),
-            "buying_power": float(assets.get("cash_power",             assets.get("margin_power", 0))        or 0),
+            "buying_power": (float(assets.get("cash_power") or 0) or float(assets.get("margin_power") or 0)),
             "raw":          result,
         }
 
