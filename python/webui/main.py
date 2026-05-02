@@ -1895,14 +1895,14 @@ async def get_market_sector_map():
     # Top S&P 500 constituents per sector: (ticker, short_name, approx_mcap_billions, subsector)
     SECTOR_STOCKS: dict = {
         "Technology": [
-            ("MSFT","Microsoft",3100,"Software"),("AAPL","Apple",3200,"Consumer Tech"),
+            ("MSFT","Microsoft",3100,"Software"),("AAPL","Apple",3200,"Hardware"),
             ("NVDA","NVIDIA",2800,"Semiconductors"),("AVGO","Broadcom",900,"Semiconductors"),
             ("ORCL","Oracle",530,"Software"),("CRM","Salesforce",295,"Software"),
             ("AMD","AMD",220,"Semiconductors"),("NOW","ServiceNow",210,"Software"),
-            ("ADBE","Adobe",195,"Software"),("ACN","Accenture",190,"IT Services"),
+            ("ADBE","Adobe",195,"Software"),("ACN","Accenture",190,"Hardware"),
             ("QCOM","Qualcomm",185,"Semiconductors"),("TXN","Texas Instr",165,"Semiconductors"),
-            ("AMAT","Applied Matls",160,"Semicon Equip"),("MU","Micron",120,"Semiconductors"),
-            ("INTC","Intel",95,"Semiconductors"),
+            ("AMAT","Applied Matls",160,"Semiconductors"),("MU","Micron",120,"Semiconductors"),
+            ("INTC","Intel",95,"Hardware"),
         ],
         "Financials": [
             ("BRK-B","Berkshire",950,"Diversified"),("JPM","JPMorgan",780,"Banks"),
@@ -1922,10 +1922,10 @@ async def get_market_sector_map():
             ("PFE","Pfizer",155,"Pharma"),("BMY","Bristol-Myers",140,"Pharma"),
         ],
         "Consumer Discretionary": [
-            ("AMZN","Amazon",2400,"E-Commerce"),("TSLA","Tesla",850,"Auto"),
+            ("AMZN","Amazon",2400,"Retail"),("TSLA","Tesla",850,"Auto & EV"),
             ("HD","Home Depot",385,"Home Improvement"),("MCD","McDonald's",235,"Restaurants"),
             ("BKNG","Booking",180,"Travel"),("LOW","Lowe's",148,"Home Improvement"),
-            ("TJX","TJX",145,"Specialty Retail"),("NKE","Nike",115,"Apparel"),
+            ("TJX","TJX",145,"Retail"),("NKE","Nike",115,"Retail"),
             ("SBUX","Starbucks",105,"Restaurants"),("CMG","Chipotle",92,"Restaurants"),
             ("ABNB","Airbnb",82,"Travel"),
         ],
@@ -1939,11 +1939,11 @@ async def get_market_sector_map():
             ("FDX","FedEx",67,"Transport"),
         ],
         "Communication Services": [
-            ("META","Meta",1650,"Social Media"),("GOOGL","Alphabet",2100,"Internet"),
-            ("NFLX","Netflix",400,"Streaming"),("TMUS","T-Mobile",270,"Telecom"),
-            ("DIS","Disney",195,"Media"),("CMCSA","Comcast",145,"Media"),
+            ("META","Meta",1650,"Social & Search"),("GOOGL","Alphabet",2100,"Social & Search"),
+            ("NFLX","Netflix",400,"Media & Entertainment"),("TMUS","T-Mobile",270,"Telecom"),
+            ("DIS","Disney",195,"Media & Entertainment"),("CMCSA","Comcast",145,"Media & Entertainment"),
             ("VZ","Verizon",165,"Telecom"),("T","AT&T",140,"Telecom"),
-            ("EA","Electronic Arts",32,"Gaming"),
+            ("EA","Electronic Arts",32,"Media & Entertainment"),
         ],
         "Consumer Staples": [
             ("WMT","Walmart",800,"Food Retail"),("COST","Costco",440,"Food Retail"),

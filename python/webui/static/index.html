@@ -18550,12 +18550,10 @@ function _smSparkline(closes, w, h, up) {
   return `<svg width="${w}" height="${h}" style="display:block;overflow:visible"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
-function _smHighlight(sector, subsector) {
+function _smHighlight(peers) {
   const hlg = document.getElementById('sm-hl');
   if (!hlg) return;
-  const rects = Object.values(_smStockRects)
-    .filter(d => d.sector === sector && d.subsector === subsector);
-  hlg.innerHTML = rects.map(d =>
+  hlg.innerHTML = peers.map(d =>
     `<rect x="${f(d.x)}" y="${f(d.y)}" width="${f(d.w - 1)}" height="${f(d.h - 1)}" fill="none" stroke="#fbbf24" stroke-width="2.5" rx="2"/>`
   ).join('');
 }
@@ -18570,14 +18568,22 @@ function _smStockEnter(e, el) {
   let d;
   try { d = JSON.parse(el.dataset.sm.replace(/&#39;/g, "'")); } catch { return; }
 
-  _smHighlight(d.sector, d.subsector);
-
-  // Build peer list: all stocks in same sector+subsector
-  const peers = Object.values(_smStockRects)
+  let peers = Object.values(_smStockRects)
     .filter(s => s.sector === d.sector && s.subsector === d.subsector)
     .sort((a, b) => b.mcap - a.mcap);
 
-  _smBuildPanel(d.sector, d.subsector, peers, e);
+  let displaySubsector = d.subsector;
+
+  // If subsector has ≤2 stocks, fall back to the full sector
+  if (peers.length <= 2) {
+    peers = Object.values(_smStockRects)
+      .filter(s => s.sector === d.sector)
+      .sort((a, b) => b.mcap - a.mcap);
+    displaySubsector = d.sector;
+  }
+
+  _smHighlight(peers);
+  _smBuildPanel(d.sector, displaySubsector, peers, e);
 }
 
 function _smStockLeave() {

@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.59] - 2026-05-02
+
+### Fixed
+- **Sector Map** — yellow subsector highlight now covers all peers: when hovering a stock in a singleton/small subsector (≤2 members), the highlight falls back to the full sector so all related stocks get the yellow border; consolidated singleton subsectors (Consumer Tech→Hardware, E-Commerce→Retail, Social Media+Internet→Social & Search, Streaming+Gaming+Media→Media & Entertainment) for more meaningful groupings
+
 ## [3.6.58] - 2026-05-02
 
 ### Changed
