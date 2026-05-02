@@ -18304,8 +18304,9 @@ async function _shadowLoadRun(runId) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 let _smSectorData    = {};   // sector name → { name, etf, change, stocks[] }
+let _smStockRects    = {};   // ticker → { x, y, w, h, sector, subsector, ...stock }
 let _smPanelTimer    = null; // debounce hide
-let _smCurrentSector = null; // guard stale sparkline fetches
+let _smCurrentKey    = null; // guard stale sparkline fetches (sector:subsector key)
 
 async function loadSectorMapPage() {
   const el = document.getElementById('sector-map-container');
@@ -18411,6 +18412,7 @@ function _renderSectorMap(data) {
   }
 
   _smSectorData = {};   // reset on each render
+  _smStockRects = {};
 
   const W   = el.clientWidth || 900;
   const H   = Math.max(475, Math.round(W * 0.532));
@@ -18466,8 +18468,14 @@ function _renderSectorMap(data) {
           txt += `<text x="${f(cx)}" y="${f(cy2)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffffaa" font-size="9" font-family="system-ui,sans-serif">${sign}${stk.change.toFixed(2)}%</text>`;
         }
 
-        const tip = JSON.stringify({ ticker: stk.ticker, name: stk.name, change: stk.change, price: stk.price, sector: sr.name, mcap: stk.mcap }).replace(/'/g,"&#39;");
-        svg.push(`<g data-sm='${tip}' onmouseenter="_smShowTip(event,this)" onmouseleave="_smHideTip()" style="cursor:default">
+        // Store tile position for highlight system
+        _smStockRects[stk.ticker] = { x: stk.x, y: stk.y, w: stk.w, h: stk.h,
+          sector: sr.name, subsector: stk.subsector || '', ...stk };
+
+        const tip = JSON.stringify({ ticker: stk.ticker, name: stk.name, change: stk.change,
+          price: stk.price, sector: sr.name, subsector: stk.subsector || '', mcap: stk.mcap
+        }).replace(/'/g,"&#39;");
+        svg.push(`<g data-sm='${tip}' onmouseenter="_smStockEnter(event,this)" onmouseleave="_smStockLeave()" style="cursor:pointer">
           <rect x="${f(stk.x)}" y="${f(stk.y)}" width="${f(rw)}" height="${f(rh)}" fill="${color}" rx="2"/>
           ${txt}</g>`);
       }
@@ -18493,7 +18501,7 @@ function _renderSectorMap(data) {
     svg.push(`</g>`);
   }
 
-  el.innerHTML = `<svg width="${W}" height="${H}" style="display:block;background:#080b14;border-radius:8px">${svg.join('')}</svg>`;
+  el.innerHTML = `<svg width="${W}" height="${H}" style="display:block;background:#080b14;border-radius:8px">${svg.join('')}<g id="sm-hl" pointer-events="none"></g></svg>`;
 }
 
 function f(n) { return n.toFixed(1); }
@@ -18528,7 +18536,7 @@ function _smHideTip() {
   if (tip) tip.style.display = 'none';
 }
 
-// ── Sector hover panel ────────────────────────────────────────────────────────
+// ── Subsector highlight + hover panel ─────────────────────────────────────────
 
 function _smSparkline(closes, w, h, up) {
   if (!closes || closes.length < 2) return `<div style="width:${w}px;height:${h}px;display:flex;align-items:center"><div style="width:100%;height:1px;background:#2a3050"></div></div>`;
@@ -18542,43 +18550,82 @@ function _smSparkline(closes, w, h, up) {
   return `<svg width="${w}" height="${h}" style="display:block;overflow:visible"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
-function _smShowSectorPanel(e, sectorName) {
-  const data = _smSectorData[sectorName];
-  if (!data) return;
-  if (_smPanelTimer) { clearTimeout(_smPanelTimer); _smPanelTimer = null; }
+function _smHighlight(sector, subsector) {
+  const hlg = document.getElementById('sm-hl');
+  if (!hlg) return;
+  const rects = Object.values(_smStockRects)
+    .filter(d => d.sector === sector && d.subsector === subsector);
+  hlg.innerHTML = rects.map(d =>
+    `<rect x="${f(d.x)}" y="${f(d.y)}" width="${f(d.w - 1)}" height="${f(d.h - 1)}" fill="none" stroke="#fbbf24" stroke-width="2.5" rx="2"/>`
+  ).join('');
+}
 
-  _smCurrentSector = sectorName;
+function _smClearHighlight() {
+  const hlg = document.getElementById('sm-hl');
+  if (hlg) hlg.innerHTML = '';
+}
+
+function _smStockEnter(e, el) {
+  if (_smPanelTimer) { clearTimeout(_smPanelTimer); _smPanelTimer = null; }
+  let d;
+  try { d = JSON.parse(el.dataset.sm.replace(/&#39;/g, "'")); } catch { return; }
+
+  _smHighlight(d.sector, d.subsector);
+
+  // Build peer list: all stocks in same sector+subsector
+  const peers = Object.values(_smStockRects)
+    .filter(s => s.sector === d.sector && s.subsector === d.subsector)
+    .sort((a, b) => b.mcap - a.mcap);
+
+  _smBuildPanel(d.sector, d.subsector, peers, e);
+}
+
+function _smStockLeave() {
+  _smPanelTimer = setTimeout(() => {
+    _smClearHighlight();
+    _smHideSectorPanel();
+    _smPanelTimer = null;
+  }, 160);
+}
+
+function _smBuildPanel(sector, subsector, peers, e) {
+  _smCurrentKey = `${sector}:${subsector}`;
   const panel = document.getElementById('sector-map-panel');
   if (!panel) return;
 
-  const sign = data.change >= 0 ? '+' : '';
-  const cc   = data.change >= 0 ? '#4ade80' : '#f87171';
+  // Weighted avg change for subsector
+  const totalMcap = peers.reduce((s, p) => s + (p.mcap || 0), 0);
+  const avgChg    = totalMcap ? peers.reduce((s, p) => s + (p.change || 0) * (p.mcap || 0), 0) / totalMcap : 0;
+  const sign = avgChg >= 0 ? '+' : '';
+  const cc   = avgChg >= 0 ? '#4ade80' : '#f87171';
 
   let rows = '';
-  for (const stk of data.stocks) {
-    const sc   = stk.change >= 0 ? '#4ade80' : '#f87171';
-    const ss   = stk.change >= 0 ? '+' : '';
+  for (const stk of peers) {
+    const sc  = stk.change >= 0 ? '#4ade80' : '#f87171';
+    const ss  = stk.change >= 0 ? '+' : '';
+    const isSelf = stk.ticker === (peers[0] || {}).ticker;
     const price = stk.price ? `$${stk.price.toFixed(2)}` : '—';
-    rows += `<div style="display:grid;grid-template-columns:46px 1fr 62px 56px;align-items:center;gap:6px;padding:5px 14px;border-bottom:1px solid #1a1e35">
+    rows += `<div style="display:grid;grid-template-columns:46px 1fr 64px 58px;align-items:center;gap:6px;
+        padding:5px 14px;border-bottom:1px solid #1a1e35">
       <div style="font-size:11px;font-weight:700;color:#dde4ff">${stk.ticker}</div>
-      <div id="smp-${stk.ticker.replace(/[^A-Z0-9]/g,'_')}" style="display:flex;align-items:center;height:22px">${_smSparkline(null,62,18,stk.change>=0)}</div>
+      <div id="smp-${stk.ticker.replace(/[^A-Z0-9]/g,'_')}" style="display:flex;align-items:center;height:22px">${_smSparkline(null,64,18,stk.change>=0)}</div>
       <div style="font-size:11px;color:#8896b8;text-align:right">${price}</div>
       <div style="font-size:11px;font-weight:700;color:${sc};text-align:right">${ss}${stk.change.toFixed(2)}%</div>
     </div>`;
   }
 
   panel.innerHTML = `
-    <div style="padding:11px 14px 9px;border-bottom:1px solid #232848">
+    <div style="padding:10px 14px 8px;border-bottom:1px solid #232848">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
         <div>
-          <div style="font-size:13px;font-weight:700;color:#e8eeff">${data.name}</div>
-          <div style="font-size:10px;color:#5a6490;margin-top:1px">${data.etf} &nbsp;·&nbsp; ${data.stocks.length} holdings</div>
+          <div style="font-size:13px;font-weight:700;color:#e8eeff">${subsector}</div>
+          <div style="font-size:10px;color:#5a6490;margin-top:2px">${sector} &nbsp;·&nbsp; ${peers.length} stock${peers.length!==1?'s':''}</div>
         </div>
-        <div style="font-size:15px;font-weight:700;color:${cc};flex-shrink:0">${sign}${data.change.toFixed(2)}%</div>
+        <div style="font-size:15px;font-weight:700;color:${cc};flex-shrink:0">${sign}${avgChg.toFixed(2)}%</div>
       </div>
     </div>
     <div style="overflow-y:auto;max-height:480px">
-      <div style="display:grid;grid-template-columns:46px 1fr 62px 56px;gap:6px;padding:4px 14px 3px;border-bottom:1px solid #232848">
+      <div style="display:grid;grid-template-columns:46px 1fr 64px 58px;gap:6px;padding:4px 14px 3px;border-bottom:1px solid #232848">
         <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em">Ticker</div>
         <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em">5-Day</div>
         <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em;text-align:right">Price</div>
@@ -18590,19 +18637,17 @@ function _smShowSectorPanel(e, sectorName) {
   panel.style.display = 'block';
   _smPositionPanel(e);
 
-  // Fetch real sparklines async, guard against sector change
-  const fetchSector = sectorName;
-  const tickerStr   = data.stocks.map(s => s.ticker).join(',');
+  // Fetch sparklines async
+  const fetchKey  = _smCurrentKey;
+  const tickerStr = peers.map(s => s.ticker).join(',');
   apiFetch(`/api/market/sparklines?tickers=${encodeURIComponent(tickerStr)}`)
     .then(sparkData => {
-      if (_smCurrentSector !== fetchSector) return;
-      for (const stk of data.stocks) {
+      if (_smCurrentKey !== fetchKey) return;
+      for (const stk of peers) {
         const el = document.getElementById(`smp-${stk.ticker.replace(/[^A-Z0-9]/g,'_')}`);
         if (!el) continue;
         const closes = sparkData[stk.ticker];
-        if (closes && closes.length >= 2) {
-          el.innerHTML = _smSparkline(closes, 62, 18, stk.change >= 0);
-        }
+        if (closes && closes.length >= 2) el.innerHTML = _smSparkline(closes, 64, 18, stk.change >= 0);
       }
     })
     .catch(() => {});
@@ -18612,8 +18657,7 @@ function _smPositionPanel(e) {
   const panel = document.getElementById('sector-map-panel');
   if (!panel || panel.style.display === 'none') return;
   const pw = 320, ph = panel.offsetHeight || 520;
-  let x = e.clientX + 16;
-  let y = e.clientY - 20;
+  let x = e.clientX + 16, y = e.clientY - 20;
   if (x + pw > window.innerWidth  - 10) x = e.clientX - pw - 10;
   if (y + ph > window.innerHeight - 10) y = window.innerHeight - ph - 10;
   panel.style.left = Math.max(6, x) + 'px';
@@ -18629,13 +18673,14 @@ function _smPanelEnter() {
 }
 
 function _smPanelLeave() {
+  _smClearHighlight();
   _smHideSectorPanel();
 }
 
 function _smHideSectorPanel() {
   const panel = document.getElementById('sector-map-panel');
   if (panel) panel.style.display = 'none';
-  _smCurrentSector = null;
+  _smCurrentKey = null;
 }
 </script>
 

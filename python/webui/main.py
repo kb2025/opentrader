@@ -1892,72 +1892,93 @@ async def get_market_sector_map():
     """Return S&P 500 nested sector map via Polygon.io snapshot (MASSIVE_API_KEY)."""
     import aiohttp as _aiohttp
 
-    # Top S&P 500 constituents per sector: (ticker, short_name, approx_mcap_billions)
+    # Top S&P 500 constituents per sector: (ticker, short_name, approx_mcap_billions, subsector)
     SECTOR_STOCKS: dict = {
         "Technology": [
-            ("MSFT","Microsoft",3100),("AAPL","Apple",3200),("NVDA","NVIDIA",2800),
-            ("AVGO","Broadcom",900),("ORCL","Oracle",530),("CRM","Salesforce",295),
-            ("AMD","AMD",220),("NOW","ServiceNow",210),("ADBE","Adobe",195),
-            ("ACN","Accenture",190),("QCOM","Qualcomm",185),("TXN","Texas Instr",165),
-            ("AMAT","Applied Matls",160),("MU","Micron",120),("INTC","Intel",95),
+            ("MSFT","Microsoft",3100,"Software"),("AAPL","Apple",3200,"Consumer Tech"),
+            ("NVDA","NVIDIA",2800,"Semiconductors"),("AVGO","Broadcom",900,"Semiconductors"),
+            ("ORCL","Oracle",530,"Software"),("CRM","Salesforce",295,"Software"),
+            ("AMD","AMD",220,"Semiconductors"),("NOW","ServiceNow",210,"Software"),
+            ("ADBE","Adobe",195,"Software"),("ACN","Accenture",190,"IT Services"),
+            ("QCOM","Qualcomm",185,"Semiconductors"),("TXN","Texas Instr",165,"Semiconductors"),
+            ("AMAT","Applied Matls",160,"Semicon Equip"),("MU","Micron",120,"Semiconductors"),
+            ("INTC","Intel",95,"Semiconductors"),
         ],
         "Financials": [
-            ("BRK-B","Berkshire",950),("JPM","JPMorgan",780),("V","Visa",640),
-            ("MA","Mastercard",520),("BAC","Bank of Amer",335),("WFC","Wells Fargo",275),
-            ("AXP","AmEx",220),("GS","Goldman Sachs",225),("MS","Morgan Stanley",205),
-            ("PGR","Progressive",140),("BLK","BlackRock",155),("SCHW","Schwab",135),
-            ("C","Citigroup",135),
+            ("BRK-B","Berkshire",950,"Diversified"),("JPM","JPMorgan",780,"Banks"),
+            ("V","Visa",640,"Payments"),("MA","Mastercard",520,"Payments"),
+            ("BAC","Bank of Amer",335,"Banks"),("WFC","Wells Fargo",275,"Banks"),
+            ("AXP","AmEx",220,"Payments"),("GS","Goldman Sachs",225,"Capital Markets"),
+            ("MS","Morgan Stanley",205,"Capital Markets"),("PGR","Progressive",140,"Insurance"),
+            ("BLK","BlackRock",155,"Asset Mgmt"),("SCHW","Schwab",135,"Asset Mgmt"),
+            ("C","Citigroup",135,"Banks"),
         ],
         "Health Care": [
-            ("LLY","Eli Lilly",850),("UNH","UnitedHealth",540),("JNJ","J&J",395),
-            ("ABBV","AbbVie",380),("MRK","Merck",315),("ISRG","Intuitive",225),
-            ("TMO","Thermo Fisher",215),("ABT","Abbott",205),("AMGN","Amgen",165),
-            ("DHR","Danaher",175),("PFE","Pfizer",155),("BMY","Bristol-Myers",140),
+            ("LLY","Eli Lilly",850,"Pharma"),("UNH","UnitedHealth",540,"Health Services"),
+            ("JNJ","J&J",395,"Pharma"),("ABBV","AbbVie",380,"Pharma"),
+            ("MRK","Merck",315,"Pharma"),("ISRG","Intuitive",225,"Med Devices"),
+            ("TMO","Thermo Fisher",215,"Life Sciences"),("ABT","Abbott",205,"Med Devices"),
+            ("AMGN","Amgen",165,"Biotech"),("DHR","Danaher",175,"Life Sciences"),
+            ("PFE","Pfizer",155,"Pharma"),("BMY","Bristol-Myers",140,"Pharma"),
         ],
         "Consumer Discretionary": [
-            ("AMZN","Amazon",2400),("TSLA","Tesla",850),("HD","Home Depot",385),
-            ("MCD","McDonald's",235),("BKNG","Booking",180),("LOW","Lowe's",148),
-            ("TJX","TJX",145),("NKE","Nike",115),("SBUX","Starbucks",105),
-            ("CMG","Chipotle",92),("ABNB","Airbnb",82),
+            ("AMZN","Amazon",2400,"E-Commerce"),("TSLA","Tesla",850,"Auto"),
+            ("HD","Home Depot",385,"Home Improvement"),("MCD","McDonald's",235,"Restaurants"),
+            ("BKNG","Booking",180,"Travel"),("LOW","Lowe's",148,"Home Improvement"),
+            ("TJX","TJX",145,"Specialty Retail"),("NKE","Nike",115,"Apparel"),
+            ("SBUX","Starbucks",105,"Restaurants"),("CMG","Chipotle",92,"Restaurants"),
+            ("ABNB","Airbnb",82,"Travel"),
         ],
         "Industrials": [
-            ("GE","GE",235),("CAT","Caterpillar",190),("ETN","Eaton",135),
-            ("RTX","RTX",175),("HON","Honeywell",158),("UNP","Union Pacific",152),
-            ("DE","Deere",128),("LMT","Lockheed",138),("BA","Boeing",125),
-            ("UPS","UPS",88),("GEV","GE Vernova",85),("PH","Parker Hannifin",82),
-            ("FDX","FedEx",67),
+            ("GE","GE",235,"Aerospace/Defense"),("CAT","Caterpillar",190,"Machinery"),
+            ("ETN","Eaton",135,"Electrical Equip"),("RTX","RTX",175,"Aerospace/Defense"),
+            ("HON","Honeywell",158,"Conglomerates"),("UNP","Union Pacific",152,"Transport"),
+            ("DE","Deere",128,"Machinery"),("LMT","Lockheed",138,"Aerospace/Defense"),
+            ("BA","Boeing",125,"Aerospace/Defense"),("UPS","UPS",88,"Transport"),
+            ("GEV","GE Vernova",85,"Electrical Equip"),("PH","Parker Hannifin",82,"Machinery"),
+            ("FDX","FedEx",67,"Transport"),
         ],
         "Communication Services": [
-            ("META","Meta",1650),("GOOGL","Alphabet",2100),("NFLX","Netflix",400),
-            ("TMUS","T-Mobile",270),("DIS","Disney",195),("CMCSA","Comcast",145),
-            ("VZ","Verizon",165),("T","AT&T",140),("EA","Electronic Arts",32),
+            ("META","Meta",1650,"Social Media"),("GOOGL","Alphabet",2100,"Internet"),
+            ("NFLX","Netflix",400,"Streaming"),("TMUS","T-Mobile",270,"Telecom"),
+            ("DIS","Disney",195,"Media"),("CMCSA","Comcast",145,"Media"),
+            ("VZ","Verizon",165,"Telecom"),("T","AT&T",140,"Telecom"),
+            ("EA","Electronic Arts",32,"Gaming"),
         ],
         "Consumer Staples": [
-            ("WMT","Walmart",800),("COST","Costco",440),("PG","P&G",385),
-            ("KO","Coca-Cola",315),("PEP","PepsiCo",248),("PM","Philip Morris",235),
-            ("MDLZ","Mondelez",92),("MO","Altria",88),("CL","Colgate",72),
-            ("GIS","General Mills",42),
+            ("WMT","Walmart",800,"Food Retail"),("COST","Costco",440,"Food Retail"),
+            ("PG","P&G",385,"Household Products"),("KO","Coca-Cola",315,"Beverages"),
+            ("PEP","PepsiCo",248,"Beverages"),("PM","Philip Morris",235,"Tobacco"),
+            ("MDLZ","Mondelez",92,"Food & Snacks"),("MO","Altria",88,"Tobacco"),
+            ("CL","Colgate",72,"Household Products"),("GIS","General Mills",42,"Food & Snacks"),
         ],
         "Energy": [
-            ("XOM","ExxonMobil",570),("CVX","Chevron",295),("COP","ConocoPhillips",138),
-            ("EOG","EOG",68),("SLB","SLB",66),("MPC","Marathon",62),
-            ("PSX","Phillips 66",58),("OXY","Occidental",52),("HES","Hess",46),
-            ("VLO","Valero",45),
+            ("XOM","ExxonMobil",570,"Integrated Oil"),("CVX","Chevron",295,"Integrated Oil"),
+            ("COP","ConocoPhillips",138,"E&P"),("EOG","EOG",68,"E&P"),
+            ("SLB","SLB",66,"Oilfield Services"),("MPC","Marathon",62,"Refining"),
+            ("PSX","Phillips 66",58,"Refining"),("OXY","Occidental",52,"E&P"),
+            ("HES","Hess",46,"E&P"),("VLO","Valero",45,"Refining"),
         ],
         "Real Estate": [
-            ("PLD","Prologis",108),("AMT","Amer Tower",92),("EQIX","Equinix",83),
-            ("WELL","Welltower",72),("SPG","Simon Property",62),("PSA","Public Storage",56),
-            ("O","Realty Income",53),("DLR","Digital Realty",52),("CBRE","CBRE",37),
+            ("PLD","Prologis",108,"Industrial REIT"),("AMT","Amer Tower",92,"Tower REIT"),
+            ("EQIX","Equinix",83,"Data Center REIT"),("WELL","Welltower",72,"Healthcare REIT"),
+            ("SPG","Simon Property",62,"Retail REIT"),("PSA","Public Storage",56,"Self-Storage"),
+            ("O","Realty Income",53,"Retail REIT"),("DLR","Digital Realty",52,"Data Center REIT"),
+            ("CBRE","CBRE",37,"Real Estate Svcs"),
         ],
         "Utilities": [
-            ("NEE","NextEra",158),("SO","Southern Co",97),("DUK","Duke Energy",92),
-            ("SRE","Sempra",57),("AEP","AEP",56),("D","Dominion",52),
-            ("EXC","Exelon",39),("PCG","PG&E",39),("XEL","Xcel Energy",36),
+            ("NEE","NextEra",158,"Electric"),("SO","Southern Co",97,"Electric"),
+            ("DUK","Duke Energy",92,"Electric"),("SRE","Sempra",57,"Multi-Utility"),
+            ("AEP","AEP",56,"Electric"),("D","Dominion",52,"Electric"),
+            ("EXC","Exelon",39,"Electric"),("PCG","PG&E",39,"Electric"),
+            ("XEL","Xcel Energy",36,"Electric"),
         ],
         "Materials": [
-            ("LIN","Linde",235),("SHW","Sherwin-Williams",97),("ECL","Ecolab",62),
-            ("APD","Air Products",60),("FCX","Freeport",58),("NEM","Newmont",57),
-            ("PPG","PPG",37),("NUE","Nucor",32),("IFF","IFF",22),
+            ("LIN","Linde",235,"Industrial Gases"),("SHW","Sherwin-Williams",97,"Specialty Chems"),
+            ("ECL","Ecolab",62,"Specialty Chems"),("APD","Air Products",60,"Industrial Gases"),
+            ("FCX","Freeport",58,"Copper Mining"),("NEM","Newmont",57,"Gold Mining"),
+            ("PPG","PPG",37,"Specialty Chems"),("NUE","Nucor",32,"Steel"),
+            ("IFF","IFF",22,"Specialty Chems"),
         ],
     }
 
@@ -1969,7 +1990,7 @@ async def get_market_sector_map():
     }
 
     _redis = await get_redis()
-    cache_key = "market:sector_map_v2"
+    cache_key = "market:sector_map_v3"
     try:
         cached = await _redis.get(cache_key)
         if cached:
@@ -1977,7 +1998,7 @@ async def get_market_sector_map():
     except Exception:
         pass
 
-    all_tickers = [t for stocks in SECTOR_STOCKS.values() for t, _, _ in stocks]
+    all_tickers = [t for stocks in SECTOR_STOCKS.values() for t, _, _, _ in stocks]
     changes: dict[str, tuple[float, float]] = {}  # ticker -> (change_pct, price)
 
     api_key = os.getenv("MASSIVE_API_KEY", "")
@@ -2012,7 +2033,7 @@ async def get_market_sector_map():
                                      progress=False, auto_adjust=True, group_by="ticker")
             except Exception:
                 return {}
-            out = {}
+            out: dict = {}
             for tkr in all_tickers:
                 try:
                     s = data[tkr]["Close"].dropna()
@@ -2029,10 +2050,10 @@ async def get_market_sector_map():
     sectors = []
     for sname, stocks in SECTOR_STOCKS.items():
         enriched, total_mcap, weighted_chg = [], 0, 0.0
-        for ticker, name, mcap in stocks:
+        for ticker, name, mcap, subsector in stocks:
             chg, price = changes.get(ticker, (0.0, 0.0))
             enriched.append({"ticker": ticker, "name": name, "mcap": mcap,
-                              "change": chg, "price": price})
+                              "subsector": subsector, "change": chg, "price": price})
             total_mcap  += mcap
             weighted_chg += chg * mcap
         avg_chg = round(weighted_chg / total_mcap, 2) if total_mcap else 0.0
