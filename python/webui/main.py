@@ -1885,6 +1885,67 @@ async def get_position_sector_map():
     return result
 
 
+# ── API — Market sector map (Finviz-style) ────────────────────────────────────
+
+@app.get("/api/market/sector-map")
+async def get_market_sector_map():
+    """Return S&P 500 sector ETF daily performance for the sector treemap."""
+    import yfinance as _yf
+    import asyncio as _asyncio
+
+    SECTOR_ETFS = [
+        {"etf": "XLK",  "name": "Technology",            "weight": 32.0},
+        {"etf": "XLV",  "name": "Health Care",            "weight": 12.7},
+        {"etf": "XLF",  "name": "Financials",             "weight": 13.5},
+        {"etf": "XLY",  "name": "Consumer Discretionary", "weight": 10.3},
+        {"etf": "XLI",  "name": "Industrials",            "weight": 8.7},
+        {"etf": "XLC",  "name": "Communication Services", "weight": 8.9},
+        {"etf": "XLP",  "name": "Consumer Staples",       "weight": 5.9},
+        {"etf": "XLE",  "name": "Energy",                 "weight": 3.6},
+        {"etf": "XLRE", "name": "Real Estate",            "weight": 2.3},
+        {"etf": "XLU",  "name": "Utilities",              "weight": 2.5},
+        {"etf": "XLB",  "name": "Materials",              "weight": 2.1},
+    ]
+
+    tickers = [s["etf"] for s in SECTOR_ETFS]
+
+    def _fetch():
+        try:
+            data = _yf.download(
+                tickers, period="5d", interval="1d",
+                progress=False, auto_adjust=True, group_by="ticker"
+            )
+            results = []
+            for meta in SECTOR_ETFS:
+                etf = meta["etf"]
+                try:
+                    df = data[etf].dropna()
+                    if len(df) >= 2:
+                        close = float(df["Close"].iloc[-1])
+                        prev  = float(df["Close"].iloc[-2])
+                        chg   = (close - prev) / prev * 100
+                    elif len(df) == 1:
+                        close = float(df["Close"].iloc[-1])
+                        chg   = 0.0
+                    else:
+                        close, chg = 0.0, 0.0
+                except Exception:
+                    close, chg = 0.0, 0.0
+                results.append({
+                    "etf":    etf,
+                    "name":   meta["name"],
+                    "weight": meta["weight"],
+                    "change": round(chg, 2),
+                    "price":  round(close, 2),
+                })
+        except Exception:
+            results = [{**s, "change": 0.0, "price": 0.0} for s in SECTOR_ETFS]
+        return results
+
+    sectors = await _asyncio.get_event_loop().run_in_executor(None, _fetch)
+    return {"sectors": sectors, "as_of": datetime.utcnow().isoformat()}
+
+
 # ── API — Market bars (Massive MCP) ──────────────────────────────────────────
 
 @app.get("/api/market/bars")

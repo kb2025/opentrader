@@ -294,6 +294,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:var(--green)"></span>
         Equity Dividend Income
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-trading-sectormap')" data-page="page-trading-sectormap">
+        <span class="nav-dot" style="background:#38bdf8"></span>
+        Sector Map
+      </div>
     </div>
     <div class="nav-group" data-group="options">
       <div class="nav-label">Options</div>
@@ -1492,6 +1496,41 @@ select option{background:var(--surface2)}
       </div>
 
     </div>
+
+    <!-- ════════════════════════════════════════
+         PAGE: Sector Map
+    ════════════════════════════════════════ -->
+    <div class="page" id="page-trading-sectormap">
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">S&amp;P 500 Sector Map</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span id="sector-map-asof" style="font-size:10px;color:var(--dim)"></span>
+        <button class="btn btn-ghost btn-xs" onclick="loadSectorMapPage()" title="Refresh">&#8635; Refresh</button>
+      </div>
+
+      <!-- Color legend -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <span style="font-size:10px;color:var(--dim)">Performance:</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#9d1010;border-radius:2px;display:inline-block"></span>&#8804;&#8722;5%</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#c44040;border-radius:2px;display:inline-block"></span>&#8722;3%</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#c47070;border-radius:2px;display:inline-block"></span>&#8722;1.5%</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#585858;border-radius:2px;display:inline-block"></span>0%</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#4a9a4a;border-radius:2px;display:inline-block"></span>+1.5%</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#2e8b2e;border-radius:2px;display:inline-block"></span>+3%</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#0d6e0d;border-radius:2px;display:inline-block"></span>&#8805;+5%</span>
+        <span style="font-size:10px;color:var(--dim);margin-left:8px">Block size = market cap weight</span>
+      </div>
+
+      <div id="sector-map-container" style="width:100%;min-height:480px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden" onmousemove="_smPositionTip(event)"></div>
+
+      <!-- Hover tooltip -->
+      <div id="sector-map-tooltip" style="display:none;position:fixed;z-index:8000;
+        background:#1a1e2b;border:1px solid #3b4263;border-radius:10px;
+        padding:12px 16px;min-width:185px;
+        box-shadow:0 8px 30px rgba(0,0,0,.7);pointer-events:none"></div>
+
+    </div><!-- /page-trading-sectormap -->
 
     <!-- ════════════════════════════════════════
          PAGE: Trades
@@ -3712,6 +3751,7 @@ const PAGE_TITLES = {
   'page-trading-trades':     'Equity Trades',
   'page-trading-broker':     'Broker',
   'page-trading-dividends':  'Equity Dividend Income',
+  'page-trading-sectormap':  'Sector Map',
   'page-trading-alerts':     'Price Alerts',
   'page-trading-options':    'Options Dashboard',
   'page-options-log':        'Options Trading Log',
@@ -3846,6 +3886,7 @@ function navigate(pageId) {
     case 'page-trading-trades':     loadTradesPage();    break;
     case 'page-trading-broker':     loadBrokerPage();       break;
     case 'page-trading-dividends':  loadDividendPage();     break;
+    case 'page-trading-sectormap':  loadSectorMapPage();    break;
     case 'page-trading-alerts':     loadAlertsPage(); break;
     case 'page-trading-options':    loadOptionsPositions(); loadOptionsGreeksPanel(); loadOptionsPerformancePanel(); loadOptionsExpiryCalendar(); break;
     case 'page-options-log':        loadOptionsLog(); loadOptionsPerformancePanel(); break;
@@ -18249,6 +18290,182 @@ async function _shadowLoadRun(runId) {
   } catch(e) {
     _toast('error', 'Failed to load run: ' + (e.detail || e.message || e));
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Sector Map — Finviz-style squarified treemap
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadSectorMapPage() {
+  const el = document.getElementById('sector-map-container');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:24px">Loading sector data…</div>';
+  try {
+    const r = await apiFetch('/api/market/sector-map');
+    _renderSectorMap(r);
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--coral);font-size:12px;padding:24px">Failed to load sector data: ${e.detail||e.message||e}</div>`;
+  }
+}
+
+function _sectorColor(chg) {
+  if (chg <= -5)   return '#9d1010';
+  if (chg <= -3)   return '#c44040';
+  if (chg <= -1.5) return '#c47070';
+  if (chg <= -0.5) return '#996060';
+  if (chg <   0.5) return '#585858';
+  if (chg <   1.5) return '#4a9a4a';
+  if (chg <   3)   return '#2e8b2e';
+  if (chg <   5)   return '#1a7a1a';
+  return '#0d6e0d';
+}
+
+function _worstRatioSM(row, rowSum, crossDim) {
+  const stripAlong = rowSum / crossDim;
+  let worst = 0;
+  for (const item of row) {
+    const itemCross = item.value / stripAlong;
+    const r = stripAlong > itemCross ? stripAlong / itemCross : itemCross / stripAlong;
+    if (r > worst) worst = r;
+  }
+  return worst;
+}
+
+function _squarifyImpl(items, x, y, w, h) {
+  if (!items.length) return [];
+  if (items.length === 1) return [{ ...items[0], x, y, w, h }];
+
+  const rects = [];
+  let i = 0, rx = x, ry = y, rw = w, rh = h;
+
+  while (i < items.length && rw > 0.5 && rh > 0.5) {
+    const isWide = rw >= rh;
+    const crossDim = isWide ? rh : rw;
+
+    const row = [items[i]];
+    let rowSum = items[i].value;
+
+    for (let j = i + 1; j < items.length; j++) {
+      const curr = _worstRatioSM(row, rowSum, crossDim);
+      const next = _worstRatioSM([...row, items[j]], rowSum + items[j].value, crossDim);
+      if (next > curr) break;
+      row.push(items[j]);
+      rowSum += items[j].value;
+    }
+
+    const stripAlong = rowSum / crossDim;
+    let pos = isWide ? ry : rx;
+
+    for (const item of row) {
+      const itemCross = item.value / stripAlong;
+      if (isWide) {
+        rects.push({ ...item, x: rx, y: pos, w: stripAlong, h: itemCross });
+        pos += itemCross;
+      } else {
+        rects.push({ ...item, x: pos, y: ry, w: itemCross, h: stripAlong });
+        pos += itemCross;
+      }
+    }
+
+    if (isWide) { rx += stripAlong; rw -= stripAlong; }
+    else        { ry += stripAlong; rh -= stripAlong; }
+    i += row.length;
+  }
+  return rects;
+}
+
+function _squarifyTreemap(items, x, y, w, h) {
+  const totalVal  = items.reduce((s, d) => s + d.value, 0);
+  const totalArea = w * h;
+  const norm = [...items]
+    .sort((a, b) => b.value - a.value)
+    .map(d => ({ ...d, value: d.value * totalArea / totalVal }));
+  return _squarifyImpl(norm, x, y, w, h);
+}
+
+function _renderSectorMap(data) {
+  const el = document.getElementById('sector-map-container');
+  if (!el) return;
+
+  const asOf = document.getElementById('sector-map-asof');
+  if (asOf && data.as_of) {
+    const d = new Date(data.as_of + 'Z');
+    asOf.textContent = 'As of ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  const sectors = data.sectors || [];
+  if (!sectors.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:24px">No sector data available.</div>';
+    return;
+  }
+
+  const W   = el.clientWidth  || 900;
+  const H   = Math.max(460, Math.round(W * 0.52));
+  const PAD = 2;
+
+  const items = sectors.map(s => ({ ...s, value: s.weight }));
+  const rects = _squarifyTreemap(items, PAD, PAD, W - 2 * PAD, H - 2 * PAD);
+
+  const cells = rects.map(r => {
+    const color  = _sectorColor(r.change);
+    const sign   = r.change >= 0 ? '+' : '';
+    const chgStr = `${sign}${r.change.toFixed(2)}%`;
+    const cx = r.x + r.w / 2;
+    const cy = r.y + r.h / 2;
+
+    const showName = r.w > 65 && r.h > 38;
+    const showEtf  = r.w > 44 && r.h > 22 && !showName;
+    const showChg  = r.h > 20;
+
+    let text = '';
+    if (showName) {
+      const fs = Math.min(13, Math.max(9, Math.floor(r.w / 9)));
+      text += `<text x="${cx.toFixed(1)}" y="${(cy - (showChg ? 10 : 0)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="${fs}" font-weight="600" font-family="system-ui,sans-serif">${r.name}</text>`;
+    }
+    if (showEtf) {
+      text += `<text x="${cx.toFixed(1)}" y="${(cy - (showChg ? 8 : 0)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="10" font-weight="600" font-family="system-ui,sans-serif">${r.etf}</text>`;
+    }
+    if (showChg) {
+      const cfs = showName ? 11 : 10;
+      text += `<text x="${cx.toFixed(1)}" y="${(cy + (showName || showEtf ? 13 : 0)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="${cfs}" font-family="system-ui,sans-serif">${chgStr}</text>`;
+    }
+
+    const tip = JSON.stringify({ name: r.name, etf: r.etf, change: r.change, price: r.price, weight: r.weight });
+    return `<g data-sm='${tip.replace(/'/g,"&#39;")}' onmouseenter="_smShowTip(event,this)" onmouseleave="_smHideTip()" style="cursor:default">
+      <rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="${color}" rx="3" stroke="var(--bg)" stroke-width="${PAD}"/>
+      ${text}
+    </g>`;
+  }).join('');
+
+  el.innerHTML = `<svg width="${W}" height="${H}" style="display:block">${cells}</svg>`;
+}
+
+function _smShowTip(e, el) {
+  const tip = document.getElementById('sector-map-tooltip');
+  if (!tip) return;
+  let d;
+  try { d = JSON.parse(el.dataset.sm.replace(/&#39;/g, "'")); } catch { return; }
+  const sign = d.change >= 0 ? '+' : '';
+  const chgColor = d.change >= 0 ? 'var(--green)' : 'var(--coral)';
+  tip.innerHTML = `
+    <div style="font-weight:700;font-size:13px;margin-bottom:3px">${d.name}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${d.etf}${d.price ? ' &middot; $' + d.price.toFixed(2) : ''}</div>
+    <div style="font-size:15px;font-weight:700;color:${chgColor}">${sign}${d.change.toFixed(2)}%</div>
+    <div style="font-size:10px;color:var(--dim);margin-top:5px">Weight: ${d.weight.toFixed(1)}%</div>`;
+  tip.style.display = 'block';
+  _smPositionTip(e);
+}
+
+function _smPositionTip(e) {
+  const tip = document.getElementById('sector-map-tooltip');
+  if (!tip || tip.style.display === 'none') return;
+  tip.style.left = Math.min(e.clientX + 14, window.innerWidth  - 210) + 'px';
+  tip.style.top  = Math.max(e.clientY - 10, 10)                       + 'px';
+}
+
+function _smHideTip() {
+  const tip = document.getElementById('sector-map-tooltip');
+  if (tip) tip.style.display = 'none';
 }
 </script>
 

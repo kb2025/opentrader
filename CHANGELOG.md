@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.57] - 2026-05-02
+
+### Added
+- **Sector Map page** under Equities nav — Finviz-style squarified treemap of the 11 S&P 500 SPDR sector ETFs (XLK, XLV, XLF, XLY, XLI, XLC, XLP, XLE, XLRE, XLU, XLB); block size = market cap weight, color = daily % change (dark red → gray → dark green); hover tooltip shows sector name, ETF ticker, price, and weight; data fetched live via yfinance from new `/api/market/sector-map` endpoint
+
 ## [3.6.56] - 2026-04-29
 
 ### Added
