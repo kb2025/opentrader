@@ -18399,46 +18399,88 @@ function _renderSectorMap(data) {
     return;
   }
 
-  const W   = el.clientWidth  || 900;
-  const H   = Math.max(460, Math.round(W * 0.52));
-  const PAD = 2;
+  const W   = el.clientWidth || 900;
+  const H   = Math.max(500, Math.round(W * 0.56));
+  const GAP = 3;   // gap between sector panels
+  const HDR = 18;  // sector header bar height
 
-  const items = sectors.map(s => ({ ...s, value: s.weight }));
-  const rects = _squarifyTreemap(items, PAD, PAD, W - 2 * PAD, H - 2 * PAD);
+  // Outer layout: sectors sized by total constituent market cap
+  const sectorRects = _squarifyTreemap(
+    sectors.map(s => ({ ...s, value: s.mcap })), 0, 0, W, H
+  );
 
-  const cells = rects.map(r => {
-    const color  = _sectorColor(r.change);
-    const sign   = r.change >= 0 ? '+' : '';
-    const chgStr = `${sign}${r.change.toFixed(2)}%`;
-    const cx = r.x + r.w / 2;
-    const cy = r.y + r.h / 2;
+  const svg = [];
 
-    const showName = r.w > 65 && r.h > 38;
-    const showEtf  = r.w > 44 && r.h > 22 && !showName;
-    const showChg  = r.h > 20;
+  for (const sr of sectorRects) {
+    // Apply outer gap
+    const sx = sr.x + GAP / 2, sy = sr.y + GAP / 2;
+    const sw = sr.w - GAP,     sh = sr.h - GAP;
+    if (sw < 6 || sh < 6) continue;
 
-    let text = '';
-    if (showName) {
-      const fs = Math.min(13, Math.max(9, Math.floor(r.w / 9)));
-      text += `<text x="${cx.toFixed(1)}" y="${(cy - (showChg ? 10 : 0)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="${fs}" font-weight="600" font-family="system-ui,sans-serif">${r.name}</text>`;
+    // Dark sector background
+    svg.push(`<rect x="${f(sx)}" y="${f(sy)}" width="${f(sw)}" height="${f(sh)}" fill="#0b0d18" rx="3"/>`);
+
+    // Inner stock area (below header)
+    const ix = sx + 1, iy = sy + HDR, iw = sw - 2, ih = sh - HDR - 1;
+
+    if (iw > 10 && ih > 10 && sr.stocks && sr.stocks.length) {
+      const stockRects = _squarifyTreemap(
+        sr.stocks.map(s => ({ ...s, value: s.mcap })), ix, iy, iw, ih
+      );
+
+      for (const stk of stockRects) {
+        const rw = stk.w - 1, rh = stk.h - 1;
+        if (rw < 2 || rh < 2) continue;
+        const color = _sectorColor(stk.change);
+        const cx = stk.x + stk.w / 2, cy = stk.y + stk.h / 2;
+
+        const showTicker = rw > 26 && rh > 16;
+        const showChg    = rh > 32 && rw > 24;
+        const showName   = rh > 54 && rw > 58;
+
+        let txt = '';
+        if (showName) {
+          txt += `<text x="${f(cx)}" y="${f(cy-14)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffffaa" font-size="9" font-family="system-ui,sans-serif">${stk.name}</text>`;
+        }
+        if (showTicker) {
+          const tfs = rw > 58 ? 12 : rw > 40 ? 11 : 9;
+          const ty  = showChg ? cy - 7 : cy;
+          txt += `<text x="${f(cx)}" y="${f(ty)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffff" font-size="${tfs}" font-weight="700" font-family="system-ui,sans-serif">${stk.ticker}</text>`;
+        }
+        if (showChg) {
+          const sign = stk.change >= 0 ? '+' : '';
+          const cy2  = showTicker ? cy + 9 : cy;
+          txt += `<text x="${f(cx)}" y="${f(cy2)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffffaa" font-size="9" font-family="system-ui,sans-serif">${sign}${stk.change.toFixed(2)}%</text>`;
+        }
+
+        const tip = JSON.stringify({ ticker: stk.ticker, name: stk.name, change: stk.change, price: stk.price, sector: sr.name, mcap: stk.mcap }).replace(/'/g,"&#39;");
+        svg.push(`<g data-sm='${tip}' onmouseenter="_smShowTip(event,this)" onmouseleave="_smHideTip()" style="cursor:default">
+          <rect x="${f(stk.x)}" y="${f(stk.y)}" width="${f(rw)}" height="${f(rh)}" fill="${color}" rx="2"/>
+          ${txt}</g>`);
+      }
     }
-    if (showEtf) {
-      text += `<text x="${cx.toFixed(1)}" y="${(cy - (showChg ? 8 : 0)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="10" font-weight="600" font-family="system-ui,sans-serif">${r.etf}</text>`;
-    }
-    if (showChg) {
-      const cfs = showName ? 11 : 10;
-      text += `<text x="${cx.toFixed(1)}" y="${(cy + (showName || showEtf ? 13 : 0)).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="${cfs}" font-family="system-ui,sans-serif">${chgStr}</text>`;
-    }
 
-    const tip = JSON.stringify({ name: r.name, etf: r.etf, change: r.change, price: r.price, weight: r.weight });
-    return `<g data-sm='${tip.replace(/'/g,"&#39;")}' onmouseenter="_smShowTip(event,this)" onmouseleave="_smHideTip()" style="cursor:default">
-      <rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="${color}" rx="3" stroke="var(--bg)" stroke-width="${PAD}"/>
-      ${text}
-    </g>`;
-  }).join('');
+    // Sector header bar (rendered on top of stock tiles)
+    svg.push(`<rect x="${f(sx)}" y="${f(sy)}" width="${f(sw)}" height="${HDR}" fill="#1a1e2e" rx="3"/>`);
 
-  el.innerHTML = `<svg width="${W}" height="${H}" style="display:block">${cells}</svg>`;
+    if (sw > 30) {
+      const sign = sr.change >= 0 ? '+' : '';
+      const cc   = sr.change >= 0 ? '#4ade80' : '#f87171';
+      const mid  = f(sy + HDR / 2);
+      if (sw > 130) {
+        svg.push(`<text x="${f(sx+5)}" y="${mid}" dominant-baseline="middle" fill="#c0c8e0" font-size="10" font-weight="700" font-family="system-ui,sans-serif">${sr.name}</text>`);
+        svg.push(`<text x="${f(sx+sw-5)}" y="${mid}" text-anchor="end" dominant-baseline="middle" fill="${cc}" font-size="10" font-weight="700" font-family="system-ui,sans-serif">${sign}${sr.change.toFixed(2)}%</text>`);
+      } else {
+        const lbl = sw > 65 ? sr.name : sr.etf;
+        svg.push(`<text x="${f(sx+sw/2)}" y="${mid}" text-anchor="middle" dominant-baseline="middle" fill="#c0c8e0" font-size="${sw > 65 ? 9 : 8}" font-weight="700" font-family="system-ui,sans-serif">${lbl}</text>`);
+      }
+    }
+  }
+
+  el.innerHTML = `<svg width="${W}" height="${H}" style="display:block;background:#080b14;border-radius:8px">${svg.join('')}</svg>`;
 }
+
+function f(n) { return n.toFixed(1); }
 
 function _smShowTip(e, el) {
   const tip = document.getElementById('sector-map-tooltip');
@@ -18446,12 +18488,14 @@ function _smShowTip(e, el) {
   let d;
   try { d = JSON.parse(el.dataset.sm.replace(/&#39;/g, "'")); } catch { return; }
   const sign = d.change >= 0 ? '+' : '';
-  const chgColor = d.change >= 0 ? 'var(--green)' : 'var(--coral)';
+  const cc = d.change >= 0 ? 'var(--green)' : 'var(--coral)';
+  const mcapStr = d.mcap >= 1000 ? `$${(d.mcap/1000).toFixed(2)}T` : `$${d.mcap}B`;
   tip.innerHTML = `
-    <div style="font-weight:700;font-size:13px;margin-bottom:3px">${d.name}</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${d.etf}${d.price ? ' &middot; $' + d.price.toFixed(2) : ''}</div>
-    <div style="font-size:15px;font-weight:700;color:${chgColor}">${sign}${d.change.toFixed(2)}%</div>
-    <div style="font-size:10px;color:var(--dim);margin-top:5px">Weight: ${d.weight.toFixed(1)}%</div>`;
+    <div style="font-weight:700;font-size:13px;margin-bottom:2px">${d.ticker}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:5px">${d.name} &middot; <span style="color:var(--dim)">${d.sector}</span></div>
+    ${d.price ? `<div style="font-size:11px;color:var(--dim);margin-bottom:4px">$${d.price.toFixed(2)}</div>` : ''}
+    <div style="font-size:15px;font-weight:700;color:${cc}">${sign}${d.change.toFixed(2)}%</div>
+    <div style="font-size:10px;color:var(--dim);margin-top:4px">Mkt Cap: ${mcapStr}</div>`;
   tip.style.display = 'block';
   _smPositionTip(e);
 }

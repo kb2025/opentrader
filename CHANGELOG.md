@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.58] - 2026-05-02
+
+### Changed
+- **Sector Map** — full two-level nested treemap matching Finviz layout: each sector panel now contains ~10–15 individual S&P 500 stock tiles (120+ stocks total); tile size = market cap, color = daily % change; sector header bar shows name + weighted avg change; hover tooltip shows ticker, company name, price, % change, and market cap; data cached in Redis for 5 minutes after first load
+
 ## [3.6.57] - 2026-05-02
 
 ### Added

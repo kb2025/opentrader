@@ -1889,61 +1889,143 @@ async def get_position_sector_map():
 
 @app.get("/api/market/sector-map")
 async def get_market_sector_map():
-    """Return S&P 500 sector ETF daily performance for the sector treemap."""
+    """Return S&P 500 nested sector map: each sector contains individual stocks."""
     import yfinance as _yf
     import asyncio as _asyncio
 
-    SECTOR_ETFS = [
-        {"etf": "XLK",  "name": "Technology",            "weight": 32.0},
-        {"etf": "XLV",  "name": "Health Care",            "weight": 12.7},
-        {"etf": "XLF",  "name": "Financials",             "weight": 13.5},
-        {"etf": "XLY",  "name": "Consumer Discretionary", "weight": 10.3},
-        {"etf": "XLI",  "name": "Industrials",            "weight": 8.7},
-        {"etf": "XLC",  "name": "Communication Services", "weight": 8.9},
-        {"etf": "XLP",  "name": "Consumer Staples",       "weight": 5.9},
-        {"etf": "XLE",  "name": "Energy",                 "weight": 3.6},
-        {"etf": "XLRE", "name": "Real Estate",            "weight": 2.3},
-        {"etf": "XLU",  "name": "Utilities",              "weight": 2.5},
-        {"etf": "XLB",  "name": "Materials",              "weight": 2.1},
-    ]
+    # Top S&P 500 constituents per sector: (ticker, short_name, approx_mcap_billions)
+    SECTOR_STOCKS: dict = {
+        "Technology": [
+            ("MSFT","Microsoft",3100),("AAPL","Apple",3200),("NVDA","NVIDIA",2800),
+            ("AVGO","Broadcom",900),("ORCL","Oracle",530),("CRM","Salesforce",295),
+            ("AMD","AMD",220),("NOW","ServiceNow",210),("ADBE","Adobe",195),
+            ("ACN","Accenture",190),("QCOM","Qualcomm",185),("TXN","Texas Instr",165),
+            ("AMAT","Applied Matls",160),("MU","Micron",120),("INTC","Intel",95),
+        ],
+        "Financials": [
+            ("BRK-B","Berkshire",950),("JPM","JPMorgan",780),("V","Visa",640),
+            ("MA","Mastercard",520),("BAC","Bank of Amer",335),("WFC","Wells Fargo",275),
+            ("AXP","AmEx",220),("GS","Goldman Sachs",225),("MS","Morgan Stanley",205),
+            ("PGR","Progressive",140),("BLK","BlackRock",155),("SCHW","Schwab",135),
+            ("C","Citigroup",135),
+        ],
+        "Health Care": [
+            ("LLY","Eli Lilly",850),("UNH","UnitedHealth",540),("JNJ","J&J",395),
+            ("ABBV","AbbVie",380),("MRK","Merck",315),("ISRG","Intuitive",225),
+            ("TMO","Thermo Fisher",215),("ABT","Abbott",205),("AMGN","Amgen",165),
+            ("DHR","Danaher",175),("PFE","Pfizer",155),("BMY","Bristol-Myers",140),
+        ],
+        "Consumer Discretionary": [
+            ("AMZN","Amazon",2400),("TSLA","Tesla",850),("HD","Home Depot",385),
+            ("MCD","McDonald's",235),("BKNG","Booking",180),("LOW","Lowe's",148),
+            ("TJX","TJX",145),("NKE","Nike",115),("SBUX","Starbucks",105),
+            ("CMG","Chipotle",92),("ABNB","Airbnb",82),
+        ],
+        "Industrials": [
+            ("GE","GE",235),("CAT","Caterpillar",190),("ETN","Eaton",135),
+            ("RTX","RTX",175),("HON","Honeywell",158),("UNP","Union Pacific",152),
+            ("DE","Deere",128),("LMT","Lockheed",138),("BA","Boeing",125),
+            ("UPS","UPS",88),("GEV","GE Vernova",85),("PH","Parker Hannifin",82),
+            ("FDX","FedEx",67),
+        ],
+        "Communication Services": [
+            ("META","Meta",1650),("GOOGL","Alphabet",2100),("NFLX","Netflix",400),
+            ("TMUS","T-Mobile",270),("DIS","Disney",195),("CMCSA","Comcast",145),
+            ("VZ","Verizon",165),("T","AT&T",140),("EA","Electronic Arts",32),
+        ],
+        "Consumer Staples": [
+            ("WMT","Walmart",800),("COST","Costco",440),("PG","P&G",385),
+            ("KO","Coca-Cola",315),("PEP","PepsiCo",248),("PM","Philip Morris",235),
+            ("MDLZ","Mondelez",92),("MO","Altria",88),("CL","Colgate",72),
+            ("GIS","General Mills",42),
+        ],
+        "Energy": [
+            ("XOM","ExxonMobil",570),("CVX","Chevron",295),("COP","ConocoPhillips",138),
+            ("EOG","EOG",68),("SLB","SLB",66),("MPC","Marathon",62),
+            ("PSX","Phillips 66",58),("OXY","Occidental",52),("HES","Hess",46),
+            ("VLO","Valero",45),
+        ],
+        "Real Estate": [
+            ("PLD","Prologis",108),("AMT","Amer Tower",92),("EQIX","Equinix",83),
+            ("WELL","Welltower",72),("SPG","Simon Property",62),("PSA","Public Storage",56),
+            ("O","Realty Income",53),("DLR","Digital Realty",52),("CBRE","CBRE",37),
+        ],
+        "Utilities": [
+            ("NEE","NextEra",158),("SO","Southern Co",97),("DUK","Duke Energy",92),
+            ("SRE","Sempra",57),("AEP","AEP",56),("D","Dominion",52),
+            ("EXC","Exelon",39),("PCG","PG&E",39),("XEL","Xcel Energy",36),
+        ],
+        "Materials": [
+            ("LIN","Linde",235),("SHW","Sherwin-Williams",97),("ECL","Ecolab",62),
+            ("APD","Air Products",60),("FCX","Freeport",58),("NEM","Newmont",57),
+            ("PPG","PPG",37),("NUE","Nucor",32),("IFF","IFF",22),
+        ],
+    }
 
-    tickers = [s["etf"] for s in SECTOR_ETFS]
+    SECTOR_ETFS = {
+        "Technology": "XLK", "Financials": "XLF", "Health Care": "XLV",
+        "Consumer Discretionary": "XLY", "Industrials": "XLI",
+        "Communication Services": "XLC", "Consumer Staples": "XLP",
+        "Energy": "XLE", "Real Estate": "XLRE", "Utilities": "XLU", "Materials": "XLB",
+    }
+
+    _redis = await get_redis()
+    cache_key = "market:sector_map_v2"
+    try:
+        cached = await _redis.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    all_tickers = [t for stocks in SECTOR_STOCKS.values() for t, _, _ in stocks]
 
     def _fetch():
         try:
             data = _yf.download(
-                tickers, period="5d", interval="1d",
+                all_tickers, period="5d", interval="1d",
                 progress=False, auto_adjust=True, group_by="ticker"
             )
-            results = []
-            for meta in SECTOR_ETFS:
-                etf = meta["etf"]
-                try:
-                    df = data[etf].dropna()
-                    if len(df) >= 2:
-                        close = float(df["Close"].iloc[-1])
-                        prev  = float(df["Close"].iloc[-2])
-                        chg   = (close - prev) / prev * 100
-                    elif len(df) == 1:
-                        close = float(df["Close"].iloc[-1])
-                        chg   = 0.0
-                    else:
-                        close, chg = 0.0, 0.0
-                except Exception:
-                    close, chg = 0.0, 0.0
-                results.append({
-                    "etf":    etf,
-                    "name":   meta["name"],
-                    "weight": meta["weight"],
-                    "change": round(chg, 2),
-                    "price":  round(close, 2),
-                })
         except Exception:
-            results = [{**s, "change": 0.0, "price": 0.0} for s in SECTOR_ETFS]
-        return results
+            data = None
+
+        def _chg(ticker):
+            if data is None:
+                return 0.0, 0.0
+            try:
+                s = data[ticker]["Close"].dropna()
+                if len(s) >= 2:
+                    c, p = float(s.iloc[-1]), float(s.iloc[-2])
+                    return round((c - p) / p * 100, 2), round(c, 2)
+                elif len(s) == 1:
+                    return 0.0, round(float(s.iloc[-1]), 2)
+                return 0.0, 0.0
+            except Exception:
+                return 0.0, 0.0
+
+        sectors = []
+        for sname, stocks in SECTOR_STOCKS.items():
+            enriched, total_mcap, weighted_chg = [], 0, 0.0
+            for ticker, name, mcap in stocks:
+                chg, price = _chg(ticker)
+                enriched.append({"ticker": ticker, "name": name, "mcap": mcap,
+                                  "change": chg, "price": price})
+                total_mcap  += mcap
+                weighted_chg += chg * mcap
+            avg_chg = round(weighted_chg / total_mcap, 2) if total_mcap else 0.0
+            sectors.append({
+                "name": sname, "etf": SECTOR_ETFS.get(sname, ""),
+                "mcap": total_mcap, "change": avg_chg, "stocks": enriched,
+            })
+        return sectors
 
     sectors = await _asyncio.get_event_loop().run_in_executor(None, _fetch)
-    return {"sectors": sectors, "as_of": datetime.utcnow().isoformat()}
+    result = {"sectors": sectors, "as_of": datetime.utcnow().isoformat()}
+    try:
+        await _redis.setex(cache_key, 300, json.dumps(result))
+    except Exception:
+        pass
+    return result
 
 
 # ── API — Market bars (Massive MCP) ──────────────────────────────────────────
