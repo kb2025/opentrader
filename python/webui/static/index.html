@@ -1522,13 +1522,20 @@ select option{background:var(--surface2)}
         <span style="font-size:10px;color:var(--dim);margin-left:8px">Block size = market cap weight</span>
       </div>
 
-      <div id="sector-map-container" style="width:100%;min-height:480px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden" onmousemove="_smPositionTip(event)"></div>
+      <div id="sector-map-container" style="width:100%;min-height:456px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden" onmousemove="_smPositionTip(event)"></div>
 
-      <!-- Hover tooltip -->
+      <!-- Stock tile tooltip (small, no pointer events) -->
       <div id="sector-map-tooltip" style="display:none;position:fixed;z-index:8000;
         background:#1a1e2b;border:1px solid #3b4263;border-radius:10px;
         padding:12px 16px;min-width:185px;
         box-shadow:0 8px 30px rgba(0,0,0,.7);pointer-events:none"></div>
+
+      <!-- Sector hover panel (rich, interactive) -->
+      <div id="sector-map-panel" style="display:none;position:fixed;z-index:8100;
+        background:#13172a;border:1px solid #2e3560;border-radius:12px;
+        min-width:290px;max-width:320px;max-height:560px;overflow:hidden;
+        box-shadow:0 14px 50px rgba(0,0,0,.85);font-family:system-ui,sans-serif"
+        onmouseenter="_smPanelEnter()" onmouseleave="_smPanelLeave()"></div>
 
     </div><!-- /page-trading-sectormap -->
 
@@ -18296,6 +18303,10 @@ async function _shadowLoadRun(runId) {
 // Sector Map — Finviz-style squarified treemap
 // ══════════════════════════════════════════════════════════════════════════════
 
+let _smSectorData    = {};   // sector name → { name, etf, change, stocks[] }
+let _smPanelTimer    = null; // debounce hide
+let _smCurrentSector = null; // guard stale sparkline fetches
+
 async function loadSectorMapPage() {
   const el = document.getElementById('sector-map-container');
   if (!el) return;
@@ -18399,8 +18410,10 @@ function _renderSectorMap(data) {
     return;
   }
 
+  _smSectorData = {};   // reset on each render
+
   const W   = el.clientWidth || 900;
-  const H   = Math.max(500, Math.round(W * 0.56));
+  const H   = Math.max(475, Math.round(W * 0.532));
   const GAP = 3;   // gap between sector panels
   const HDR = 18;  // sector header bar height
 
@@ -18460,7 +18473,9 @@ function _renderSectorMap(data) {
       }
     }
 
-    // Sector header bar (rendered on top of stock tiles)
+    // Sector header bar — hoverable group triggers sector panel
+    _smSectorData[sr.name] = { name: sr.name, etf: sr.etf, change: sr.change, stocks: sr.stocks || [] };
+    svg.push(`<g data-sector="${sr.name.replace(/"/g,'&quot;')}" onmouseenter="_smShowSectorPanel(event,this.dataset.sector)" onmouseleave="_smSectorLeave()" style="cursor:pointer">`);
     svg.push(`<rect x="${f(sx)}" y="${f(sy)}" width="${f(sw)}" height="${HDR}" fill="#1a1e2e" rx="3"/>`);
 
     if (sw > 30) {
@@ -18468,13 +18483,14 @@ function _renderSectorMap(data) {
       const cc   = sr.change >= 0 ? '#4ade80' : '#f87171';
       const mid  = f(sy + HDR / 2);
       if (sw > 130) {
-        svg.push(`<text x="${f(sx+5)}" y="${mid}" dominant-baseline="middle" fill="#c0c8e0" font-size="10" font-weight="700" font-family="system-ui,sans-serif">${sr.name}</text>`);
-        svg.push(`<text x="${f(sx+sw-5)}" y="${mid}" text-anchor="end" dominant-baseline="middle" fill="${cc}" font-size="10" font-weight="700" font-family="system-ui,sans-serif">${sign}${sr.change.toFixed(2)}%</text>`);
+        svg.push(`<text x="${f(sx+5)}" y="${mid}" dominant-baseline="middle" fill="#c0c8e0" font-size="10" font-weight="700" font-family="system-ui,sans-serif" pointer-events="none">${sr.name}</text>`);
+        svg.push(`<text x="${f(sx+sw-5)}" y="${mid}" text-anchor="end" dominant-baseline="middle" fill="${cc}" font-size="10" font-weight="700" font-family="system-ui,sans-serif" pointer-events="none">${sign}${sr.change.toFixed(2)}%</text>`);
       } else {
         const lbl = sw > 65 ? sr.name : sr.etf;
-        svg.push(`<text x="${f(sx+sw/2)}" y="${mid}" text-anchor="middle" dominant-baseline="middle" fill="#c0c8e0" font-size="${sw > 65 ? 9 : 8}" font-weight="700" font-family="system-ui,sans-serif">${lbl}</text>`);
+        svg.push(`<text x="${f(sx+sw/2)}" y="${mid}" text-anchor="middle" dominant-baseline="middle" fill="#c0c8e0" font-size="${sw > 65 ? 9 : 8}" font-weight="700" font-family="system-ui,sans-serif" pointer-events="none">${lbl}</text>`);
       }
     }
+    svg.push(`</g>`);
   }
 
   el.innerHTML = `<svg width="${W}" height="${H}" style="display:block;background:#080b14;border-radius:8px">${svg.join('')}</svg>`;
@@ -18510,6 +18526,116 @@ function _smPositionTip(e) {
 function _smHideTip() {
   const tip = document.getElementById('sector-map-tooltip');
   if (tip) tip.style.display = 'none';
+}
+
+// ── Sector hover panel ────────────────────────────────────────────────────────
+
+function _smSparkline(closes, w, h, up) {
+  if (!closes || closes.length < 2) return `<div style="width:${w}px;height:${h}px;display:flex;align-items:center"><div style="width:100%;height:1px;background:#2a3050"></div></div>`;
+  const mn = Math.min(...closes), mx = Math.max(...closes), r = mx - mn || 1;
+  const pts = closes.map((p, i) => {
+    const x = (i / (closes.length - 1)) * (w - 2) + 1;
+    const y = h - 1 - ((p - mn) / r) * (h - 3);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const col = up ? '#4ade80' : '#f87171';
+  return `<svg width="${w}" height="${h}" style="display:block;overflow:visible"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function _smShowSectorPanel(e, sectorName) {
+  const data = _smSectorData[sectorName];
+  if (!data) return;
+  if (_smPanelTimer) { clearTimeout(_smPanelTimer); _smPanelTimer = null; }
+
+  _smCurrentSector = sectorName;
+  const panel = document.getElementById('sector-map-panel');
+  if (!panel) return;
+
+  const sign = data.change >= 0 ? '+' : '';
+  const cc   = data.change >= 0 ? '#4ade80' : '#f87171';
+
+  let rows = '';
+  for (const stk of data.stocks) {
+    const sc   = stk.change >= 0 ? '#4ade80' : '#f87171';
+    const ss   = stk.change >= 0 ? '+' : '';
+    const price = stk.price ? `$${stk.price.toFixed(2)}` : '—';
+    rows += `<div style="display:grid;grid-template-columns:46px 1fr 62px 56px;align-items:center;gap:6px;padding:5px 14px;border-bottom:1px solid #1a1e35">
+      <div style="font-size:11px;font-weight:700;color:#dde4ff">${stk.ticker}</div>
+      <div id="smp-${stk.ticker.replace(/[^A-Z0-9]/g,'_')}" style="display:flex;align-items:center;height:22px">${_smSparkline(null,62,18,stk.change>=0)}</div>
+      <div style="font-size:11px;color:#8896b8;text-align:right">${price}</div>
+      <div style="font-size:11px;font-weight:700;color:${sc};text-align:right">${ss}${stk.change.toFixed(2)}%</div>
+    </div>`;
+  }
+
+  panel.innerHTML = `
+    <div style="padding:11px 14px 9px;border-bottom:1px solid #232848">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#e8eeff">${data.name}</div>
+          <div style="font-size:10px;color:#5a6490;margin-top:1px">${data.etf} &nbsp;·&nbsp; ${data.stocks.length} holdings</div>
+        </div>
+        <div style="font-size:15px;font-weight:700;color:${cc};flex-shrink:0">${sign}${data.change.toFixed(2)}%</div>
+      </div>
+    </div>
+    <div style="overflow-y:auto;max-height:480px">
+      <div style="display:grid;grid-template-columns:46px 1fr 62px 56px;gap:6px;padding:4px 14px 3px;border-bottom:1px solid #232848">
+        <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em">Ticker</div>
+        <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em">5-Day</div>
+        <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em;text-align:right">Price</div>
+        <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em;text-align:right">Chg</div>
+      </div>
+      ${rows}
+    </div>`;
+
+  panel.style.display = 'block';
+  _smPositionPanel(e);
+
+  // Fetch real sparklines async, guard against sector change
+  const fetchSector = sectorName;
+  const tickerStr   = data.stocks.map(s => s.ticker).join(',');
+  apiFetch(`/api/market/sparklines?tickers=${encodeURIComponent(tickerStr)}`)
+    .then(sparkData => {
+      if (_smCurrentSector !== fetchSector) return;
+      for (const stk of data.stocks) {
+        const el = document.getElementById(`smp-${stk.ticker.replace(/[^A-Z0-9]/g,'_')}`);
+        if (!el) continue;
+        const closes = sparkData[stk.ticker];
+        if (closes && closes.length >= 2) {
+          el.innerHTML = _smSparkline(closes, 62, 18, stk.change >= 0);
+        }
+      }
+    })
+    .catch(() => {});
+}
+
+function _smPositionPanel(e) {
+  const panel = document.getElementById('sector-map-panel');
+  if (!panel || panel.style.display === 'none') return;
+  const pw = 320, ph = panel.offsetHeight || 520;
+  let x = e.clientX + 16;
+  let y = e.clientY - 20;
+  if (x + pw > window.innerWidth  - 10) x = e.clientX - pw - 10;
+  if (y + ph > window.innerHeight - 10) y = window.innerHeight - ph - 10;
+  panel.style.left = Math.max(6, x) + 'px';
+  panel.style.top  = Math.max(6, y) + 'px';
+}
+
+function _smSectorLeave() {
+  _smPanelTimer = setTimeout(() => { _smHideSectorPanel(); _smPanelTimer = null; }, 160);
+}
+
+function _smPanelEnter() {
+  if (_smPanelTimer) { clearTimeout(_smPanelTimer); _smPanelTimer = null; }
+}
+
+function _smPanelLeave() {
+  _smHideSectorPanel();
+}
+
+function _smHideSectorPanel() {
+  const panel = document.getElementById('sector-map-panel');
+  if (panel) panel.style.display = 'none';
+  _smCurrentSector = null;
 }
 </script>
 

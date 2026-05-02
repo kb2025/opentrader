@@ -2049,6 +2049,71 @@ async def get_market_sector_map():
     return result
 
 
+# ── API — Sparklines for sector panel (Polygon.io) ────────────────────────────
+
+@app.get("/api/market/sparklines")
+async def get_market_sparklines(tickers: str = ""):
+    """Return last 6 daily closes per ticker for sector hover sparklines."""
+    import aiohttp as _aiohttp
+    from datetime import date as _date, timedelta as _td
+
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()][:30]
+    if not ticker_list:
+        return {}
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {t: [] for t in ticker_list}
+
+    _redis = await get_redis()
+    results: dict = {}
+    need_fetch: list = []
+
+    for tkr in ticker_list:
+        try:
+            cached = await _redis.get(f"sparkline:{tkr}")
+            if cached:
+                results[tkr] = json.loads(cached)
+                continue
+        except Exception:
+            pass
+        need_fetch.append(tkr)
+
+    if need_fetch:
+        today   = _date.today().isoformat()
+        from_dt = (_date.today() - _td(days=10)).isoformat()
+        sem     = asyncio.Semaphore(10)
+
+        async def _fetch(session, ticker):
+            async with sem:
+                url = (
+                    f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day"
+                    f"/{from_dt}/{today}?adjusted=true&sort=asc&limit=6&apiKey={api_key}"
+                )
+                try:
+                    async with session.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            d = await resp.json()
+                            closes = [round(float(b["c"]), 2)
+                                      for b in (d.get("results") or [])[-6:]]
+                            return ticker, closes
+                except Exception:
+                    pass
+                return ticker, []
+
+        async with _aiohttp.ClientSession() as session:
+            fetched = await asyncio.gather(*[_fetch(session, t) for t in need_fetch])
+
+        for tkr, closes in fetched:
+            results[tkr] = closes
+            try:
+                await _redis.setex(f"sparkline:{tkr}", 300, json.dumps(closes))
+            except Exception:
+                pass
+
+    return results
+
+
 # ── API — Market bars (Massive MCP) ──────────────────────────────────────────
 
 @app.get("/api/market/bars")
