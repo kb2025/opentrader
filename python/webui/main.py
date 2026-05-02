@@ -1889,9 +1889,8 @@ async def get_position_sector_map():
 
 @app.get("/api/market/sector-map")
 async def get_market_sector_map():
-    """Return S&P 500 nested sector map: each sector contains individual stocks."""
-    import yfinance as _yf
-    import asyncio as _asyncio
+    """Return S&P 500 nested sector map via Polygon.io snapshot (MASSIVE_API_KEY)."""
+    import aiohttp as _aiohttp
 
     # Top S&P 500 constituents per sector: (ticker, short_name, approx_mcap_billions)
     SECTOR_STOCKS: dict = {
@@ -1979,47 +1978,69 @@ async def get_market_sector_map():
         pass
 
     all_tickers = [t for stocks in SECTOR_STOCKS.values() for t, _, _ in stocks]
+    changes: dict[str, tuple[float, float]] = {}  # ticker -> (change_pct, price)
 
-    def _fetch():
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if api_key:
+        # Polygon.io snapshot: single async request for all tickers
+        tickers_str = ",".join(all_tickers)
+        url = (
+            f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+            f"?tickers={tickers_str}&apiKey={api_key}"
+        )
         try:
-            data = _yf.download(
-                all_tickers, period="5d", interval="1d",
-                progress=False, auto_adjust=True, group_by="ticker"
-            )
-        except Exception:
-            data = None
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=20)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for t in data.get("tickers", []):
+                            sym   = t.get("ticker", "")
+                            chg   = round(float(t.get("todaysChangePerc") or 0), 2)
+                            price = round(float((t.get("day") or {}).get("c") or
+                                                (t.get("lastTrade") or {}).get("p") or 0), 2)
+                            changes[sym] = (chg, price)
+        except Exception as e:
+            log.warning("sector_map.polygon_error", error=str(e))
 
-        def _chg(ticker):
-            if data is None:
-                return 0.0, 0.0
+    if not changes:
+        # Fallback: yfinance batch download via thread executor
+        import yfinance as _yf
+        import asyncio as _asyncio
+        def _yf_fetch():
             try:
-                s = data[ticker]["Close"].dropna()
-                if len(s) >= 2:
-                    c, p = float(s.iloc[-1]), float(s.iloc[-2])
-                    return round((c - p) / p * 100, 2), round(c, 2)
-                elif len(s) == 1:
-                    return 0.0, round(float(s.iloc[-1]), 2)
-                return 0.0, 0.0
+                data = _yf.download(all_tickers, period="5d", interval="1d",
+                                     progress=False, auto_adjust=True, group_by="ticker")
             except Exception:
-                return 0.0, 0.0
+                return {}
+            out = {}
+            for tkr in all_tickers:
+                try:
+                    s = data[tkr]["Close"].dropna()
+                    if len(s) >= 2:
+                        c, p = float(s.iloc[-1]), float(s.iloc[-2])
+                        out[tkr] = (round((c - p) / p * 100, 2), round(c, 2))
+                    elif len(s) == 1:
+                        out[tkr] = (0.0, round(float(s.iloc[-1]), 2))
+                except Exception:
+                    pass
+            return out
+        changes = await _asyncio.get_event_loop().run_in_executor(None, _yf_fetch)
 
-        sectors = []
-        for sname, stocks in SECTOR_STOCKS.items():
-            enriched, total_mcap, weighted_chg = [], 0, 0.0
-            for ticker, name, mcap in stocks:
-                chg, price = _chg(ticker)
-                enriched.append({"ticker": ticker, "name": name, "mcap": mcap,
-                                  "change": chg, "price": price})
-                total_mcap  += mcap
-                weighted_chg += chg * mcap
-            avg_chg = round(weighted_chg / total_mcap, 2) if total_mcap else 0.0
-            sectors.append({
-                "name": sname, "etf": SECTOR_ETFS.get(sname, ""),
-                "mcap": total_mcap, "change": avg_chg, "stocks": enriched,
-            })
-        return sectors
+    sectors = []
+    for sname, stocks in SECTOR_STOCKS.items():
+        enriched, total_mcap, weighted_chg = [], 0, 0.0
+        for ticker, name, mcap in stocks:
+            chg, price = changes.get(ticker, (0.0, 0.0))
+            enriched.append({"ticker": ticker, "name": name, "mcap": mcap,
+                              "change": chg, "price": price})
+            total_mcap  += mcap
+            weighted_chg += chg * mcap
+        avg_chg = round(weighted_chg / total_mcap, 2) if total_mcap else 0.0
+        sectors.append({
+            "name": sname, "etf": SECTOR_ETFS.get(sname, ""),
+            "mcap": total_mcap, "change": avg_chg, "stocks": enriched,
+        })
 
-    sectors = await _asyncio.get_event_loop().run_in_executor(None, _fetch)
     result = {"sectors": sectors, "as_of": datetime.utcnow().isoformat()}
     try:
         await _redis.setex(cache_key, 300, json.dumps(result))
