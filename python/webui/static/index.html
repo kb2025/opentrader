@@ -311,18 +311,6 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:var(--green)"></span>
         Equity Dividend Income
       </div>
-      <div class="nav-parent" id="nav-parent-sectormap" onclick="_smNavToggle()">
-        <span class="nav-dot" style="background:#38bdf8"></span>
-        Sector Map
-        <span id="nav-sm-chevron" style="margin-left:auto;font-size:9px;transition:transform .2s">▸</span>
-      </div>
-      <div class="nav-children" id="nav-sm-children">
-        <div class="nav-subitem" data-sm-index="sp500" onclick="_smNavSelect('sp500')">S&amp;P 500</div>
-        <div class="nav-subitem" data-sm-index="ndx100" onclick="_smNavSelect('ndx100')">Nasdaq 100</div>
-        <div class="nav-subitem" data-sm-index="dow30" onclick="_smNavSelect('dow30')">Dow 30</div>
-        <div class="nav-subitem" data-sm-index="rut2000" onclick="_smNavSelect('rut2000')">Russell 2000</div>
-        <div class="nav-subitem" data-sm-index="futures" onclick="_smNavSelect('futures')">Futures</div>
-      </div>
       <div class="nav-item" draggable="true" onclick="navigate('page-shadow-account')" data-page="page-shadow-account">
         <span class="nav-dot" style="background:#a78bfa"></span>
         Equities Hindsight
@@ -375,6 +363,18 @@ select option{background:var(--surface2)}
       <div class="nav-item" draggable="true" onclick="navigate('page-resources-groups')" data-page="page-resources-groups">
         <span class="nav-dot" style="background:#34d399"></span>
         Market Groups
+      </div>
+      <div class="nav-parent" id="nav-parent-sectormap" onclick="_smNavToggle()">
+        <span class="nav-dot" style="background:#38bdf8"></span>
+        Sector Map
+        <span id="nav-sm-chevron" style="margin-left:auto;font-size:9px;transition:transform .2s">▸</span>
+      </div>
+      <div class="nav-children" id="nav-sm-children">
+        <div class="nav-subitem" data-sm-index="sp500" onclick="_smNavSelect('sp500')">S&amp;P 500</div>
+        <div class="nav-subitem" data-sm-index="ndx100" onclick="_smNavSelect('ndx100')">Nasdaq 100</div>
+        <div class="nav-subitem" data-sm-index="dow30" onclick="_smNavSelect('dow30')">Dow 30</div>
+        <div class="nav-subitem" data-sm-index="rut2000" onclick="_smNavSelect('rut2000')">Russell 2000</div>
+        <div class="nav-subitem" data-sm-index="futures" onclick="_smNavSelect('futures')">Futures</div>
       </div>
     </div>
     <div class="nav-group" data-group="platform">
