@@ -7666,6 +7666,13 @@ const CFG_META = {
         hint: 'Get a free key at console.cloud.google.com → APIs → Books API — enables ISBN lookups in the Library' },
     ],
   },
+  alphavantage: {
+    label: 'Alpha Vantage', letter: 'AV', bg: '#16a34a', fg: '#fff',
+    fields: [
+      { key: 'ALPHA_VANTAGE_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
+        hint: 'Get a free key at alphavantage.co/support/#api-key — required for news sentiment scraper (ot-scraper-news)' },
+    ],
+  },
   unusualwhales: {
     label: 'Unusual Whales', letter: 'U', bg: '#f97316', fg: '#fff',
     fields: [

@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.71] - 2026-05-03
+
+### Fixed
+- **Alpha Vantage API key** — added `alphavantage` entry to `SERVICE_CONFIG` in User Configuration page so the `ALPHA_VANTAGE_API_KEY` field is visible and editable alongside other service credentials
+
 ## [3.6.70] - 2026-05-03
 
 ### Added
