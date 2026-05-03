@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.64] - 2026-05-03
+
+### Added
+- **Equity Journal** — ✏ journal button on every row in the Equity Dashboard; clicking opens a modal with two fields: **Commission / Fees** (dollar amount paid entering/exiting the position) and **Notes** (thesis, rationale, lessons); fees are shown in a new "Fees" column in the table (amber, visible at a glance); button turns amber when a note or fee exists
+- **`equity_journal` DB table** — stores journal entries keyed by `(account_id, ticker)` so a single journal entry covers all fills in a position; survives position re-loads from broker
+- **`GET /api/equity/journal/{account_id}`** — returns all journal entries for an account (batch, called on page load)
+- **`GET /api/equity/journal/{account_id}/{ticker}`** — single-position lookup
+- **`PATCH /api/equity/journal/{account_id}/{ticker}`** — upsert notes and trade_cost; re-renders the equity card in-place after save without a full page reload
+
 ## [3.6.63] - 2026-05-03
 
 ### Changed

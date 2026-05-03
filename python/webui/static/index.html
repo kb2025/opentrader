@@ -2723,6 +2723,31 @@ select option{background:var(--surface2)}
       </div>
     </div>
 
+    <!-- ── Equity Journal Modal ── -->
+    <div id="eq-journal-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center" onclick="if(event.target===this)_eqJournalClose()">
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:24px;width:500px;max-width:93vw;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-size:15px;font-weight:700;color:var(--fg)">Trade Journal</div>
+          <button onclick="_eqJournalClose()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>
+        </div>
+        <div id="eq-journal-label" style="font-size:11px;color:var(--muted);margin-bottom:14px"></div>
+        <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Commission / Fees ($)</label>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:5px;margin-bottom:14px">
+          <span style="color:var(--muted);font-size:13px">$</span>
+          <input id="eq-journal-cost" type="number" step="0.01" min="0" placeholder="0.00"
+            style="width:120px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px">
+          <span style="font-size:11px;color:var(--dim)">Total fees paid entering/exiting this position</span>
+        </div>
+        <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Notes</label>
+        <textarea id="eq-journal-notes" rows="6" placeholder="Entry thesis, setup rationale, mistakes, lessons learned…"
+          style="width:100%;margin-top:5px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;resize:vertical;box-sizing:border-box;line-height:1.5"></textarea>
+        <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+          <button onclick="_eqJournalClose()" style="background:none;border:1px solid var(--border);color:var(--fg);padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer">Cancel</button>
+          <button onclick="_eqJournalSave()" style="background:var(--blue);color:#fff;border:none;padding:7px 18px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ════════════════════════════════════════
          PAGE: Strategy Engineer
     ════════════════════════════════════════ -->
@@ -6644,7 +6669,8 @@ function _isEquityPosition(p) {
   return true;
 }
 
-function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap) {
+function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap) {
+  journalMap = journalMap || {};
   sectorMap = sectorMap || {};
   const brokerColors = { tradier:'#1da462', alpaca:'#ffa500', webull:'#e82f3e' };
   const bal     = acct.balances || {};
@@ -6736,6 +6762,15 @@ function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap) {
     const fgBadgeHtml = _fgBadge(sent.score != null ? sent.score : null, sent.label);
     const fgSparkHtml = _fgSparkline(sent.trend);
 
+    // Journal data for this position
+    const jEntry      = journalMap[sym] || {};
+    const jHasNotes   = !!(jEntry.notes);
+    const jCost       = jEntry.trade_cost != null ? jEntry.trade_cost : null;
+    const jCostStr    = jCost != null ? `<span style="color:var(--amber);font-size:11px">$${jCost.toFixed(2)}</span>` : '<span style="color:var(--dim)">—</span>';
+    const jBtnColor   = (jHasNotes || jCost != null) ? '#f59e0b' : 'var(--muted)';
+    const jTitle      = jHasNotes ? 'Edit journal note' : 'Add journal note';
+    const safeNotes   = (jEntry.notes || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n');
+
     return `<tr>
       <td><button class="btn btn-sm" style="padding:3px 8px;font-size:11px;background:rgba(99,102,241,.18);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)" onclick="openLiquidateDialog('${sym}',${Math.abs(qty)},'${side}','${safeLabel}',${last})">Liquidate</button></td>
       <td style="font-size:11px;color:var(--muted);white-space:nowrap">${dateStr}</td>
@@ -6748,13 +6783,19 @@ function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap) {
       <td>${_fmtUsd(mv)}</td>
       <td style="${plCls}">${plStr}</td>
       <td>${plPctStr}</td>
+      <td style="text-align:right">${jCostStr}</td>
       <td style="border-left:2px solid var(--border)">${sigCell}</td>
       <td style="min-width:110px">${scoreCell}</td>
       <td style="white-space:nowrap">${fgBadgeHtml}</td>
       <td>${fgSparkHtml}</td>
       <td style="font-size:11px;color:var(--muted)">${ageStr}</td>
+      <td style="text-align:center">
+        <button onclick="_eqJournalOpen('${safeLabel}','${sym}',${jCost ?? 'null'},'${safeNotes}')"
+          style="background:none;border:none;cursor:pointer;padding:2px 5px;border-radius:4px;color:${jBtnColor};font-size:13px"
+          title="${jTitle}">✏</button>
+      </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="16" class="empty-state" style="padding:12px">No open positions</td></tr>`;
+  }).join('') || `<tr><td colspan="18" class="empty-state" style="padding:12px">No open positions</td></tr>`;
 
   const heatmap = _renderAccountHeatmap(equityPositions, acctKey);
   const bodyId = `unified-card-${acctKey}`;
@@ -6802,11 +6843,13 @@ function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap) {
           <th>Market Value</th>
           <th>P&amp;L $</th>
           <th title="Unrealized return as % of cost basis">P&amp;L %</th>
+          <th title="Total commissions/fees paid for this position">Fees</th>
           <th style="border-left:2px solid var(--border)">Signal</th>
           <th title="OVTLYR conviction score (0–100)">Confidence</th>
           <th>Fear &amp; Greed</th>
           <th>F&amp;G Trend</th>
           <th>Signal Age</th>
+          <th title="Journal note">✏</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -7055,14 +7098,22 @@ async function loadUnifiedPositions(force = false) {
       signalMap[row.symbol] = row;
     }
 
+    // Pre-fetch equity journal data for all accounts in parallel
+    const journalMaps = {};
+    await Promise.all(accounts.map(async a => {
+      try {
+        journalMaps[a.label] = await apiFetch(`/api/equity/journal/${encodeURIComponent(a.label)}`);
+      } catch { journalMaps[a.label] = {}; }
+    }));
+
     // Store for checkbox re-render
-    _unifiedLastData = { accounts, signalMap, sectorMap, sentData };
+    _unifiedLastData = { accounts, signalMap, sectorMap, sentData, journalMaps };
 
     // Build risk charts
     _buildRiskCharts(_unifiedLastData);
 
     // Render tables (always show all accounts regardless of paper filter)
-    container.innerHTML = accounts.map(a => _renderUnifiedCard(a, signalMap, sentData, sectorMap)).join('');
+    container.innerHTML = accounts.map(a => _renderUnifiedCard(a, signalMap, sentData, sectorMap, journalMaps[a.label] || {})).join('');
     if (refreshBtn) refreshBtn.disabled = false;
 
   } catch(e) {
@@ -17028,6 +17079,59 @@ async function _alertReactivate(id) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Trade Journal (option positions)
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ── Equity Journal ────────────────────────────────────────────────────────────
+let _eqJournalAccount = null;
+let _eqJournalTicker  = null;
+
+function _eqJournalOpen(accountLabel, ticker, existingCost, existingNotes) {
+  _eqJournalAccount = accountLabel;
+  _eqJournalTicker  = ticker;
+  document.getElementById('eq-journal-label').textContent = `${ticker} · ${accountLabel}`;
+  document.getElementById('eq-journal-cost').value  = existingCost != null ? existingCost : '';
+  document.getElementById('eq-journal-notes').value = (existingNotes || '').replace(/\\n/g, '\n');
+  const modal = document.getElementById('eq-journal-modal');
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('eq-journal-cost').focus(), 50);
+}
+
+function _eqJournalClose() {
+  document.getElementById('eq-journal-modal').style.display = 'none';
+  _eqJournalAccount = null;
+  _eqJournalTicker  = null;
+}
+
+async function _eqJournalSave() {
+  if (!_eqJournalAccount || !_eqJournalTicker) return;
+  const costRaw = document.getElementById('eq-journal-cost').value.trim();
+  const notes   = document.getElementById('eq-journal-notes').value.trim() || null;
+  const cost    = costRaw !== '' ? parseFloat(costRaw) : null;
+  try {
+    await apiFetch(`/api/equity/journal/${encodeURIComponent(_eqJournalAccount)}/${_eqJournalTicker}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ notes, trade_cost: cost }),
+    });
+    _eqJournalClose();
+    toast('success', 'Journal saved', notes ? 'Note and fees updated' : 'Fees updated');
+    // Reload the card to reflect updated fees/note badge
+    if (_unifiedLastData) {
+      const acct = (_unifiedLastData.accounts || []).find(a => a.label === _eqJournalAccount);
+      const journalMaps = _unifiedLastData.journalMaps || {};
+      if (!journalMaps[_eqJournalAccount]) journalMaps[_eqJournalAccount] = {};
+      journalMaps[_eqJournalAccount][_eqJournalTicker] = { notes, trade_cost: cost };
+      _unifiedLastData.journalMaps = journalMaps;
+      const container = document.getElementById('unified-container');
+      if (container) {
+        container.innerHTML = (_unifiedLastData.accounts || []).map(a =>
+          _renderUnifiedCard(a, _unifiedLastData.signalMap, _unifiedLastData.sentData,
+                             _unifiedLastData.sectorMap, (journalMaps[a.label] || {}))
+        ).join('');
+      }
+    }
+  } catch(e) {
+    toast('error', 'Save failed', e.message);
+  }
+}
 
 let _journalPositionId = null;
 

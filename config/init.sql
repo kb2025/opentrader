@@ -347,3 +347,14 @@ CREATE TABLE IF NOT EXISTS shadow_runs (
 );
 CREATE INDEX IF NOT EXISTS shadow_runs_ts    ON shadow_runs (ts DESC);
 CREATE INDEX IF NOT EXISTS shadow_runs_dates ON shadow_runs (date_from, date_to);
+
+-- Equity position journal (notes + commission per account+ticker)
+CREATE TABLE IF NOT EXISTS equity_journal (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id  TEXT NOT NULL,
+  ticker      TEXT NOT NULL,
+  notes       TEXT,
+  trade_cost  NUMERIC(10,4),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (account_id, ticker)
+);

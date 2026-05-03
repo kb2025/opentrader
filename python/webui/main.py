@@ -9740,6 +9740,61 @@ async def patch_trade_notes(trade_id: str, body: dict):
     return {"ok": True}
 
 
+# ── Equity Position Journal (notes + commission per account+ticker) ────────────
+
+@app.get("/api/equity/journal/{account_id}")
+async def get_equity_journal_all(account_id: str):
+    """Return all journal entries for an account as {ticker: {notes, trade_cost}}."""
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        "SELECT ticker, notes, trade_cost FROM equity_journal WHERE account_id=$1",
+        account_id,
+    )
+    return {
+        r["ticker"]: {
+            "notes":      r["notes"],
+            "trade_cost": float(r["trade_cost"]) if r["trade_cost"] is not None else None,
+        }
+        for r in rows
+    }
+
+
+@app.get("/api/equity/journal/{account_id}/{ticker}")
+async def get_equity_journal(account_id: str, ticker: str):
+    pool = await _get_db_pool()
+    row = await pool.fetchrow(
+        "SELECT notes, trade_cost, updated_at FROM equity_journal WHERE account_id=$1 AND ticker=$2",
+        account_id, ticker.upper(),
+    )
+    if not row:
+        return {"notes": None, "trade_cost": None}
+    return {
+        "notes":      row["notes"],
+        "trade_cost": float(row["trade_cost"]) if row["trade_cost"] is not None else None,
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
+@app.patch("/api/equity/journal/{account_id}/{ticker}")
+async def patch_equity_journal(account_id: str, ticker: str, body: dict):
+    pool = await _get_db_pool()
+    notes      = body.get("notes") or None
+    trade_cost = body.get("trade_cost")
+    if trade_cost is not None:
+        try:
+            trade_cost = float(trade_cost)
+        except (TypeError, ValueError):
+            trade_cost = None
+    await pool.execute(
+        """INSERT INTO equity_journal (account_id, ticker, notes, trade_cost, updated_at)
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (account_id, ticker)
+           DO UPDATE SET notes=$3, trade_cost=$4, updated_at=NOW()""",
+        account_id, ticker.upper(), notes, trade_cost,
+    )
+    return {"ok": True}
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Price Alerts
 # ══════════════════════════════════════════════════════════════════════════════
