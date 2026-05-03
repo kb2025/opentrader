@@ -613,11 +613,11 @@ KNOWN_AGENTS = [
     "scraper-yahoo-sentiment",
     "aggregator", "review-agent", "broker-gateway", "directive-agent",
     # MCP servers & chat agent — health derived from Podman (no heartbeat)
-    "mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "chat-agent",
+    "mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-webull", "chat-agent",
 ]
 
 # Containers that don't publish heartbeats — health is read from Podman status
-PODMAN_HEALTH_ONLY = {"mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "chat-agent"}
+PODMAN_HEALTH_ONLY = {"mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-webull", "chat-agent"}
 
 CONTAINER_MAP = {
     "orchestrator":    "ot-orchestrator",
