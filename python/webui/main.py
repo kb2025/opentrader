@@ -10038,19 +10038,20 @@ async def get_stock_analysis(ticker: str, generate: bool = False, token: str = "
             await pool.execute(
                 """INSERT INTO stock_analysis_snapshots
                    (ticker, signal, confidence, price, rsi, atr, support, resistance,
-                    ma_50, ma_200, trend, bullish_factors, bearish_factors, raw)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)""",
+                    ma_50, ma_200, trend, bullish_factors, bearish_factors, raw, summary)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)""",
                 ticker, snapshot["signal"], snapshot["confidence"], snapshot["price"],
                 snapshot.get("rsi"), snapshot.get("atr"), snapshot.get("support"),
                 snapshot.get("resistance"), snapshot.get("ma_50"), snapshot.get("ma_200"),
                 snapshot.get("trend"), json.dumps(snapshot.get("bullish_factors", [])),
                 json.dumps(snapshot.get("bearish_factors", [])), json.dumps(snapshot.get("raw", {})),
+                snapshot.get("summary"),
             )
             return {"ticker": ticker, "analysis": snapshot, "fresh": True}
 
     row = await pool.fetchrow(
         """SELECT ts, signal, confidence, price, rsi, atr, support, resistance,
-                  ma_50, ma_200, trend, bullish_factors, bearish_factors
+                  ma_50, ma_200, trend, bullish_factors, bearish_factors, summary
            FROM stock_analysis_snapshots
            WHERE ticker = $1
            ORDER BY ts DESC LIMIT 1""",
@@ -10074,6 +10075,7 @@ async def get_stock_analysis(ticker: str, generate: bool = False, token: str = "
             "trend":           row["trend"],
             "bullish_factors": row["bullish_factors"] or [],
             "bearish_factors": row["bearish_factors"] or [],
+            "summary":         row["summary"],
         },
     }
 
@@ -10137,6 +10139,9 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
             elif score < -0.2:
                 bearish_factors.append(f"Sentiment score={score:.2f}")
 
+        trend = "uptrend" if signal == "BUY" else ("downtrend" if signal == "SELL" else "sideways")
+        summary = await _generate_stock_summary(ticker, signal, confidence, price, rsi, trend, bullish_factors, bearish_factors)
+
         return {
             "signal":          signal,
             "confidence":      round(confidence, 3),
@@ -10147,9 +10152,10 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
             "resistance":      None,
             "ma_50":           None,
             "ma_200":          None,
-            "trend":           "uptrend" if signal == "BUY" else ("downtrend" if signal == "SELL" else "sideways"),
+            "trend":           trend,
             "bullish_factors": bullish_factors,
             "bearish_factors": bearish_factors,
+            "summary":         summary,
             "raw":             {
                 "ovtlyr":    ovtlyr,
                 "sentiment": sent,
@@ -10159,6 +10165,66 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
     except Exception as e:
         log.warning("stock_analysis.generate_error", ticker=ticker, error=str(e))
         return None
+
+
+async def _generate_stock_summary(
+    ticker: str, signal: str, confidence: float, price: float,
+    rsi, trend: str, bullish_factors: list, bearish_factors: list,
+) -> str:
+    """Call OpenRouter to produce a concise natural-language market snapshot. Falls back to a template."""
+    bull_str = "; ".join(bullish_factors[:3]) or "none identified"
+    bear_str = "; ".join(bearish_factors[:3]) or "none identified"
+    rsi_str  = f"{float(rsi):.1f}" if rsi else "N/A"
+
+    fallback = (
+        f"{ticker} shows a {signal} signal ({confidence*100:.0f}% confidence) with a {trend} bias. "
+        + (f"Bullish: {bull_str}. " if bullish_factors else "")
+        + (f"Bearish: {bear_str}." if bearish_factors else "")
+    ).strip()
+
+    env = _read_env_file()
+    openrouter_key = env.get("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_API_KEY", "")
+    if not openrouter_key or openrouter_key.startswith("your_"):
+        return fallback
+
+    model = env.get("LLM_ANALYST_MODEL") or os.getenv("LLM_ANALYST_MODEL", "") or \
+            env.get("LLM_PREDICTOR_MODEL") or os.getenv("LLM_PREDICTOR_MODEL", "anthropic/claude-haiku-4-5")
+
+    prompt = (
+        "Write one concise market snapshot paragraph for a trading dashboard.\n"
+        "Rules: under 60 words, specific and grounded in the supplied metrics only, "
+        "mention the strongest support and strongest risk, no bullet points, "
+        "no AI disclaimers, no uncertainty hedges.\n\n"
+        f"Symbol: {ticker}\n"
+        f"Signal: {signal}\n"
+        f"Confidence: {confidence*100:.0f}%\n"
+        f"Trend: {trend}\n"
+        f"Price: {'${:.2f}'.format(price) if price else 'N/A'}\n"
+        f"RSI: {rsi_str}\n"
+        f"Bullish factors: {bull_str}\n"
+        f"Bearish factors: {bear_str}\n"
+    )
+
+    try:
+        import aiohttp as _aiohttp
+        async with _aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": [{"role": "user", "content": prompt}],
+                      "max_tokens": 120, "temperature": 0.4},
+                timeout=_aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                data = await resp.json()
+        choices = data.get("choices") or []
+        if choices:
+            content = (choices[0].get("message") or {}).get("content", "")
+            if content and content.strip():
+                return content.strip()[:500]
+    except Exception as e:
+        log.warning("stock_analysis.llm_error", ticker=ticker, error=str(e))
+
+    return fallback
 
 
 @app.get("/api/market/stock-analysis")

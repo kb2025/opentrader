@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.77] - 2026-05-03
+
+### Added
+- **Quick Intel LLM summary** — `_generate_stock_summary()` calls OpenRouter after assembling signal data and appends a concise natural-language market snapshot (≤60 words) below the signal/confidence/factors display; falls back to a template string when `OPENROUTER_API_KEY` is not configured; `summary` column added to `stock_analysis_snapshots` table
+
 ## [3.6.76] - 2026-05-03
 
 ### Fixed
