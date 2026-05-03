@@ -640,6 +640,7 @@ CONTAINER_MAP = {
     "mcp-tradingview":    "ot-mcp-tradingview",
     "mcp-massive":        "ot-mcp-massive",
     "mcp-unusualwhales":  "ot-mcp-unusualwhales",
+    "mcp-webull":         "ot-mcp-webull",
     "chat-agent":         "ot-chat-agent",
     "redis":           "ot-redis",
     "timescaledb":     "ot-timescaledb",

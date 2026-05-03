@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.69] - 2026-05-03
+
+### Changed
+- **Platform Dashboard topology** — added `MCP Webull` node (`ot-mcp-webull`) with heartbeat edge to Orchestrator, mcp/tools edge to Broker Gateway, and chat-agent query edges; matches all 28 running containers
+- **Logs page** — added `mcp-webull` to container select dropdown
+- **`CONTAINER_MAP`** — added `mcp-webull → ot-mcp-webull` mapping for log fetch
+
 ## [3.6.68] - 2026-05-03
 
 ### Changed
