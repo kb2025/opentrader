@@ -31,6 +31,12 @@ from .jobs import (
     job_pre_market_prep,
     job_daily_summary,
     job_options_report,
+    job_intraday_nav_snapshot,
+    job_prune_portfolio_history,
+    job_scrape_etf_flows,
+    job_scrape_macro_regime,
+    job_scrape_news_sentiment,
+    job_update_trending_symbols,
 )
 from .calendar import TZ
 
@@ -197,6 +203,57 @@ class Scheduler(BaseAgent):
             IntervalTrigger(seconds=30, timezone=TZ),
             args=[r], id="hb_check",
             name="Watchdog status check",
+            replace_existing=True,
+        )
+
+        # ── Feature 1: Intraday NAV + pruning ─────────────────────────────
+        self.apscheduler.add_job(
+            job_intraday_nav_snapshot,
+            IntervalTrigger(minutes=30, timezone=TZ),
+            args=[r], id="intraday_nav_snapshot",
+            name="Intraday portfolio NAV snapshot every 30m",
+            replace_existing=True,
+        )
+
+        self.apscheduler.add_job(
+            job_prune_portfolio_history,
+            CronTrigger(hour=2, minute=0, timezone=TZ),
+            args=[r], id="prune_portfolio_history",
+            name="Prune/compress intraday NAV history (nightly 2am ET)",
+            replace_existing=True,
+        )
+
+        # ── Features 3-5: Market data scrapers ────────────────────────────
+        self.apscheduler.add_job(
+            job_scrape_etf_flows,
+            CronTrigger(hour=16, minute=30, timezone=TZ),
+            args=[r], id="scrape_etf_flows",
+            name="ETF capital flow snapshot (daily after close)",
+            replace_existing=True,
+        )
+
+        self.apscheduler.add_job(
+            job_scrape_macro_regime,
+            CronTrigger(hour=16, minute=35, timezone=TZ),
+            args=[r], id="scrape_macro_regime",
+            name="Macro regime snapshot (daily after close)",
+            replace_existing=True,
+        )
+
+        self.apscheduler.add_job(
+            job_scrape_news_sentiment,
+            IntervalTrigger(minutes=30, timezone=TZ),
+            args=[r], id="scrape_news_sentiment",
+            name="Alpha Vantage news sentiment every 30m",
+            replace_existing=True,
+        )
+
+        # ── Feature 7: Trending symbols ────────────────────────────────────
+        self.apscheduler.add_job(
+            job_update_trending_symbols,
+            IntervalTrigger(minutes=5, timezone=TZ),
+            args=[r], id="update_trending_symbols",
+            name="Trending symbols refresh every 5m",
             replace_existing=True,
         )
 

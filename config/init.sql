@@ -373,3 +373,142 @@ CREATE TABLE IF NOT EXISTS sector_leader_history (
 );
 CREATE INDEX IF NOT EXISTS slh_date_sector ON sector_leader_history (trade_date DESC, sector);
 CREATE INDEX IF NOT EXISTS slh_ticker_date ON sector_leader_history (ticker, trade_date DESC);
+
+-- ── Feature 1: Intraday portfolio NAV snapshots ───────────────────────────────
+-- High-frequency NAV captures (every 30 min during market hours).
+-- Pruning job compresses: full res (24h) → 15-min (7d) → hourly (30d) → daily retained in portfolio_snapshots.
+CREATE TABLE IF NOT EXISTS portfolio_intraday_snapshots (
+    id            UUID        NOT NULL DEFAULT gen_random_uuid(),
+    ts            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    account_label TEXT        NOT NULL,
+    broker        TEXT,
+    mode          TEXT        NOT NULL DEFAULT 'live',
+    total_nav     NUMERIC     NOT NULL,
+    cash          NUMERIC,
+    equity_value  NUMERIC,
+    day_pnl       NUMERIC,
+    bucket        TEXT        NOT NULL DEFAULT 'raw',  -- raw | 15min | hourly
+    PRIMARY KEY (ts, id)
+);
+SELECT create_hypertable('portfolio_intraday_snapshots', 'ts', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS pis_account_ts ON portfolio_intraday_snapshots (account_label, ts DESC);
+CREATE INDEX IF NOT EXISTS pis_bucket_ts  ON portfolio_intraday_snapshots (bucket, ts DESC);
+
+-- ── Feature 3: ETF capital flow snapshots ────────────────────────────────────
+-- Dollar-volume flow relative to 30-day average for key ETFs.
+CREATE TABLE IF NOT EXISTS etf_flow_snapshots (
+    id            UUID        NOT NULL DEFAULT gen_random_uuid(),
+    ts            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ticker        TEXT        NOT NULL,
+    name          TEXT,
+    category      TEXT,       -- equity | sector | bond | commodity | volatility
+    price         NUMERIC,
+    volume        BIGINT,
+    dollar_volume NUMERIC,    -- price × volume
+    avg_volume_30d BIGINT,
+    flow_ratio    NUMERIC,    -- dollar_volume / 30d_avg_dollar_volume
+    change_pct    NUMERIC,    -- daily % change
+    PRIMARY KEY (ts, id)
+);
+SELECT create_hypertable('etf_flow_snapshots', 'ts', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS efs_ticker_ts ON etf_flow_snapshots (ticker, ts DESC);
+CREATE INDEX IF NOT EXISTS efs_category  ON etf_flow_snapshots (category, ts DESC);
+
+-- ── Feature 4: Macro regime snapshots ────────────────────────────────────────
+-- Aggregate macro signals into a single regime snapshot.
+CREATE TABLE IF NOT EXISTS macro_regime_snapshots (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    ts              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    regime          TEXT        NOT NULL,  -- risk_on | risk_off | neutral
+    bull_signals    INT         NOT NULL DEFAULT 0,
+    bear_signals    INT         NOT NULL DEFAULT 0,
+    total_signals   INT         NOT NULL DEFAULT 0,
+    regime_score    NUMERIC,    -- -1.0 (bear) to +1.0 (bull)
+    spy_trend       TEXT,       -- above_200sma | below_200sma
+    vix_level       NUMERIC,
+    dxy_trend       TEXT,       -- rising | falling | neutral
+    tlt_trend       TEXT,       -- rising | falling | neutral
+    breadth_pct     NUMERIC,    -- from OVTLYR
+    raw             JSONB,
+    PRIMARY KEY (ts, id)
+);
+SELECT create_hypertable('macro_regime_snapshots', 'ts', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS mrs_ts ON macro_regime_snapshots (ts DESC);
+
+-- ── Feature 5: News sentiment snapshots ──────────────────────────────────────
+-- Categorized financial news from Alpha Vantage.
+CREATE TABLE IF NOT EXISTS news_sentiment_snapshots (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    ts              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    category        TEXT        NOT NULL,  -- equities | macro | energy | technology | etc.
+    ticker          TEXT,                  -- NULL for category-level entries
+    title           TEXT,
+    source          TEXT,
+    url             TEXT,
+    overall_score   NUMERIC,    -- -1 to +1
+    relevance_score NUMERIC,    -- 0 to 1
+    topics          JSONB,
+    raw             JSONB,
+    PRIMARY KEY (ts, id)
+);
+SELECT create_hypertable('news_sentiment_snapshots', 'ts', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS nss_category_ts ON news_sentiment_snapshots (category, ts DESC);
+CREATE INDEX IF NOT EXISTS nss_ticker_ts   ON news_sentiment_snapshots (ticker, ts DESC) WHERE ticker IS NOT NULL;
+
+-- ── Feature 6: Per-symbol technical analysis snapshots ───────────────────────
+-- BUY/HOLD/SELL composite with support/resistance levels.
+CREATE TABLE IF NOT EXISTS stock_analysis_snapshots (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    ts              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ticker          TEXT        NOT NULL,
+    signal          TEXT        NOT NULL,  -- BUY | HOLD | SELL
+    confidence      NUMERIC,    -- 0.0 to 1.0
+    price           NUMERIC,
+    rsi             NUMERIC,
+    atr             NUMERIC,
+    support         NUMERIC,
+    resistance      NUMERIC,
+    ma_50           NUMERIC,
+    ma_200          NUMERIC,
+    trend           TEXT,       -- uptrend | downtrend | sideways
+    bullish_factors JSONB,
+    bearish_factors JSONB,
+    raw             JSONB,
+    PRIMARY KEY (ts, id)
+);
+SELECT create_hypertable('stock_analysis_snapshots', 'ts', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS sas_ticker_ts ON stock_analysis_snapshots (ticker, ts DESC);
+
+-- ── Feature 8: Polymarket paper trading ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS polymarket_positions (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    ts              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    condition_id    TEXT        NOT NULL,
+    token_id        TEXT        NOT NULL,
+    market_slug     TEXT,
+    market_question TEXT,
+    outcome         TEXT,       -- YES | NO | outcome label
+    side            TEXT        NOT NULL CHECK (side IN ('buy','sell')),
+    qty             NUMERIC     NOT NULL,
+    entry_price     NUMERIC     NOT NULL,  -- probability 0-1
+    current_price   NUMERIC,
+    status          TEXT        NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed','settled')),
+    exit_price      NUMERIC,
+    pnl             NUMERIC,
+    settled_at      TIMESTAMPTZ,
+    raw             JSONB
+);
+CREATE INDEX IF NOT EXISTS pp_condition   ON polymarket_positions (condition_id, ts DESC);
+CREATE INDEX IF NOT EXISTS pp_status      ON polymarket_positions (status);
+
+CREATE TABLE IF NOT EXISTS polymarket_trades (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid(),
+    ts              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    position_id     UUID        REFERENCES polymarket_positions(id),
+    action          TEXT        NOT NULL,  -- open | close | settle
+    qty             NUMERIC     NOT NULL,
+    price           NUMERIC     NOT NULL,
+    pnl             NUMERIC,
+    PRIMARY KEY (ts, id)
+);
+SELECT create_hypertable('polymarket_trades', 'ts', if_not_exists => TRUE);

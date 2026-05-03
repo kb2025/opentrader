@@ -359,6 +359,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#60a5fa"></span>
         Backtester
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-polymarket')" data-page="page-polymarket">
+        <span class="nav-dot" style="background:#f97316"></span>
+        Polymarket
+      </div>
       <div class="nav-parent" id="nav-parent-sectorinsight" onclick="_siNavToggle()">
         <span class="nav-dot" style="background:#a78bfa"></span>
         Sector Insight
@@ -1486,6 +1490,89 @@ select option{background:var(--surface2)}
               <tr><td colspan="7" class="empty-state">Select a list above</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- ── Trending Symbols + ETF Flows row ───────────────────────── -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header" style="padding:10px 16px">
+            <span class="card-title">Trending Symbols</span>
+            <button class="btn btn-ghost btn-xs" onclick="loadTrendingSymbols()">&#8635;</button>
+          </div>
+          <div class="card-body" style="padding:8px 0;max-height:260px;overflow-y:auto">
+            <div id="trending-symbols-list"><div style="padding:12px 16px;font-size:12px;color:var(--muted)">Loading…</div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header" style="padding:10px 16px">
+            <span class="card-title">ETF Capital Flows</span>
+            <select id="etf-flows-category" onchange="loadETFFlows()" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
+              <option value="">All</option>
+              <option value="equity">Broad Equity</option>
+              <option value="sector">Sectors</option>
+              <option value="bond">Bonds</option>
+              <option value="commodity">Commodities</option>
+              <option value="volatility">Volatility</option>
+              <option value="crypto">Crypto ETFs</option>
+            </select>
+          </div>
+          <div class="card-body" style="padding:0;max-height:260px;overflow-y:auto">
+            <table style="width:100%;border-collapse:collapse" id="etf-flows-table">
+              <thead><tr style="background:var(--surface2)">
+                <th style="padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);text-align:left">ETF</th>
+                <th style="padding:5px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Flow Ratio</th>
+                <th style="padding:5px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Day %</th>
+                <th style="padding:5px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Price</th>
+              </tr></thead>
+              <tbody id="etf-flows-tbody"><tr><td colspan="4" style="padding:12px;text-align:center;font-size:12px;color:var(--muted)">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Macro Regime + News Sentiment row ──────────────────────── -->
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:12px;margin-bottom:16px">
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header" style="padding:10px 16px">
+            <span class="card-title">Macro Regime</span>
+            <button class="btn btn-ghost btn-xs" onclick="loadMacroRegime()">&#8635;</button>
+          </div>
+          <div class="card-body" style="padding:12px 16px">
+            <div id="macro-regime-widget"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header" style="padding:10px 16px">
+            <span class="card-title">News Sentiment</span>
+            <select id="news-category-filter" onchange="loadNewsSentiment()" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
+              <option value="">All</option>
+              <option value="equities">Equities</option>
+              <option value="macro">Macro</option>
+              <option value="technology">Technology</option>
+              <option value="energy">Energy</option>
+            </select>
+          </div>
+          <div class="card-body" style="padding:0;max-height:260px;overflow-y:auto">
+            <div id="news-sentiment-list"><div style="padding:12px 16px;font-size:12px;color:var(--muted)">Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Quick Intel (stock analysis snapshot) ──────────────────── -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="padding:10px 16px">
+          <span class="card-title">Quick Intel</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input id="quick-intel-ticker" type="text" placeholder="Ticker…" maxlength="6"
+              style="width:80px;font-size:12px;padding:4px 8px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:6px;text-transform:uppercase"
+              onkeydown="if(event.key==='Enter')loadQuickIntel()">
+            <button class="btn btn-sm" onclick="loadQuickIntel()" style="font-size:11px">Analyze</button>
+            <span id="quick-intel-meta" style="font-size:10px;color:var(--dim)"></span>
+          </div>
+        </div>
+        <div class="card-body" style="padding:12px 16px">
+          <div id="quick-intel-result"><div style="font-size:12px;color:var(--dim)">Enter a ticker above to generate a snapshot analysis from predictor signals + OVTLYR data.</div></div>
         </div>
       </div>
     </div>
@@ -3422,6 +3509,54 @@ select option{background:var(--surface2)}
       <div id="sl-grid" style="display:none;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
     </div><!-- /page-equities-sector-leaders -->
 
+    <!-- PAGE: Polymarket Paper Trading -->
+    <div class="page" id="page-polymarket">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--fg)">Polymarket Paper Trading</div>
+          <div style="font-size:11px;color:var(--muted)">Browse prediction markets and paper-trade YES/NO outcomes</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="pm-search" type="text" placeholder="Search markets..." style="width:200px;font-size:12px;padding:5px 10px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:6px" onkeydown="if(event.key==='Enter')loadPolymarketMarkets()">
+          <button class="btn btn-sm" onclick="loadPolymarketMarkets()" style="font-size:11px">Search</button>
+          <button class="btn btn-sm" onclick="loadPolymarketPositions()" style="font-size:11px;background:var(--surface2)">My Positions</button>
+        </div>
+      </div>
+      <div id="pm-positions-banner" style="display:none;margin-bottom:12px"></div>
+      <div id="pm-markets-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-bottom:16px">
+        <div style="grid-column:1/-1;padding:20px;text-align:center;font-size:12px;color:var(--muted)">Loading markets...</div>
+      </div>
+      <div class="card" id="pm-positions-section" style="display:none;margin-bottom:16px">
+        <div class="card-header">
+          <span class="card-title">Paper Positions</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-xs" id="pm-tab-open" onclick="loadPolymarketPositions('open')" style="color:var(--blue)">Open</button>
+            <button class="btn btn-ghost btn-xs" id="pm-tab-closed" onclick="loadPolymarketPositions('closed')">Closed</button>
+            <button class="btn btn-ghost btn-xs" id="pm-tab-settled" onclick="loadPolymarketPositions('settled')">Settled</button>
+            <button class="btn btn-ghost btn-xs" onclick="settlePolymarketPositions()" style="color:var(--green)">Check Settlement</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="background:var(--surface2)">
+              <th style="padding:7px 10px;font-size:10px;font-weight:600;color:var(--muted);text-align:left">Market</th>
+              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:left">Outcome</th>
+              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Qty</th>
+              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Entry</th>
+              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Current</th>
+              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Unr. P&amp;L</th>
+              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:center">Status</th>
+              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:center">Action</th>
+            </tr></thead>
+            <tbody id="pm-positions-tbody">
+              <tr><td colspan="8" style="padding:16px;text-align:center;font-size:12px;color:var(--muted)">No positions</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /page-polymarket -->
+
+
     <!-- ══════════════════════════════════���═════
          PAGE: Library
     ════════════════════════════════════════ -->
@@ -3902,6 +4037,7 @@ const PAGE_TITLES = {
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
   'page-resources-groups':     'Market Groups',
+  'page-polymarket':           'Polymarket',
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4017,7 +4153,7 @@ function navigate(pageId) {
     case 'page-platform-ssl':       loadSslPage();       break;
     case 'page-platform-profile':   loadProfilePage();   break;
     case 'page-platform-config':    loadConfigPage();    break;
-    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); loadPredictorSignals(); break;
+    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); loadPredictorSignals(); loadTrendingSymbols(); loadETFFlows(); loadMacroRegime(); loadNewsSentiment(); break;
     case 'page-trading-unified':    loadUnifiedPositions(); break;
 
     case 'page-trading-trades':     loadTradesPage();    break;
@@ -4040,6 +4176,7 @@ function navigate(pageId) {
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
     case 'page-resources-groups':     loadMarketGroupsPage();    break;
+    case 'page-polymarket':           loadPolymarketMarkets(); loadPolymarketPositions(); break;
   }
 }
 
@@ -19323,6 +19460,296 @@ function _smHideSectorPanel() {
   const panel = document.getElementById('sector-map-panel');
   if (panel) panel.style.display = 'none';
   _smCurrentKey = null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Feature 7: Trending Symbols
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadTrendingSymbols() {
+  const el = document.getElementById('trending-symbols-list');
+  if (!el) return;
+  try {
+    const data = await apiFetch('/api/market/trending');
+    const syms = data.symbols || [];
+    if (!syms.length) { el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">No trending data yet</div>'; return; }
+    el.innerHTML = syms.map((s, i) => {
+      const badge = s.in_portfolio ? '<span style="font-size:9px;background:var(--blue);color:#fff;border-radius:3px;padding:1px 4px;margin-left:4px">HELD</span>' : '';
+      const ovBadge = s.ovtlyr_list ? `<span style="font-size:9px;background:rgba(99,102,241,.2);color:var(--blue);border-radius:3px;padding:1px 4px;margin-left:3px">${s.ovtlyr_list}</span>` : '';
+      const sentColor = s.sentiment_score > 0 ? 'var(--green)' : s.sentiment_score < 0 ? 'var(--red)' : 'var(--muted)';
+      return `<div style="display:flex;align-items:center;padding:7px 14px;border-bottom:1px solid var(--border);gap:8px">
+        <span style="font-size:11px;color:var(--dim);width:18px;text-align:right">${i+1}</span>
+        <span style="font-weight:700;font-size:13px;color:var(--fg);width:48px">${s.ticker}</span>
+        ${badge}${ovBadge}
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">${s.signal_count ? s.signal_count+'sig' : ''}</span>
+        ${s.sentiment_score !== undefined ? `<span style="font-size:11px;color:${sentColor}">${s.sentiment_score > 0 ? '+' : ''}${s.sentiment_score.toFixed(2)}</span>` : ''}
+        <span style="font-size:10px;background:var(--surface2);padding:2px 6px;border-radius:4px;color:var(--muted)">${s.score.toFixed(1)}</span>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="padding:12px 16px;font-size:12px;color:var(--muted)">Trending unavailable</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Feature 3: ETF Capital Flows
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadETFFlows() {
+  const tbody = document.getElementById('etf-flows-tbody');
+  if (!tbody) return;
+  const category = (document.getElementById('etf-flows-category') || {}).value || '';
+  try {
+    const url = '/api/market/etf-flows' + (category ? `?category=${category}` : '');
+    const data = await apiFetch(url);
+    const flows = (data.flows || []).sort((a, b) => Math.abs(b.flow_ratio - 1) - Math.abs(a.flow_ratio - 1));
+    if (!flows.length) { tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;text-align:center;font-size:12px;color:var(--muted)">No flow data yet</td></tr>'; return; }
+    tbody.innerHTML = flows.slice(0, 25).map(f => {
+      const ratio   = f.flow_ratio || 1;
+      const ratioPct = ((ratio - 1) * 100).toFixed(0);
+      const ratioColor = ratio > 1.5 ? 'var(--green)' : ratio < 0.5 ? 'var(--red)' : 'var(--muted)';
+      const chgColor = f.change_pct > 0 ? 'var(--green)' : f.change_pct < 0 ? 'var(--red)' : 'var(--muted)';
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:6px 10px">
+          <span style="font-weight:700;font-size:12px;color:var(--fg)">${f.ticker}</span>
+          <span style="font-size:10px;color:var(--dim);margin-left:4px">${(f.name||'').split(' ').slice(0,3).join(' ')}</span>
+        </td>
+        <td style="padding:6px 8px;text-align:right;font-size:12px;font-weight:600;color:${ratioColor}">${ratioPct > 0 ? '+' : ''}${ratioPct}%</td>
+        <td style="padding:6px 8px;text-align:right;font-size:12px;color:${chgColor}">${f.change_pct > 0 ? '+' : ''}${(f.change_pct||0).toFixed(2)}%</td>
+        <td style="padding:6px 8px;text-align:right;font-size:12px;color:var(--muted)">$${(f.price||0).toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="4" style="padding:12px;text-align:center;font-size:12px;color:var(--muted)">ETF flow data unavailable</td></tr>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Feature 4: Macro Regime
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadMacroRegime() {
+  const el = document.getElementById('macro-regime-widget');
+  if (!el) return;
+  try {
+    const data = await apiFetch('/api/market/macro-regime');
+    const r = data.regime;
+    if (!r) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No macro data yet — runs daily after market close</div>'; return; }
+    const regimeColor = r.regime === 'risk_on' ? 'var(--green)' : r.regime === 'risk_off' ? 'var(--red)' : 'var(--amber)';
+    const regimeLabel = r.regime === 'risk_on' ? 'RISK ON' : r.regime === 'risk_off' ? 'RISK OFF' : 'NEUTRAL';
+    const score = (r.regime_score || 0);
+    const barW  = Math.round(((score + 1) / 2) * 100);
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="font-size:18px;font-weight:800;color:${regimeColor}">${regimeLabel}</div>
+        <div style="font-size:11px;color:var(--muted)">${score > 0 ? '+' : ''}${score.toFixed(2)} score</div>
+      </div>
+      <div style="height:6px;background:var(--surface2);border-radius:3px;margin-bottom:12px;position:relative">
+        <div style="position:absolute;left:0;top:0;height:100%;width:${barW}%;background:${regimeColor};border-radius:3px;transition:width .5s"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div style="font-size:11px;color:var(--muted)">Bull signals: <span style="color:var(--green);font-weight:600">${r.bull_signals}</span></div>
+        <div style="font-size:11px;color:var(--muted)">Bear signals: <span style="color:var(--red);font-weight:600">${r.bear_signals}</span></div>
+        <div style="font-size:11px;color:var(--muted)">SPY: <span style="color:var(--fg)">${r.spy_trend||'—'}</span></div>
+        <div style="font-size:11px;color:var(--muted)">VIX: <span style="color:var(--fg)">${r.vix_level ? r.vix_level.toFixed(1) : '—'}</span></div>
+        <div style="font-size:11px;color:var(--muted)">DXY: <span style="color:var(--fg)">${r.dxy_trend||'—'}</span></div>
+        <div style="font-size:11px;color:var(--muted)">TLT: <span style="color:var(--fg)">${r.tlt_trend||'—'}</span></div>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-top:8px">${r.ts ? new Date(r.ts).toLocaleString() : ''}</div>`;
+  } catch(e) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted)">Macro regime unavailable</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Feature 5: News Sentiment Feed
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadNewsSentiment() {
+  const el  = document.getElementById('news-sentiment-list');
+  if (!el) return;
+  const cat = (document.getElementById('news-category-filter') || {}).value || '';
+  try {
+    const url = '/api/market/news-sentiment?limit=15' + (cat ? `&category=${cat}` : '');
+    const data = await apiFetch(url);
+    const arts = data.articles || [];
+    if (!arts.length) { el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">No news data yet — Alpha Vantage key required</div>'; return; }
+    el.innerHTML = arts.map(a => {
+      const sc = a.overall_score || 0;
+      const scColor = sc > 0.1 ? 'var(--green)' : sc < -0.1 ? 'var(--red)' : 'var(--muted)';
+      const ticker = a.ticker ? `<span style="font-size:10px;background:rgba(59,130,246,.15);color:var(--blue);border-radius:3px;padding:1px 5px;margin-right:4px">${a.ticker}</span>` : '';
+      const catBadge = `<span style="font-size:9px;background:var(--surface2);color:var(--muted);border-radius:3px;padding:1px 5px;margin-right:4px">${a.category}</span>`;
+      return `<div style="padding:8px 14px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">${ticker}${catBadge}<span style="font-size:10px;color:${scColor};margin-left:auto;font-weight:600">${sc > 0 ? '+' : ''}${sc.toFixed(2)}</span></div>
+        <div style="font-size:12px;color:var(--fg);line-height:1.4">${a.url ? `<a href="${a.url}" target="_blank" style="color:inherit;text-decoration:none">${a.title}</a>` : a.title}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">${a.source} · ${a.ts ? new Date(a.ts).toLocaleTimeString() : ''}</div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="padding:12px 16px;font-size:12px;color:var(--muted)">News feed unavailable</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Feature 6: Quick Intel (per-symbol analysis)
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadQuickIntel() {
+  const input = document.getElementById('quick-intel-ticker');
+  const el    = document.getElementById('quick-intel-result');
+  const meta  = document.getElementById('quick-intel-meta');
+  if (!input || !el) return;
+  const ticker = (input.value || '').trim().toUpperCase();
+  if (!ticker) return;
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Generating analysis…</div>';
+  if (meta) meta.textContent = '';
+  try {
+    const data = await apiFetch(`/api/market/stock-analysis/${ticker}?generate=true&token=${encodeURIComponent(token)}`);
+    const a = data.analysis;
+    if (!a) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No data available for this ticker</div>'; return; }
+    const sigColor = a.signal === 'BUY' ? 'var(--green)' : a.signal === 'SELL' ? 'var(--red)' : 'var(--amber)';
+    const confW = Math.round((a.confidence || 0.5) * 100);
+    const rsi = a.rsi ? a.rsi.toFixed(1) : '—';
+    const trend = a.trend || '—';
+    const bull = (a.bullish_factors || []).map(f => `<div style="font-size:11px;color:var(--green)">▲ ${f}</div>`).join('');
+    const bear = (a.bearish_factors || []).map(f => `<div style="font-size:11px;color:var(--red)">▼ ${f}</div>`).join('');
+    if (meta) meta.textContent = data.fresh ? 'Fresh' : `Cached ${a.ts ? new Date(a.ts).toLocaleTimeString() : ''}`;
+    el.innerHTML = `
+      <div style="display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Signal</div>
+          <div style="font-size:22px;font-weight:800;color:${sigColor}">${a.signal}</div>
+          <div style="font-size:11px;color:var(--muted)">${ticker} · ${trend}</div>
+        </div>
+        <div style="flex:1;min-width:160px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Confidence</div>
+          <div style="height:8px;background:var(--surface2);border-radius:4px;margin-bottom:4px">
+            <div style="height:100%;width:${confW}%;background:${sigColor};border-radius:4px"></div>
+          </div>
+          <div style="font-size:12px;color:var(--fg)">${(a.confidence * 100).toFixed(0)}%</div>
+        </div>
+        <div style="min-width:80px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Price</div>
+          <div style="font-size:14px;font-weight:700;color:var(--fg)">$${a.price ? a.price.toFixed(2) : '—'}</div>
+          <div style="font-size:11px;color:var(--muted)">RSI ${rsi}</div>
+        </div>
+        ${bull || bear ? `<div style="min-width:200px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Key Factors</div>
+          ${bull}${bear}
+        </div>` : ''}
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted)">Analysis unavailable</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Feature 8: Polymarket Paper Trading
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadPolymarketMarkets() {
+  const grid   = document.getElementById('pm-markets-grid');
+  const search = (document.getElementById('pm-search') || {}).value || '';
+  if (!grid) return;
+  grid.innerHTML = '<div style="grid-column:1/-1;padding:20px;text-align:center;font-size:12px;color:var(--muted)">Loading…</div>';
+  try {
+    const url = '/api/polymarket/markets?limit=20' + (search ? `&search=${encodeURIComponent(search)}` : '');
+    const data = await apiFetch(url);
+    const mkts = data.markets || [];
+    if (!mkts.length) { grid.innerHTML = '<div style="grid-column:1/-1;padding:20px;text-align:center;font-size:12px;color:var(--muted)">No markets found</div>'; return; }
+    grid.innerHTML = mkts.map(m => {
+      const outcomes   = m.outcomes   || [];
+      const prices     = m.outcome_prices || [];
+      const outcomeHtml = outcomes.map((o, i) => {
+        const p = prices[i] ? (parseFloat(prices[i]) * 100).toFixed(0) : '—';
+        const pColor = parseFloat(prices[i]||0) > 0.5 ? 'var(--green)' : 'var(--muted)';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-top:1px solid var(--border)">
+          <span style="font-size:12px;color:var(--fg)">${o}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:13px;font-weight:700;color:${pColor}">${p}¢</span>
+            <button class="btn btn-xs" style="font-size:10px;background:var(--green);color:#000;border-color:var(--green)"
+              onclick="openPolymarketTrade('${m.condition_id}','${(m.tokens||[{token_id:''}])[i]?.token_id||i}','${m.question?.replace(/'/g,'')?.slice(0,80)||''}','${o}','buy')">Buy</button>
+            <button class="btn btn-xs" style="font-size:10px;background:var(--red);color:#fff;border-color:var(--red)"
+              onclick="openPolymarketTrade('${m.condition_id}','${(m.tokens||[{token_id:''}])[i]?.token_id||i}','${m.question?.replace(/'/g,'')?.slice(0,80)||''}','${o}','sell')">Sell</button>
+          </div>
+        </div>`;
+      }).join('');
+      const vol = m.volume ? `$${parseFloat(m.volume).toLocaleString('en-US',{maximumFractionDigits:0})}` : '—';
+      return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <div style="padding:12px 14px">
+          <div style="font-size:12px;font-weight:600;color:var(--fg);line-height:1.4;margin-bottom:6px">${m.question||'Unknown market'}</div>
+          <div style="font-size:10px;color:var(--dim)">Volume: ${vol}${m.end_date ? ' · Ends: '+m.end_date.slice(0,10) : ''}</div>
+        </div>
+        ${outcomeHtml}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    grid.innerHTML = `<div style="grid-column:1/-1;padding:20px;text-align:center;font-size:12px;color:var(--muted)">Markets unavailable: ${e.message||e}</div>`;
+  }
+}
+
+async function openPolymarketTrade(conditionId, tokenId, question, outcome, side) {
+  const qty = parseFloat(prompt(`Paper trade: ${side.toUpperCase()} ${outcome}\nQuantity (shares):`, '10'));
+  if (!qty || qty <= 0) return;
+  try {
+    const resp = await fetch(`/api/polymarket/trade?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ condition_id: conditionId, token_id: tokenId, market_question: question, outcome, side, qty, market_slug: '' }),
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast(`${data.action === 'opened' ? 'Opened' : 'Closed'} position @ ${(data.entry_price||data.exit_price||0).toFixed(3)}`, 'success');
+      loadPolymarketPositions();
+    } else {
+      showToast(data.detail || 'Trade failed', 'error');
+    }
+  } catch(e) { showToast('Trade error: ' + e.message, 'error'); }
+}
+
+async function loadPolymarketPositions(status = 'open') {
+  const section = document.getElementById('pm-positions-section');
+  const tbody   = document.getElementById('pm-positions-tbody');
+  const banner  = document.getElementById('pm-positions-banner');
+  if (!tbody) return;
+  if (section) section.style.display = 'block';
+  try {
+    const data = await apiFetch(`/api/polymarket/positions?status=${status}`);
+    const pos  = data.positions || [];
+    if (!pos.length) { tbody.innerHTML = `<tr><td colspan="8" style="padding:16px;text-align:center;font-size:12px;color:var(--muted)">No ${status} positions</td></tr>`; return; }
+    // Update banner
+    if (banner && status === 'open') {
+      const totalPnl = pos.reduce((s, p) => s + (p.unrealized_pnl || 0), 0);
+      const pnlColor = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
+      banner.style.display = 'block';
+      banner.innerHTML = `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--muted)">
+        ${pos.length} open position${pos.length>1?'s':''} · Unrealized P&L: <span style="color:${pnlColor};font-weight:700">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</span>
+      </div>`;
+    }
+    tbody.innerHTML = pos.map(p => {
+      const pnl = p.unrealized_pnl || 0;
+      const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+      const statusBadge = `<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${p.status==='open'?'rgba(34,197,94,.15)':p.status==='settled'?'rgba(99,102,241,.15)':'var(--surface2)'};color:${p.status==='open'?'var(--green)':p.status==='settled'?'var(--blue)':'var(--muted)'}">${p.status}</span>`;
+      const question = (p.market_question || p.condition_id || '').slice(0, 50);
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${question}</td>
+        <td style="padding:8px 8px;font-size:12px;font-weight:600;color:var(--fg)">${p.outcome}</td>
+        <td style="padding:8px 8px;text-align:right;font-size:12px;color:var(--fg)">${p.qty}</td>
+        <td style="padding:8px 8px;text-align:right;font-size:12px;color:var(--muted)">${(p.entry_price*100).toFixed(1)}¢</td>
+        <td style="padding:8px 8px;text-align:right;font-size:12px;color:var(--muted)">${(p.current_price*100).toFixed(1)}¢</td>
+        <td style="padding:8px 8px;text-align:right;font-size:12px;font-weight:600;color:${pnlColor}">${pnl>=0?'+':''}$${pnl.toFixed(2)}</td>
+        <td style="padding:8px 8px;text-align:center">${statusBadge}</td>
+        <td style="padding:8px 8px;text-align:center">
+          ${p.status==='open' ? `<button class="btn btn-xs" style="font-size:10px;color:var(--amber)" onclick="openPolymarketTrade('${p.condition_id}','${p.token_id}','${(p.market_question||'').slice(0,80).replace(/'/g,'')}','${p.outcome}','sell')">Close</button>` : '—'}
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="padding:12px;text-align:center;font-size:12px;color:var(--muted)">Positions unavailable</td></tr>`;
+  }
+}
+
+async function settlePolymarketPositions() {
+  try {
+    const resp = await fetch(`/api/polymarket/settle?token=${encodeURIComponent(token)}`, { method: 'POST' });
+    const data = await resp.json();
+    showToast(`Settlement check: ${data.settled} position(s) settled`, data.settled > 0 ? 'success' : 'info');
+    if (data.settled > 0) loadPolymarketPositions();
+  } catch(e) { showToast('Settlement error', 'error'); }
 }
 </script>
 

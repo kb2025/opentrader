@@ -37,6 +37,9 @@ GROUPS = {
     "scraper-seekalpha":  "scraper-seekalpha-group",
     "scraper-yahoo":            "scraper-yahoo-group",
     "scraper-yahoo-sentiment":  "scraper-yahoo-sentiment-group",
+    "scraper-news":             "scraper-news-group",
+    "scraper-etf-flows":        "scraper-etf-flows-group",
+    "scraper-macro-regime":     "scraper-macro-regime-group",
     "aggregator":         "aggregator-group",
     "review":             "review-agent-group",
     # Broker gateway

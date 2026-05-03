@@ -330,3 +330,112 @@ async def job_daily_summary(redis: aioredis.Redis):
             },
             maxlen=500,
         )
+
+
+# ── Feature 1: Intraday NAV snapshot + history pruning ───────────────────────
+
+@tracked
+async def job_intraday_nav_snapshot(redis: aioredis.Redis):
+    """Fires every 30m during market hours — captures intraday portfolio NAV."""
+    if not is_active_session():
+        log.debug("scheduler.skip", job="intraday_nav_snapshot", reason="market_closed")
+        return
+    import os as _os
+    import aiohttp as _aiohttp
+    webui_url = _os.getenv("WEBUI_INTERNAL_URL", "http://ot-webui:8080")
+    token     = _os.getenv("WEBUI_TOKEN", "opentrader")
+    try:
+        async with _aiohttp.ClientSession() as s:
+            async with s.post(
+                f"{webui_url}/api/portfolio/intraday-snapshot?token={token}",
+                timeout=_aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                body = await resp.json(content_type=None)
+                if resp.status == 200:
+                    log.info("scheduler.intraday_nav_snapshot_ok", saved=body.get("saved", 0))
+                else:
+                    log.error("scheduler.intraday_nav_snapshot_failed",
+                              status=resp.status, detail=body.get("detail"))
+    except Exception as e:
+        log.error("scheduler.intraday_nav_snapshot_error", error=str(e))
+
+
+@tracked
+async def job_prune_portfolio_history(redis: aioredis.Redis):
+    """Fires nightly — compresses intraday NAV into tiered buckets and prunes old rows."""
+    import os as _os
+    import aiohttp as _aiohttp
+    webui_url = _os.getenv("WEBUI_INTERNAL_URL", "http://ot-webui:8080")
+    token     = _os.getenv("WEBUI_TOKEN", "opentrader")
+    try:
+        async with _aiohttp.ClientSession() as s:
+            async with s.post(
+                f"{webui_url}/api/portfolio/prune-history?token={token}",
+                timeout=_aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                body = await resp.json(content_type=None)
+                if resp.status == 200:
+                    log.info("scheduler.prune_portfolio_history_ok", deleted=body.get("deleted", 0))
+                else:
+                    log.error("scheduler.prune_portfolio_history_failed",
+                              status=resp.status, detail=body.get("detail"))
+    except Exception as e:
+        log.error("scheduler.prune_portfolio_history_error", error=str(e))
+
+
+# ── Feature 3: ETF flow scraping ─────────────────────────────────────────────
+
+@tracked
+async def job_scrape_etf_flows(redis: aioredis.Redis):
+    """Trigger ETF flow scraper — once per day after market close."""
+    if not is_trading_day():
+        log.debug("scheduler.skip", job="scrape_etf_flows", reason="not_trading_day")
+        return
+    await trigger(redis, "scrape_etf_flows", {"source": "etf_flows"})
+
+
+# ── Feature 4: Macro regime scraping ─────────────────────────────────────────
+
+@tracked
+async def job_scrape_macro_regime(redis: aioredis.Redis):
+    """Trigger macro regime snapshot — once per day after market close."""
+    if not is_trading_day():
+        log.debug("scheduler.skip", job="scrape_macro_regime", reason="not_trading_day")
+        return
+    await trigger(redis, "scrape_macro_regime", {"source": "macro_regime"})
+
+
+# ── Feature 5: Alpha Vantage news sentiment ───────────────────────────────────
+
+@tracked
+async def job_scrape_news_sentiment(redis: aioredis.Redis):
+    """Trigger Alpha Vantage news sentiment scraper — every 30m during active session."""
+    if not is_active_session():
+        log.debug("scheduler.skip", job="scrape_news_sentiment", reason="market_closed")
+        return
+    await trigger(redis, "scrape_news_sentiment", {"source": "alphavantage"})
+
+
+# ── Feature 7: Trending symbols update ───────────────────────────────────────
+
+@tracked
+async def job_update_trending_symbols(redis: aioredis.Redis):
+    """Recompute trending symbols from signal frequency + OVTLYR + positions."""
+    if not is_active_session():
+        log.debug("scheduler.skip", job="update_trending_symbols", reason="market_closed")
+        return
+    import os as _os
+    import aiohttp as _aiohttp
+    webui_url = _os.getenv("WEBUI_INTERNAL_URL", "http://ot-webui:8080")
+    token     = _os.getenv("WEBUI_TOKEN", "opentrader")
+    try:
+        async with _aiohttp.ClientSession() as s:
+            async with s.post(
+                f"{webui_url}/api/market/trending/refresh?token={token}",
+                timeout=_aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    body = await resp.json(content_type=None)
+                    log.info("scheduler.trending_symbols_ok", count=body.get("count", 0))
+    except Exception as e:
+        log.error("scheduler.trending_symbols_error", error=str(e))

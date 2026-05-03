@@ -412,6 +412,69 @@ services:
       mcp-yahoo:
         condition: service_started
 
+  scraper-etf-flows:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    container_name: ot-scraper-etf-flows
+    restart: unless-stopped
+    command: python -m scrapers.etf_flows.main
+    environment:
+      REDIS_URL: redis://ot-redis:6379
+      DB_URL: postgresql://trading:${DB_PASSWORD:-trading_secret}@ot-timescaledb/trading
+      SERVICE_NAME: scraper-etf-flows
+    env_file: [.env]
+    volumes:
+      - ./logs/python:/app/logs
+    networks: [trading-net]
+    depends_on:
+      redis:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+
+  scraper-macro-regime:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    container_name: ot-scraper-macro-regime
+    restart: unless-stopped
+    command: python -m scrapers.macro_regime.main
+    environment:
+      REDIS_URL: redis://ot-redis:6379
+      DB_URL: postgresql://trading:${DB_PASSWORD:-trading_secret}@ot-timescaledb/trading
+      SERVICE_NAME: scraper-macro-regime
+    env_file: [.env]
+    volumes:
+      - ./logs/python:/app/logs
+    networks: [trading-net]
+    depends_on:
+      redis:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+
+  scraper-news:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    container_name: ot-scraper-news
+    restart: unless-stopped
+    command: python -m scrapers.alphavantage.main
+    environment:
+      REDIS_URL: redis://ot-redis:6379
+      DB_URL: postgresql://trading:${DB_PASSWORD:-trading_secret}@ot-timescaledb/trading
+      SERVICE_NAME: scraper-news
+    env_file: [.env]
+    volumes:
+      - ./logs/python:/app/logs
+    networks: [trading-net]
+    depends_on:
+      redis:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+
   aggregator:
     build:
       context: ./python

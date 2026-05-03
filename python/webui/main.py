@@ -610,7 +610,7 @@ KNOWN_AGENTS = [
     "orchestrator", "scheduler", "predictor",
     "trader-equity", "trader-options", "options-monitor",
     "scraper-ovtlyr", "scraper-wsb", "scraper-seekalpha", "scraper-yahoo",
-    "scraper-yahoo-sentiment",
+    "scraper-yahoo-sentiment", "scraper-etf-flows", "scraper-macro-regime", "scraper-news",
     "aggregator", "review-agent", "broker-gateway", "directive-agent",
     # MCP servers & chat agent — health derived from Podman (no heartbeat)
     "mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-webull", "chat-agent",
@@ -631,6 +631,9 @@ CONTAINER_MAP = {
     "scraper-seekalpha":"ot-scraper-seekalpha",
     "scraper-yahoo":            "ot-scraper-yahoo",
     "scraper-yahoo-sentiment":  "ot-scraper-yahoo-sentiment",
+    "scraper-etf-flows":        "ot-scraper-etf-flows",
+    "scraper-macro-regime":     "ot-scraper-macro-regime",
+    "scraper-news":             "ot-scraper-news",
     "aggregator":      "ot-aggregator",
     "review-agent":    "ot-review-agent",
     "broker-gateway":  "ot-broker-gateway",
@@ -9713,6 +9716,808 @@ async def get_portfolio_nav_history(
         pt["drawdown_pct"] = round((peak - nav) / peak * 100, 2) if peak > 0 else 0.0
 
     return {"series": series, "count": len(series)}
+
+
+# ── Feature 1: Intraday portfolio NAV snapshot + pruning ─────────────────────
+
+@app.post("/api/portfolio/intraday-snapshot")
+async def capture_intraday_snapshot(token: str = ""):
+    """Capture current broker NAV as an intraday snapshot (called every 30m during market hours)."""
+    if token != WEBUI_TOKEN:
+        raise HTTPException(403, "Forbidden")
+    try:
+        broker_data = await _fetch_positions_from_gateway()
+    except Exception as e:
+        raise HTTPException(503, detail=f"Broker gateway unavailable: {e}")
+    pool  = await _get_db_pool()
+    saved = 0
+    for acct in broker_data.get("accounts", []):
+        bal   = acct.get("balances", {})
+        label = acct.get("label", "")
+        mode  = acct.get("mode", "live")
+        broker = acct.get("broker", "")
+        try:
+            total_nav = float(
+                bal.get("portfolio_value") or bal.get("net_value") or
+                bal.get("total_equity") or bal.get("account_value") or
+                bal.get("equity") or bal.get("total_value") or 0
+            )
+            cash         = float(bal.get("cash") or bal.get("buying_power") or 0)
+            equity_value = float(bal.get("long_market_value") or bal.get("market_value") or 0)
+            day_pnl      = float(bal.get("unrealized_pl") or bal.get("day_pl") or bal.get("pnl") or 0)
+        except Exception:
+            continue
+        if total_nav <= 0:
+            continue
+        await pool.execute(
+            """INSERT INTO portfolio_intraday_snapshots
+               (account_label, broker, mode, total_nav, cash, equity_value, day_pnl, bucket)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'raw')""",
+            label, broker, mode, total_nav, cash, equity_value, day_pnl,
+        )
+        saved += 1
+    return {"ok": True, "saved": saved}
+
+
+@app.post("/api/portfolio/prune-history")
+async def prune_portfolio_history(token: str = ""):
+    """Compress and prune intraday NAV snapshots using tiered retention."""
+    if token != WEBUI_TOKEN:
+        raise HTTPException(403, "Forbidden")
+    pool = await _get_db_pool()
+    deleted = 0
+
+    # Keep full resolution for last 24h — delete raw rows older than 24h that don't fall on 15-min boundaries
+    r1 = await pool.execute("""
+        DELETE FROM portfolio_intraday_snapshots
+        WHERE bucket = 'raw'
+          AND ts < NOW() - INTERVAL '24 hours'
+          AND EXTRACT(MINUTE FROM ts)::int NOT IN (0,15,30,45)
+    """)
+    deleted += int(r1.split()[-1]) if r1 else 0
+
+    # Keep 15-min resolution for last 7 days — delete 15min rows older than 7 days that aren't on the hour
+    r2 = await pool.execute("""
+        DELETE FROM portfolio_intraday_snapshots
+        WHERE bucket IN ('raw','15min')
+          AND ts < NOW() - INTERVAL '7 days'
+          AND EXTRACT(MINUTE FROM ts)::int != 0
+    """)
+    deleted += int(r2.split()[-1]) if r2 else 0
+
+    # Delete all intraday rows older than 30 days (daily portfolio_snapshots handle longer history)
+    r3 = await pool.execute("""
+        DELETE FROM portfolio_intraday_snapshots
+        WHERE ts < NOW() - INTERVAL '30 days'
+    """)
+    deleted += int(r3.split()[-1]) if r3 else 0
+
+    return {"ok": True, "deleted": deleted}
+
+
+@app.get("/api/portfolio/intraday-nav")
+async def get_intraday_nav(
+    hours: int = 8,
+    mode: str  = "live",
+    account: str = "",
+):
+    """Return intraday NAV series for the last N hours (up to 30 days)."""
+    hours = min(max(hours, 1), 720)
+    pool  = await _get_db_pool()
+    where = "mode = $1 AND ts >= NOW() - ($2 || ' hours')::INTERVAL"
+    args  = [mode, str(hours)]
+    if account:
+        where += " AND account_label = $3"
+        args.append(account)
+    rows = await pool.fetch(
+        f"""SELECT ts, account_label, total_nav, cash, equity_value, day_pnl
+            FROM portfolio_intraday_snapshots
+            WHERE {where}
+            ORDER BY ts ASC""",
+        *args,
+    )
+    series = [
+        {
+            "ts":            r["ts"].isoformat(),
+            "account_label": r["account_label"],
+            "total_nav":     float(r["total_nav"]),
+            "cash":          float(r["cash"] or 0),
+            "equity_value":  float(r["equity_value"] or 0),
+            "day_pnl":       float(r["day_pnl"] or 0),
+        }
+        for r in rows
+    ]
+    # If per-account=False, aggregate across accounts by timestamp
+    if not account and series:
+        from collections import defaultdict
+        by_ts: dict = defaultdict(lambda: {"total_nav": 0, "cash": 0, "equity_value": 0, "day_pnl": 0})
+        for pt in series:
+            by_ts[pt["ts"]]["total_nav"]     += pt["total_nav"]
+            by_ts[pt["ts"]]["cash"]          += pt["cash"]
+            by_ts[pt["ts"]]["equity_value"]  += pt["equity_value"]
+            by_ts[pt["ts"]]["day_pnl"]       += pt["day_pnl"]
+        series = [{"ts": ts, **vals} for ts, vals in sorted(by_ts.items())]
+    return {"series": series, "count": len(series)}
+
+
+# ── Feature 3: ETF capital flow ───────────────────────────────────────────────
+
+@app.get("/api/market/etf-flows")
+async def get_etf_flows(category: str = "", refresh: bool = False):
+    """Return latest ETF capital flow snapshot (Redis-cached, refreshed by scraper)."""
+    _redis = await get_redis()
+    if not refresh:
+        cached = await _redis.get("etf_flows:latest")
+        if cached:
+            rows = json.loads(cached)
+            if category:
+                rows = [r for r in rows if r.get("category") == category]
+            return {"flows": rows, "count": len(rows), "source": "cache"}
+
+    # Fallback: query DB for latest rows per ticker
+    pool = await _get_db_pool()
+    db_rows = await pool.fetch(
+        """SELECT DISTINCT ON (ticker)
+               ticker, name, category, price, volume, dollar_volume,
+               avg_volume_30d, flow_ratio, change_pct, ts
+           FROM etf_flow_snapshots
+           ORDER BY ticker, ts DESC"""
+    )
+    flows = [
+        {
+            "ticker":        r["ticker"],
+            "name":          r["name"],
+            "category":      r["category"],
+            "price":         float(r["price"] or 0),
+            "volume":        int(r["volume"] or 0),
+            "dollar_volume": float(r["dollar_volume"] or 0),
+            "avg_volume_30d": int(r["avg_volume_30d"] or 0),
+            "flow_ratio":    float(r["flow_ratio"] or 1),
+            "change_pct":    float(r["change_pct"] or 0),
+            "ts":            r["ts"].isoformat(),
+        }
+        for r in db_rows
+    ]
+    if category:
+        flows = [f for f in flows if f.get("category") == category]
+    return {"flows": flows, "count": len(flows), "source": "db"}
+
+
+@app.get("/api/market/etf-flows/history")
+async def get_etf_flow_history(ticker: str, days: int = 30):
+    """Return flow_ratio history for a single ETF."""
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT ts, flow_ratio, change_pct, price, volume
+           FROM etf_flow_snapshots
+           WHERE ticker = $1 AND ts >= NOW() - ($2 || ' days')::INTERVAL
+           ORDER BY ts ASC""",
+        ticker.upper(), str(days),
+    )
+    return {
+        "ticker": ticker.upper(),
+        "series": [
+            {"ts": r["ts"].isoformat(), "flow_ratio": float(r["flow_ratio"] or 1),
+             "change_pct": float(r["change_pct"] or 0), "price": float(r["price"] or 0)}
+            for r in rows
+        ],
+    }
+
+
+# ── Feature 4: Macro regime ───────────────────────────────────────────────────
+
+@app.get("/api/market/macro-regime")
+async def get_macro_regime(history: bool = False):
+    """Return latest macro regime snapshot."""
+    _redis = await get_redis()
+    cached = await _redis.get("macro_regime:latest")
+    if cached and not history:
+        return {"regime": json.loads(cached), "source": "cache"}
+
+    pool = await _get_db_pool()
+    if history:
+        rows = await pool.fetch(
+            """SELECT ts, regime, bull_signals, bear_signals, regime_score, spy_trend,
+                      vix_level, dxy_trend, tlt_trend, breadth_pct
+               FROM macro_regime_snapshots
+               WHERE ts >= NOW() - INTERVAL '30 days'
+               ORDER BY ts ASC"""
+        )
+        return {
+            "history": [
+                {
+                    "ts":           r["ts"].isoformat(),
+                    "regime":       r["regime"],
+                    "bull_signals": r["bull_signals"],
+                    "bear_signals": r["bear_signals"],
+                    "regime_score": float(r["regime_score"] or 0),
+                    "spy_trend":    r["spy_trend"],
+                    "vix_level":    float(r["vix_level"] or 0) if r["vix_level"] else None,
+                    "dxy_trend":    r["dxy_trend"],
+                    "tlt_trend":    r["tlt_trend"],
+                    "breadth_pct":  float(r["breadth_pct"] or 0) if r["breadth_pct"] else None,
+                }
+                for r in rows
+            ]
+        }
+
+    row = await pool.fetchrow(
+        """SELECT ts, regime, bull_signals, bear_signals, total_signals, regime_score,
+                  spy_trend, vix_level, dxy_trend, tlt_trend, breadth_pct, raw
+           FROM macro_regime_snapshots
+           ORDER BY ts DESC LIMIT 1"""
+    )
+    if not row:
+        return {"regime": None}
+    return {
+        "regime": {
+            "ts":            row["ts"].isoformat(),
+            "regime":        row["regime"],
+            "bull_signals":  row["bull_signals"],
+            "bear_signals":  row["bear_signals"],
+            "total_signals": row["total_signals"],
+            "regime_score":  float(row["regime_score"] or 0),
+            "spy_trend":     row["spy_trend"],
+            "vix_level":     float(row["vix_level"] or 0) if row["vix_level"] else None,
+            "dxy_trend":     row["dxy_trend"],
+            "tlt_trend":     row["tlt_trend"],
+            "breadth_pct":   float(row["breadth_pct"] or 0) if row["breadth_pct"] else None,
+            "raw":           row["raw"] or {},
+        },
+        "source": "db",
+    }
+
+
+# ── Feature 5: News sentiment ─────────────────────────────────────────────────
+
+@app.get("/api/market/news-sentiment")
+async def get_news_sentiment(category: str = "", ticker: str = "", limit: int = 20):
+    """Return latest news sentiment articles."""
+    _redis = await get_redis()
+    cached = await _redis.get("news_sentiment:latest")
+    if cached and not ticker:
+        by_cat = json.loads(cached)
+        if category and category in by_cat:
+            return {"articles": by_cat[category][:limit], "source": "cache"}
+        elif not category:
+            merged = []
+            for arts in by_cat.values():
+                merged.extend(arts)
+            merged.sort(key=lambda x: abs(x.get("overall_score", 0)), reverse=True)
+            return {"articles": merged[:limit], "source": "cache"}
+
+    pool  = await _get_db_pool()
+    where = "ts >= NOW() - INTERVAL '24 hours'"
+    args: list = []
+    if category:
+        where += f" AND category = ${len(args)+1}"
+        args.append(category)
+    if ticker:
+        where += f" AND ticker = ${len(args)+1}"
+        args.append(ticker.upper())
+    rows = await pool.fetch(
+        f"""SELECT ts, category, ticker, title, source, url, overall_score, relevance_score, topics
+            FROM news_sentiment_snapshots
+            WHERE {where}
+            ORDER BY ts DESC LIMIT ${ len(args)+1 }""",
+        *args, limit,
+    )
+    return {
+        "articles": [
+            {
+                "ts":              r["ts"].isoformat(),
+                "category":        r["category"],
+                "ticker":          r["ticker"],
+                "title":           r["title"],
+                "source":          r["source"],
+                "url":             r["url"],
+                "overall_score":   float(r["overall_score"] or 0),
+                "relevance_score": float(r["relevance_score"] or 0),
+                "topics":          r["topics"] or [],
+            }
+            for r in rows
+        ],
+        "source": "db",
+    }
+
+
+# ── Feature 6: Per-symbol technical analysis snapshots ───────────────────────
+
+@app.get("/api/market/stock-analysis/{ticker}")
+async def get_stock_analysis(ticker: str, generate: bool = False, token: str = ""):
+    """Return latest stock analysis snapshot for a ticker. With generate=true+token, re-run analysis."""
+    ticker = ticker.upper()
+    pool   = await _get_db_pool()
+
+    if generate and token == WEBUI_TOKEN:
+        # Generate a fresh snapshot using available data
+        snapshot = await _generate_stock_analysis(ticker, pool)
+        if snapshot:
+            await pool.execute(
+                """INSERT INTO stock_analysis_snapshots
+                   (ticker, signal, confidence, price, rsi, atr, support, resistance,
+                    ma_50, ma_200, trend, bullish_factors, bearish_factors, raw)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)""",
+                ticker, snapshot["signal"], snapshot["confidence"], snapshot["price"],
+                snapshot.get("rsi"), snapshot.get("atr"), snapshot.get("support"),
+                snapshot.get("resistance"), snapshot.get("ma_50"), snapshot.get("ma_200"),
+                snapshot.get("trend"), json.dumps(snapshot.get("bullish_factors", [])),
+                json.dumps(snapshot.get("bearish_factors", [])), json.dumps(snapshot.get("raw", {})),
+            )
+            return {"ticker": ticker, "analysis": snapshot, "fresh": True}
+
+    row = await pool.fetchrow(
+        """SELECT ts, signal, confidence, price, rsi, atr, support, resistance,
+                  ma_50, ma_200, trend, bullish_factors, bearish_factors
+           FROM stock_analysis_snapshots
+           WHERE ticker = $1
+           ORDER BY ts DESC LIMIT 1""",
+        ticker,
+    )
+    if not row:
+        return {"ticker": ticker, "analysis": None}
+    return {
+        "ticker": ticker,
+        "analysis": {
+            "ts":              row["ts"].isoformat(),
+            "signal":          row["signal"],
+            "confidence":      float(row["confidence"] or 0),
+            "price":           float(row["price"] or 0),
+            "rsi":             float(row["rsi"] or 0) if row["rsi"] else None,
+            "atr":             float(row["atr"] or 0) if row["atr"] else None,
+            "support":         float(row["support"] or 0) if row["support"] else None,
+            "resistance":      float(row["resistance"] or 0) if row["resistance"] else None,
+            "ma_50":           float(row["ma_50"] or 0) if row["ma_50"] else None,
+            "ma_200":          float(row["ma_200"] or 0) if row["ma_200"] else None,
+            "trend":           row["trend"],
+            "bullish_factors": row["bullish_factors"] or [],
+            "bearish_factors": row["bearish_factors"] or [],
+        },
+    }
+
+
+async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
+    """Generate a stock analysis snapshot from predictor signals + OVTLYR data."""
+    try:
+        _redis = await get_redis()
+
+        # Get latest predictor signal for this ticker
+        sig_rows = await pool.fetch(
+            """SELECT direction, confidence, ml_confidence, raw
+               FROM signals WHERE ticker = $1
+               ORDER BY ts DESC LIMIT 3""",
+            ticker,
+        )
+
+        # OVTLYR intel from Redis
+        ovtlyr_raw = await _redis.hget("scanner:ovtlyr:latest", ticker)
+        ovtlyr     = json.loads(ovtlyr_raw) if ovtlyr_raw else {}
+
+        # Sentiment score
+        sent_raw = await _redis.hget("sentiment:latest", ticker)
+        sent     = json.loads(sent_raw) if sent_raw else {}
+
+        # Determine signal direction
+        signal     = "HOLD"
+        confidence = 0.5
+        bullish_factors: list[str] = []
+        bearish_factors: list[str] = []
+        price = 0.0
+        rsi   = None
+
+        if sig_rows:
+            latest_sig = sig_rows[0]
+            direction  = latest_sig["direction"]
+            confidence = float(latest_sig["confidence"] or 0.5)
+            raw        = latest_sig["raw"] or {}
+            price      = float(raw.get("price", raw.get("entry_price", 0)))
+            rsi        = raw.get("rsi")
+            if direction == "long":
+                signal = "BUY"
+            elif direction == "short":
+                signal = "SELL"
+            else:
+                signal = "HOLD"
+
+        if ovtlyr:
+            ov_signal = ovtlyr.get("signal", "")
+            nine_score = int(ovtlyr.get("nine_score", 0))
+            if ov_signal.lower() in ("buy", "long") or nine_score >= 7:
+                bullish_factors.append(f"OVTLYR nine_score={nine_score}")
+            elif ov_signal.lower() in ("sell", "short") or nine_score <= 3:
+                bearish_factors.append(f"OVTLYR nine_score={nine_score}")
+
+        if sent:
+            score = float(sent.get("score", 0))
+            if score > 0.2:
+                bullish_factors.append(f"Sentiment score={score:.2f}")
+            elif score < -0.2:
+                bearish_factors.append(f"Sentiment score={score:.2f}")
+
+        return {
+            "signal":          signal,
+            "confidence":      round(confidence, 3),
+            "price":           price,
+            "rsi":             float(rsi) if rsi else None,
+            "atr":             None,
+            "support":         None,
+            "resistance":      None,
+            "ma_50":           None,
+            "ma_200":          None,
+            "trend":           "uptrend" if signal == "BUY" else ("downtrend" if signal == "SELL" else "sideways"),
+            "bullish_factors": bullish_factors,
+            "bearish_factors": bearish_factors,
+            "raw":             {
+                "ovtlyr":    ovtlyr,
+                "sentiment": sent,
+                "sig_count": len(sig_rows),
+            },
+        }
+    except Exception as e:
+        log.warning("stock_analysis.generate_error", ticker=ticker, error=str(e))
+        return None
+
+
+@app.get("/api/market/stock-analysis")
+async def list_stock_analyses(limit: int = 20):
+    """Return most recent analysis snapshot per ticker (last 24h)."""
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT DISTINCT ON (ticker)
+               ticker, ts, signal, confidence, price, rsi, trend
+           FROM stock_analysis_snapshots
+           WHERE ts >= NOW() - INTERVAL '24 hours'
+           ORDER BY ticker, ts DESC
+           LIMIT $1""",
+        limit,
+    )
+    return {
+        "analyses": [
+            {
+                "ticker":     r["ticker"],
+                "ts":         r["ts"].isoformat(),
+                "signal":     r["signal"],
+                "confidence": float(r["confidence"] or 0),
+                "price":      float(r["price"] or 0),
+                "rsi":        float(r["rsi"] or 0) if r["rsi"] else None,
+                "trend":      r["trend"],
+            }
+            for r in rows
+        ]
+    }
+
+
+# ── Feature 7: Trending symbols ───────────────────────────────────────────────
+
+@app.get("/api/market/trending")
+async def get_trending_symbols():
+    """Return cached trending symbols list (top 20)."""
+    _redis = await get_redis()
+    cached = await _redis.get("trending:symbols")
+    if cached:
+        return {"symbols": json.loads(cached), "source": "cache"}
+    # Compute on-demand if cache is cold
+    result = await _compute_trending(_redis, await _get_db_pool())
+    return {"symbols": result, "source": "computed"}
+
+
+@app.post("/api/market/trending/refresh")
+async def refresh_trending_symbols(token: str = ""):
+    """Recompute and cache trending symbols."""
+    if token != WEBUI_TOKEN:
+        raise HTTPException(403, "Forbidden")
+    _redis = await get_redis()
+    pool   = await _get_db_pool()
+    result = await _compute_trending(_redis, pool)
+    return {"ok": True, "count": len(result)}
+
+
+async def _compute_trending(_redis, pool) -> list[dict]:
+    """
+    Score symbols by:
+      - Signal frequency in last 24h (weight 3)
+      - Presence in OVTLYR bull/bear lists (weight 2)
+      - Active position ticker (weight 1)
+      - Sentiment score magnitude (weight 1)
+    Returns top-20 ranked list.
+    """
+    scores: dict[str, float] = {}
+    meta:   dict[str, dict]  = {}
+
+    # Signal frequency (last 24h)
+    try:
+        rows = await pool.fetch(
+            """SELECT ticker, COUNT(*) as cnt, AVG(confidence) as avg_conf
+               FROM signals
+               WHERE ts >= NOW() - INTERVAL '24 hours'
+               GROUP BY ticker""",
+        )
+        for r in rows:
+            t = r["ticker"]
+            scores[t] = scores.get(t, 0) + float(r["cnt"]) * 3
+            meta.setdefault(t, {})["signal_count"] = int(r["cnt"])
+            meta[t]["avg_confidence"] = round(float(r["avg_conf"] or 0), 3)
+    except Exception:
+        pass
+
+    # OVTLYR lists
+    for lst in ("bull", "bear", "market_leaders", "alpha_picks"):
+        try:
+            raw = await _redis.get(f"ovtlyr:list:{lst}")
+            if raw:
+                for item in json.loads(raw):
+                    t = item.get("ticker", "")
+                    if t:
+                        scores[t]  = scores.get(t, 0) + 2
+                        meta.setdefault(t, {})["ovtlyr_list"] = lst
+        except Exception:
+            pass
+
+    # Active position tickers
+    try:
+        pos_raw = await _redis.get("broker:position_tickers")
+        if pos_raw:
+            for t in json.loads(pos_raw):
+                scores[t] = scores.get(t, 0) + 1
+                meta.setdefault(t, {})["in_portfolio"] = True
+    except Exception:
+        pass
+
+    # Sentiment magnitude
+    try:
+        sent_all = await _redis.hgetall("sentiment:latest")
+        for t, val_raw in (sent_all or {}).items():
+            val = json.loads(val_raw)
+            score_mag = abs(float(val.get("score", 0)))
+            if score_mag > 0.2:
+                scores[t] = scores.get(t, 0) + score_mag
+                meta.setdefault(t, {})["sentiment_score"] = round(float(val.get("score", 0)), 3)
+    except Exception:
+        pass
+
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:20]
+    result = [
+        {
+            "ticker": t,
+            "score":  round(s, 2),
+            **meta.get(t, {}),
+        }
+        for t, s in ranked
+        if len(t) <= 5 and t.isalpha()  # basic ticker sanity check
+    ]
+
+    await _redis.set("trending:symbols", json.dumps(result), ex=300)  # 5-min cache
+    return result
+
+
+# ── Feature 8: Polymarket paper trading ──────────────────────────────────────
+
+@app.get("/api/polymarket/markets")
+async def get_polymarket_markets(search: str = "", limit: int = 20):
+    """Browse active Polymarket markets via Gamma API."""
+    params: dict = {"limit": str(limit), "active": "true", "closed": "false"}
+    if search:
+        params["search"] = search
+    try:
+        import aiohttp as _aiohttp
+        async with _aiohttp.ClientSession() as s:
+            async with s.get(
+                "https://gamma-api.polymarket.com/markets",
+                params=params,
+                timeout=_aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status != 200:
+                    raise HTTPException(502, "Polymarket API unavailable")
+                markets = await resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, detail=str(e))
+
+    return {
+        "markets": [
+            {
+                "condition_id":  m.get("conditionId", ""),
+                "question":      m.get("question", ""),
+                "slug":          m.get("slug", ""),
+                "end_date":      m.get("endDate"),
+                "volume":        m.get("volume"),
+                "liquidity":     m.get("liquidity"),
+                "outcomes":      m.get("outcomes", []),
+                "outcome_prices": m.get("outcomePrices", []),
+                "active":        m.get("active", True),
+            }
+            for m in (markets if isinstance(markets, list) else markets.get("data", []))
+        ][:limit]
+    }
+
+
+@app.get("/api/polymarket/orderbook")
+async def get_polymarket_orderbook(token_id: str):
+    """Get current bid/ask for a Polymarket outcome token."""
+    try:
+        import aiohttp as _aiohttp
+        async with _aiohttp.ClientSession() as s:
+            async with s.get(
+                "https://clob.polymarket.com/book",
+                params={"token_id": token_id},
+                timeout=_aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status != 200:
+                    raise HTTPException(502, "Polymarket CLOB unavailable")
+                book = await resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, detail=str(e))
+    bids = book.get("bids", [])
+    asks = book.get("asks", [])
+    best_bid = float(bids[0]["price"]) if bids else 0.0
+    best_ask = float(asks[0]["price"]) if asks else 1.0
+    mid      = round((best_bid + best_ask) / 2, 4)
+    return {"token_id": token_id, "best_bid": best_bid, "best_ask": best_ask, "mid": mid, "bids": bids[:5], "asks": asks[:5]}
+
+
+class PolymarketTradeRequest(BaseModel):
+    condition_id:    str
+    token_id:        str
+    market_question: str
+    outcome:         str
+    side:            str   # buy | sell
+    qty:             float
+    market_slug:     str = ""
+
+
+@app.post("/api/polymarket/trade")
+async def polymarket_paper_trade(body: PolymarketTradeRequest, token: str = ""):
+    """Open or close a Polymarket paper position."""
+    if token != WEBUI_TOKEN:
+        raise HTTPException(403, "Forbidden")
+    if body.side not in ("buy", "sell"):
+        raise HTTPException(400, "side must be buy or sell")
+    if body.qty <= 0:
+        raise HTTPException(400, "qty must be positive")
+
+    # Fetch current price from CLOB
+    import aiohttp as _aiohttp
+    try:
+        async with _aiohttp.ClientSession() as s:
+            async with s.get(
+                "https://clob.polymarket.com/book",
+                params={"token_id": body.token_id},
+                timeout=_aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                book = await resp.json() if resp.status == 200 else {}
+    except Exception:
+        book = {}
+
+    bids = book.get("bids", [])
+    asks = book.get("asks", [])
+    price = float(asks[0]["price"]) if asks and body.side == "buy" else float(bids[0]["price"]) if bids else 0.5
+
+    pool = await _get_db_pool()
+
+    # Check if closing an existing position
+    existing = await pool.fetchrow(
+        """SELECT id, qty, entry_price FROM polymarket_positions
+           WHERE condition_id = $1 AND token_id = $2 AND status = 'open'""",
+        body.condition_id, body.token_id,
+    )
+
+    if existing and body.side == "sell":
+        pnl = round((price - float(existing["entry_price"])) * float(existing["qty"]), 4)
+        await pool.execute(
+            """UPDATE polymarket_positions
+               SET status='closed', exit_price=$1, pnl=$2, current_price=$1
+               WHERE id=$3""",
+            price, pnl, existing["id"],
+        )
+        await pool.execute(
+            """INSERT INTO polymarket_trades (position_id, action, qty, price, pnl)
+               VALUES ($1, 'close', $2, $3, $4)""",
+            existing["id"], float(existing["qty"]), price, pnl,
+        )
+        return {"ok": True, "action": "closed", "pnl": pnl, "exit_price": price}
+
+    # Open a new position
+    pos_id = await pool.fetchval(
+        """INSERT INTO polymarket_positions
+           (condition_id, token_id, market_slug, market_question, outcome, side, qty, entry_price, current_price, raw)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9)
+           RETURNING id""",
+        body.condition_id, body.token_id, body.market_slug, body.market_question,
+        body.outcome, body.side, body.qty, price,
+        json.dumps({"book_snapshot": {"best_bid": bids[0]["price"] if bids else 0, "best_ask": asks[0]["price"] if asks else 1}}),
+    )
+    await pool.execute(
+        """INSERT INTO polymarket_trades (position_id, action, qty, price)
+           VALUES ($1, 'open', $2, $3)""",
+        pos_id, body.qty, price,
+    )
+    return {"ok": True, "action": "opened", "position_id": str(pos_id), "entry_price": price}
+
+
+@app.get("/api/polymarket/positions")
+async def get_polymarket_positions(status: str = "open"):
+    """Return paper Polymarket positions."""
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT id, ts, condition_id, token_id, market_slug, market_question,
+                  outcome, side, qty, entry_price, current_price, status, exit_price, pnl
+           FROM polymarket_positions
+           WHERE status = $1
+           ORDER BY ts DESC""",
+        status,
+    )
+    return {
+        "positions": [
+            {
+                "id":               str(r["id"]),
+                "ts":               r["ts"].isoformat(),
+                "condition_id":     r["condition_id"],
+                "token_id":         r["token_id"],
+                "market_slug":      r["market_slug"],
+                "market_question":  r["market_question"],
+                "outcome":          r["outcome"],
+                "side":             r["side"],
+                "qty":              float(r["qty"]),
+                "entry_price":      float(r["entry_price"]),
+                "current_price":    float(r["current_price"] or r["entry_price"]),
+                "status":           r["status"],
+                "exit_price":       float(r["exit_price"] or 0) if r["exit_price"] else None,
+                "pnl":              float(r["pnl"] or 0) if r["pnl"] else None,
+                "unrealized_pnl":   round((float(r["current_price"] or r["entry_price"]) - float(r["entry_price"])) * float(r["qty"]), 4),
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.post("/api/polymarket/settle")
+async def settle_polymarket_positions(token: str = ""):
+    """Check open positions against Polymarket for resolution and settle."""
+    if token != WEBUI_TOKEN:
+        raise HTTPException(403, "Forbidden")
+    pool    = await _get_db_pool()
+    rows    = await pool.fetch(
+        "SELECT id, condition_id, token_id, qty, entry_price FROM polymarket_positions WHERE status = 'open'"
+    )
+    settled = 0
+    import aiohttp as _aiohttp
+    async with _aiohttp.ClientSession() as s:
+        for row in rows:
+            try:
+                async with s.get(
+                    f"https://gamma-api.polymarket.com/markets",
+                    params={"conditionId": row["condition_id"]},
+                    timeout=_aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    mkt  = (data if isinstance(data, list) else data.get("data", []))
+                    if not mkt:
+                        continue
+                    mkt = mkt[0]
+                    if mkt.get("closed") or mkt.get("resolved"):
+                        outcome_prices = mkt.get("outcomePrices", [])
+                        settle_price = float(outcome_prices[0]) if outcome_prices else 1.0
+                        pnl = round((settle_price - float(row["entry_price"])) * float(row["qty"]), 4)
+                        await pool.execute(
+                            """UPDATE polymarket_positions
+                               SET status='settled', exit_price=$1, pnl=$2, settled_at=NOW(), current_price=$1
+                               WHERE id=$3""",
+                            settle_price, pnl, row["id"],
+                        )
+                        await pool.execute(
+                            """INSERT INTO polymarket_trades (position_id, action, qty, price, pnl)
+                               VALUES ($1,'settle',$2,$3,$4)""",
+                            row["id"], float(row["qty"]), settle_price, pnl,
+                        )
+                        settled += 1
+            except Exception as e:
+                log.warning("polymarket.settle_error", error=str(e))
+    return {"ok": True, "settled": settled}
 
 
 # ── Options portfolio Greeks ──────────────────────────────────────────────────
