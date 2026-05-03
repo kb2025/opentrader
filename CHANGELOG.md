@@ -3,6 +3,20 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.70] - 2026-05-03
+
+### Added
+- **Feature 1: Tiered intraday portfolio NAV snapshots** — `portfolio_intraday_snapshots` hypertable; 30-min captures during market hours via new scheduler job; tiered pruning (24h full res → 7d 15-min → 30d hourly); new `/api/portfolio/intraday-snapshot` and `/api/portfolio/intraday-nav` endpoints
+- **Feature 2: DB write retry decorator** — `shared/db_retry.py`; `@db_retry(max_attempts=3)` decorator with exponential backoff for PostgreSQL deadlock/serialization/lock-timeout errors
+- **Feature 3: ETF capital flow scraper** — `scrapers/etf_flows/` container (`ot-scraper-etf-flows`); tracks 26 ETFs (broad, sector, bond, commodity, volatility, crypto); `etf_flow_snapshots` hypertable; `/api/market/etf-flows` endpoint; Trading Dashboard "ETF Capital Flows" panel
+- **Feature 4: Macro regime snapshot** — `scrapers/macro_regime/` container (`ot-scraper-macro-regime`); aggregates SPY trend, QQQ/TLT/DXY/HYG/VIX momentum + OVTLYR breadth into bull/bear score; `macro_regime_snapshots` hypertable; `/api/market/macro-regime` endpoint; Trading Dashboard "Macro Regime" widget
+- **Feature 5: Alpha Vantage news sentiment scraper** — `scrapers/alphavantage/` container (`ot-scraper-news`); fetches categorized news (equities/macro/energy/technology) with sentiment scores; `news_sentiment_snapshots` hypertable; `/api/market/news-sentiment` endpoint; Trading Dashboard "News Sentiment" feed
+- **Feature 6: Per-symbol stock analysis snapshots** — `stock_analysis_snapshots` hypertable; `/api/market/stock-analysis/{ticker}?generate=true` generates snapshot from predictor signals + OVTLYR + sentiment; Trading Dashboard "Quick Intel" panel
+- **Feature 7: Trending symbols engine** — `/api/market/trending` + `/api/market/trending/refresh`; scores tickers by signal frequency (×3), OVTLYR list presence (×2), portfolio presence (×1), sentiment magnitude; Redis 5-min cache; scheduler refreshes every 5m; Trading Dashboard "Trending Symbols" widget
+- **Feature 8: Polymarket paper trading** — `polymarket_positions` + `polymarket_trades` tables; Gamma API market browser; CLOB orderbook prices; paper buy/sell/close positions; auto-settlement check; full "Polymarket" page under Resources nav
+- **Scheduler** — 6 new jobs: `intraday_nav_snapshot` (30m), `prune_portfolio_history` (nightly), `scrape_etf_flows` (16:30 ET), `scrape_macro_regime` (16:35 ET), `scrape_news_sentiment` (30m), `update_trending_symbols` (5m)
+- **3 new containers** — `ot-scraper-etf-flows`, `ot-scraper-macro-regime`, `ot-scraper-news`
+
 ## [3.6.69] - 2026-05-03
 
 ### Changed
