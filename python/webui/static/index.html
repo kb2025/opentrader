@@ -43,8 +43,7 @@ nav{padding:8px;flex:1;overflow-y:auto}
 .mg-th.sort-asc .mg-sort-ind::after{content:'▲';font-size:9px;margin-left:3px}
 .mg-th.sort-desc .mg-sort-ind::after{content:'▼';font-size:9px;margin-left:3px}
 .mg-row{border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s}
-.mg-row:hover{background:var(--surface2)}
-.mg-perf{text-align:right;padding:7px 8px;font-size:13px;font-weight:500;border-radius:3px}
+.mg-row:hover{background:rgba(255,255,255,.05) !important}
 .sidebar-footer{padding:12px 16px;border-top:1px solid var(--border)}
 .market-pill{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
 .pulse{animation:pulse 2s infinite}
@@ -11104,71 +11103,65 @@ function _mgSort(col) {
   _mgRender();
 }
 
-function _mgPerfColor(v) {
-  if (v === null || v === undefined) return '';
-  const abs = Math.abs(v);
-  if (v > 0) {
-    if (abs >= 10) return 'background:rgba(16,185,129,.40);color:#6ee7b7';
-    if (abs >= 5)  return 'background:rgba(16,185,129,.28);color:#6ee7b7';
-    if (abs >= 2)  return 'background:rgba(16,185,129,.18);color:#34d399';
-    if (abs >= 0.5) return 'background:rgba(16,185,129,.10);color:#34d399';
-    return 'color:rgba(52,211,153,.7)';
-  } else {
-    if (abs >= 10) return 'background:rgba(185,0,0,.45);color:#fca5a5';
-    if (abs >= 5)  return 'background:rgba(185,0,0,.30);color:#fca5a5';
-    if (abs >= 2)  return 'background:rgba(185,0,0,.20);color:#f87171';
-    if (abs >= 0.5) return 'background:rgba(185,0,0,.12);color:#f87171';
-    return 'color:rgba(248,113,113,.7)';
-  }
-}
-
 function _mgRender() {
+  const perfKeys = ['perf_1d','perf_1w','perf_1m','perf_3m','perf_6m','perf_ytd','perf_1y'];
+
+  // Column-normalize: largest absolute value in each column = full bar width
+  const colMax = {};
+  perfKeys.forEach(k => {
+    colMax[k] = Math.max(..._mgData.map(it => Math.abs(it[k] ?? 0)), 0.01);
+  });
+
   const items = [..._mgData].sort((a, b) => {
-    const av = a[_mgSortCol] ?? (typeof a[_mgSortCol] === 'string' ? '' : -Infinity);
-    const bv = b[_mgSortCol] ?? (typeof b[_mgSortCol] === 'string' ? '' : -Infinity);
-    if (typeof av === 'string') return _mgSortDir * av.localeCompare(bv);
+    const av = a[_mgSortCol];
+    const bv = b[_mgSortCol];
+    if (typeof av === 'string') return _mgSortDir * (av ?? '').localeCompare(bv ?? '');
     return _mgSortDir * ((av ?? -Infinity) - (bv ?? -Infinity));
   });
 
   // Update sort indicators
-  document.querySelectorAll('.mg-th').forEach(th => {
-    th.classList.remove('sort-asc', 'sort-desc');
-  });
+  document.querySelectorAll('.mg-th').forEach(th => th.classList.remove('sort-asc','sort-desc'));
   const sortMap = {name:0,ticker:1,price:2,perf_1d:3,perf_1w:4,perf_1m:5,perf_3m:6,perf_6m:7,perf_ytd:8,perf_1y:9,volume:10};
   const sortIdx = sortMap[_mgSortCol];
   if (sortIdx !== undefined) {
     const ths = document.querySelectorAll('#mg-header-row .mg-th');
-    if (ths[sortIdx]) {
-      ths[sortIdx].classList.add(_mgSortDir === 1 ? 'sort-asc' : 'sort-desc');
-    }
+    if (ths[sortIdx]) ths[sortIdx].classList.add(_mgSortDir === 1 ? 'sort-asc' : 'sort-desc');
   }
 
-  function fmtPct(v) {
-    if (v === null || v === undefined) return '<span style="color:var(--muted)">—</span>';
-    const sign = v >= 0 ? '+' : '';
-    return `${sign}${v.toFixed(2)}%`;
+  function barCell(v, key) {
+    if (v === null || v === undefined) {
+      return `<td style="padding:6px 10px;text-align:center;color:var(--muted);min-width:80px">—</td>`;
+    }
+    const isPos  = v >= 0;
+    const barW   = Math.min(96, Math.abs(v) / colMax[key] * 92);
+    const sign   = isPos ? '+' : '';
+    const txtClr = isPos ? '#4ade80' : '#f87171';
+    const barClr = isPos ? 'rgba(74,222,128,0.22)' : 'rgba(248,113,113,0.22)';
+    const border = isPos ? 'rgba(74,222,128,0.55)' : 'rgba(248,113,113,0.55)';
+    const dir    = isPos ? 'to right' : 'to left';
+    return `<td style="padding:0;position:relative;min-width:80px">` +
+      `<div style="position:absolute;inset:1px 0;background:linear-gradient(${dir},${barClr} ${barW}%,transparent ${barW}%);` +
+      `border-${isPos?'left':'right'}:2px solid ${border};border-radius:${isPos?'0 3px 3px 0':'3px 0 0 3px'};pointer-events:none"></div>` +
+      `<span style="position:relative;display:block;padding:7px 10px;text-align:right;color:${txtClr};font-size:12px;font-weight:600;white-space:nowrap">${sign}${v.toFixed(2)}%</span>` +
+      `</td>`;
   }
+
   function fmtVol(v) {
     if (!v) return '<span style="color:var(--muted)">—</span>';
-    if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
-    if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
-    if (v >= 1e3) return (v / 1e3).toFixed(0) + 'K';
+    if (v >= 1e9) return (v/1e9).toFixed(2)+'B';
+    if (v >= 1e6) return (v/1e6).toFixed(1)+'M';
+    if (v >= 1e3) return (v/1e3).toFixed(0)+'K';
     return v.toString();
   }
 
   const tbody = document.getElementById('mg-tbody');
   tbody.innerHTML = items.map((it, i) => {
-    const perf_cols = ['perf_1d','perf_1w','perf_1m','perf_3m','perf_6m','perf_ytd','perf_1y'];
-    const pCells = perf_cols.map(k => {
-      const v = it[k];
-      const style = _mgPerfColor(v);
-      return `<td class="mg-perf" style="${style}">${fmtPct(v)}</td>`;
-    }).join('');
-    const bg = i % 2 === 1 ? 'background:rgba(255,255,255,.02)' : '';
+    const pCells = perfKeys.map(k => barCell(it[k], k)).join('');
+    const bg = i % 2 === 1 ? 'background:rgba(255,255,255,.025)' : '';
     return `<tr class="mg-row" style="${bg}">
       <td style="padding:7px 10px;color:var(--fg);font-weight:500;white-space:nowrap">${it.name}</td>
       <td style="padding:7px 6px;color:var(--blue);font-size:12px;font-weight:600">${it.ticker}</td>
-      <td style="padding:7px 8px;text-align:right;color:var(--fg)">${it.price ? '$'+it.price.toFixed(2) : '—'}</td>
+      <td style="padding:7px 10px;text-align:right;color:var(--fg)">${it.price ? '$'+it.price.toFixed(2) : '—'}</td>
       ${pCells}
       <td style="padding:7px 10px;text-align:right;color:var(--muted);font-size:12px">${fmtVol(it.volume)}</td>
     </tr>`;

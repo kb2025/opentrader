@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.63] - 2026-05-03
+
+### Changed
+- **Market Groups** — performance cells replaced with Finviz-style horizontal bar charts; bar width is column-normalized (largest absolute value in the column = full width); positive bars grow left-to-right (green), negative grow right-to-left (red); colored border accent on the leading edge of each bar
+
 ## [3.6.62] - 2026-05-03
 
 ### Changed
