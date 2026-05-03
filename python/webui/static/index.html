@@ -310,6 +310,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:var(--green)"></span>
         Equity Dividend Income
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-equities-sector-leaders')" data-page="page-equities-sector-leaders">
+        <span class="nav-dot" style="background:#f59e0b"></span>
+        Sector Leaders
+      </div>
       <div class="nav-item" draggable="true" onclick="navigate('page-shadow-account')" data-page="page-shadow-account">
         <span class="nav-dot" style="background:#a78bfa"></span>
         Equities Hindsight
@@ -3384,7 +3388,25 @@ select option{background:var(--surface2)}
 
     </div><!-- /page-shadow-account -->
 
-    <!-- ════════════════════════════════════════
+    <!-- ═════════════════════════���══════════════
+         PAGE: Sector Leaders
+    ════════════════════════════════════════ -->
+    <div class="page" id="page-equities-sector-leaders">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--fg)">Sector Leaders</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">Daily top performers ranked within each sector · streak = consecutive days leading</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="sl-as-of" style="font-size:11px;color:var(--dim)"></span>
+          <button onclick="_slRefresh()" id="sl-refresh-btn" style="padding:5px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:12px;cursor:pointer">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="sl-loading" style="text-align:center;padding:60px;color:var(--muted);font-size:14px">Loading…</div>
+      <div id="sl-grid" style="display:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
+    </div><!-- /page-equities-sector-leaders -->
+
+    <!-- ══════════════════════════════════���═════
          PAGE: Library
     ════════════════════════════════════════ -->
     <div class="page" id="page-resources-library">
@@ -3859,6 +3881,7 @@ const PAGE_TITLES = {
   'page-plan-library':       'Strategy Library',
   'page-plan-assignment':    'Strategy Assignment',
   'page-plan-optimizer':    'Portfolio Optimizer',
+  'page-equities-sector-leaders': 'Sector Leaders',
   'page-shadow-account':    'Equities Hindsight',
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
@@ -3996,6 +4019,7 @@ function navigate(pageId) {
     case 'page-plan-library':       loadLibraryPage();      break;
     case 'page-plan-assignment':    loadAssignmentPage();   break;
     case 'page-plan-optimizer':    loadOptimizerPage();    break;
+    case 'page-equities-sector-leaders': loadSectorLeadersPage(); break;
     case 'page-shadow-account':    loadShadowPage();       break;
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
@@ -11102,6 +11126,113 @@ function _renderBtResults(r) {
 function loadBacktesterPage() {
   const el = document.getElementById('bt-page-ticker');
   if (el) setTimeout(() => el.focus(), 80);
+}
+
+// ── Sector Leaders ────────────────────────────────────────────────────────────
+let _slData = null;
+
+async function loadSectorLeadersPage() {
+  if (_slData) { _slRender(_slData); return; }
+  await _slFetch(false);
+}
+
+async function _slRefresh() {
+  _slData = null;
+  document.getElementById('sl-refresh-btn').disabled = true;
+  await _slFetch(true);
+  document.getElementById('sl-refresh-btn').disabled = false;
+}
+
+async function _slFetch(refresh) {
+  document.getElementById('sl-loading').style.display = 'block';
+  document.getElementById('sl-grid').style.display    = 'none';
+  try {
+    const d = await apiFetch(`/api/market/sector-leaders${refresh ? '?refresh=true' : ''}`);
+    _slData = d;
+    const ts = d.as_of ? new Date(d.as_of + 'Z').toLocaleTimeString() : '';
+    const el = document.getElementById('sl-as-of');
+    if (el) el.textContent = ts ? `as of ${ts}` : '';
+    _slRender(d);
+  } catch(e) {
+    document.getElementById('sl-loading').textContent = 'Error loading data.';
+  }
+}
+
+function _slStreakBadge(streak) {
+  if (streak < 2) return '';
+  const color = streak >= 5 ? '#ef4444' : streak >= 3 ? '#f97316' : '#f59e0b';
+  const flames = streak >= 5 ? '🔥🔥' : '🔥';
+  return `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:20px;background:${color}22;border:1px solid ${color}55;color:${color};font-size:10px;font-weight:700;white-space:nowrap;margin-left:4px">${flames}${streak}d</span>`;
+}
+
+function _slRankBadge(rank) {
+  if (rank === 1) return `<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#f59e0b;color:#000;font-size:9px;font-weight:800;flex-shrink:0">1</span>`;
+  if (rank === 2) return `<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#94a3b8;color:#000;font-size:9px;font-weight:800;flex-shrink:0">2</span>`;
+  if (rank === 3) return `<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#92400e;color:#fff;font-size:9px;font-weight:800;flex-shrink:0">3</span>`;
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--surface2);color:var(--muted);font-size:9px;font-weight:600;flex-shrink:0">${rank}</span>`;
+}
+
+function _slFmtVol(v) {
+  if (!v) return '';
+  if (v >= 1e9) return (v/1e9).toFixed(1)+'B';
+  if (v >= 1e6) return (v/1e6).toFixed(1)+'M';
+  if (v >= 1e3) return (v/1e3).toFixed(0)+'K';
+  return v;
+}
+
+function _slRender(data) {
+  const grid = document.getElementById('sl-grid');
+
+  // Sort sectors: biggest positive avg_change first
+  const sectors = [...(data.sectors || [])].sort((a, b) => b.avg_change - a.avg_change);
+
+  grid.innerHTML = sectors.map(sec => {
+    const avgClr  = sec.avg_change >= 0 ? 'var(--green)' : 'var(--red)';
+    const avgSign = sec.avg_change >= 0 ? '+' : '';
+    const etfTag  = sec.etf ? `<span style="color:var(--blue);font-size:10px;margin-left:6px">${sec.etf}</span>` : '';
+
+    // Show top 7 stocks; boost visual prominence by streak
+    const stocks = (sec.stocks || []).slice(0, 7);
+
+    const rows = stocks.map(s => {
+      const chgClr  = s.change >= 0 ? '#4ade80' : '#f87171';
+      const chgSign = s.change >= 0 ? '+' : '';
+      // Streak-based prominence: streak >= 3 gets amber left border + slight bg
+      const rowBg   = s.streak >= 5 ? 'background:rgba(239,68,68,.07);border-left:3px solid #ef4444'
+                    : s.streak >= 3 ? 'background:rgba(249,115,22,.07);border-left:3px solid #f97316'
+                    : s.streak >= 2 ? 'background:rgba(245,158,11,.06);border-left:3px solid #f59e0b'
+                    : 'border-left:3px solid transparent';
+      const fontSize = s.streak >= 3 ? '13px' : '12px';
+      const volStr   = _slFmtVol(s.volume);
+      return `<div style="display:flex;align-items:center;gap:7px;padding:6px 10px;${rowBg};border-radius:0 5px 5px 0;margin-bottom:2px">
+        ${_slRankBadge(s.rank)}
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:0">
+            <span style="font-weight:700;font-size:${fontSize};color:var(--fg)">${s.ticker}</span>
+            ${_slStreakBadge(s.streak)}
+          </div>
+          <div style="font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name}${s.subsector ? ' · '+s.subsector : ''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:${fontSize};font-weight:700;color:${chgClr}">${chgSign}${s.change.toFixed(2)}%</div>
+          ${s.price ? `<div style="font-size:10px;color:var(--muted)">$${s.price.toFixed(2)}${volStr ? ' · '+volStr : ''}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:10px 14px 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center">
+          <span style="font-size:12px;font-weight:700;color:var(--fg)">${sec.sector}</span>${etfTag}
+        </div>
+        <span style="font-size:13px;font-weight:700;color:${avgClr}">${avgSign}${sec.avg_change.toFixed(2)}%</span>
+      </div>
+      <div style="padding:6px 0">${rows || '<div style="padding:10px 14px;font-size:12px;color:var(--muted)">No data</div>'}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('sl-loading').style.display = 'none';
+  grid.style.display = 'grid';
 }
 
 // ── Market Groups ─────────────────────────────────────────────────────────────

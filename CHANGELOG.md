@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.65] - 2026-05-03
+
+### Added
+- **Sector Leaders page** (Equities nav) — grid of 11 sector cards showing daily top performers; each card ranks all stocks within the sector by % change with gold/silver/bronze rank badges; consecutive-day streak tracked in `sector_leader_history` DB table: 2d = 🔥 amber, 3d+ = 🔥 orange, 5d+ = 🔥🔥 red; streak stocks get a colored left-border accent and slightly larger font for visual prominence; cards sorted by sector avg change (best performing sector first); 15-min Redis cache per date
+- **`sector_leader_history` table** — one row per (date, sector, ticker) with rank, change_pct, price, volume; streak computed by counting consecutive trading days each ticker appeared in top-5 of its sector
+- **`GET /api/market/sector-leaders?refresh=false`** — fetches today's Polygon snapshot on first call, stores rankings to DB, returns sector cards with streak data; `refresh=true` bypasses cache and re-fetches
+
 ## [3.6.64] - 2026-05-03
 
 ### Added

@@ -2533,6 +2533,277 @@ async def get_market_groups(group: str = "sectors"):
     return result
 
 
+# ── Helper: expose SP500 universe without duplicating the data dict ───────────
+
+async def _resolve_sp500_universe():
+    """Return (_SP500_STOCKS, _SP500_ETFS) from module-level cache."""
+    global _SP500_UNIVERSE_CACHE
+    if _SP500_UNIVERSE_CACHE is not None:
+        return _SP500_UNIVERSE_CACHE
+    _SP500_STOCKS_LOCAL = {
+        "Technology": [
+            ("MSFT","Microsoft",3100,"Software"),("AAPL","Apple",3200,"Hardware"),
+            ("NVDA","NVIDIA",2800,"Semiconductors"),("AVGO","Broadcom",900,"Semiconductors"),
+            ("ORCL","Oracle",530,"Software"),("CRM","Salesforce",295,"Software"),
+            ("AMD","AMD",220,"Semiconductors"),("NOW","ServiceNow",210,"Software"),
+            ("ADBE","Adobe",195,"Software"),("ACN","Accenture",190,"Hardware"),
+            ("QCOM","Qualcomm",185,"Semiconductors"),("TXN","Texas Instr",165,"Semiconductors"),
+            ("AMAT","Applied Matls",160,"Semiconductors"),("MU","Micron",120,"Semiconductors"),
+            ("INTC","Intel",95,"Hardware"),
+        ],
+        "Financials": [
+            ("BRK-B","Berkshire",950,"Diversified"),("JPM","JPMorgan",780,"Banks"),
+            ("V","Visa",640,"Payments"),("MA","Mastercard",520,"Payments"),
+            ("BAC","Bank of Amer",335,"Banks"),("WFC","Wells Fargo",275,"Banks"),
+            ("AXP","AmEx",220,"Payments"),("GS","Goldman Sachs",225,"Capital Markets"),
+            ("MS","Morgan Stanley",205,"Capital Markets"),("PGR","Progressive",140,"Insurance"),
+            ("BLK","BlackRock",155,"Asset Mgmt"),("SCHW","Schwab",135,"Asset Mgmt"),
+            ("C","Citigroup",135,"Banks"),
+        ],
+        "Health Care": [
+            ("LLY","Eli Lilly",850,"Pharma"),("UNH","UnitedHealth",540,"Health Services"),
+            ("JNJ","J&J",395,"Pharma"),("ABBV","AbbVie",380,"Pharma"),
+            ("MRK","Merck",315,"Pharma"),("ISRG","Intuitive",225,"Med Devices"),
+            ("TMO","Thermo Fisher",215,"Life Sciences"),("ABT","Abbott",205,"Med Devices"),
+            ("AMGN","Amgen",165,"Biotech"),("DHR","Danaher",175,"Life Sciences"),
+            ("PFE","Pfizer",155,"Pharma"),("BMY","Bristol-Myers",140,"Pharma"),
+        ],
+        "Consumer Discretionary": [
+            ("AMZN","Amazon",2400,"Retail"),("TSLA","Tesla",850,"Auto & EV"),
+            ("HD","Home Depot",385,"Home Improvement"),("MCD","McDonald's",235,"Restaurants"),
+            ("BKNG","Booking",180,"Travel"),("LOW","Lowe's",148,"Home Improvement"),
+            ("TJX","TJX",145,"Retail"),("NKE","Nike",115,"Retail"),
+            ("SBUX","Starbucks",105,"Restaurants"),("CMG","Chipotle",92,"Restaurants"),
+            ("ABNB","Airbnb",82,"Travel"),
+        ],
+        "Industrials": [
+            ("GE","GE",235,"Aerospace/Defense"),("CAT","Caterpillar",190,"Machinery"),
+            ("ETN","Eaton",135,"Electrical Equip"),("RTX","RTX",140,"Aerospace/Defense"),
+            ("HON","Honeywell",130,"Conglomerates"),("UNP","Union Pacific",145,"Rail"),
+            ("LMT","Lockheed",120,"Aerospace/Defense"),("DE","Deere",115,"Machinery"),
+            ("GEV","GE Vernova",105,"Electrical Equip"),("NOC","Northrop",100,"Aerospace/Defense"),
+            ("ITW","Illinois Tool",105,"Machinery"),("FDX","FedEx",65,"Logistics"),
+            ("EMR","Emerson",75,"Electrical Equip"),
+        ],
+        "Communication Services": [
+            ("META","Meta",1400,"Social & Search"),("GOOGL","Alphabet",2200,"Social & Search"),
+            ("NFLX","Netflix",390,"Media & Entertainment"),("DIS","Disney",200,"Media & Entertainment"),
+            ("CMCSA","Comcast",155,"Media & Entertainment"),("T","AT&T",150,"Telecom"),
+            ("VZ","Verizon",165,"Telecom"),("EA","EA",36,"Media & Entertainment"),
+            ("TTWO","Take-Two",33,"Media & Entertainment"),
+        ],
+        "Consumer Staples": [
+            ("WMT","Walmart",680,"Retail"),("PG","Procter & Gamble",380,"Household"),
+            ("COST","Costco",380,"Retail"),("KO","Coca-Cola",285,"Beverages"),
+            ("PEP","PepsiCo",220,"Beverages"),("PM","Philip Morris",195,"Tobacco"),
+            ("MDLZ","Mondelez",85,"Food"),("CL","Colgate",65,"Household"),
+            ("GIS","General Mills",35,"Food"),("MO","Altria",90,"Tobacco"),
+        ],
+        "Energy": [
+            ("XOM","ExxonMobil",530,"Oil & Gas"),("CVX","Chevron",290,"Oil & Gas"),
+            ("COP","ConocoPhillips",130,"Oil & Gas"),("EOG","EOG Resources",75,"Oil & Gas"),
+            ("SLB","SLB",58,"Oilfield Services"),("MPC","Marathon Petro",60,"Refining"),
+            ("PSX","Phillips 66",55,"Refining"),("VLO","Valero",50,"Refining"),
+            ("KMI","Kinder Morgan",45,"Pipelines"),("OXY","Occidental",50,"Oil & Gas"),
+        ],
+        "Real Estate": [
+            ("PLD","Prologis",115,"Industrial REITs"),("AMT","American Tower",90,"Infrastructure"),
+            ("EQIX","Equinix",80,"Data Centers"),("WELL","Welltower",75,"Healthcare REITs"),
+            ("SPG","Simon Property",65,"Retail REITs"),("O","Realty Income",55,"Retail REITs"),
+            ("DLR","Digital Realty",50,"Data Centers"),("PSA","Public Storage",55,"Storage REITs"),
+            ("CCI","Crown Castle",45,"Infrastructure"),
+        ],
+        "Utilities": [
+            ("NEE","NextEra",165,"Electric"),("SO","Southern",90,"Electric"),
+            ("DUK","Duke Energy",90,"Electric"),("SRE","Sempra",55,"Multi"),
+            ("AEP","AEP",55,"Electric"),("CEG","Constellation",85,"Nuclear"),
+            ("PCG","PG&E",50,"Electric"),("EXC","Exelon",45,"Electric"),
+            ("XEL","Xcel Energy",35,"Electric"),
+        ],
+        "Materials": [
+            ("LIN","Linde",225,"Chemicals"),("APD","Air Products",65,"Chemicals"),
+            ("SHW","Sherwin-Williams",105,"Chemicals"),("ECL","Ecolab",65,"Chemicals"),
+            ("NEM","Newmont",55,"Gold Mining"),("FCX","Freeport",55,"Copper"),
+            ("NUE","Nucor",35,"Steel"),("DOW","Dow",45,"Chemicals"),
+            ("VMC","Vulcan Materials",35,"Construction Materials"),
+        ],
+    }
+    _SP500_ETFS_LOCAL = {
+        "Technology":"XLK","Financials":"XLF","Health Care":"XLV",
+        "Consumer Discretionary":"XLY","Industrials":"XLI",
+        "Communication Services":"XLC","Consumer Staples":"XLP",
+        "Energy":"XLE","Real Estate":"XLRE","Utilities":"XLU","Materials":"XLB",
+    }
+    _SP500_UNIVERSE_CACHE = (_SP500_STOCKS_LOCAL, _SP500_ETFS_LOCAL)
+    return _SP500_UNIVERSE_CACHE
+
+_SP500_UNIVERSE_CACHE = None   # module-level cache
+
+
+# ── API — Sector Leaders (daily ranking + consecutive-day streak) ─────────────
+
+@app.get("/api/market/sector-leaders")
+async def get_sector_leaders(refresh: bool = False):
+    """
+    Daily ranked sector leaders with consecutive-day streak data.
+    Fetches today's Polygon snapshot, stores per-sector rankings to DB,
+    then computes streaks from history.  Redis-cached 15 min per calendar day.
+    """
+    import aiohttp as _aiohttp
+    from datetime import date as _date
+    from collections import defaultdict
+
+    today    = _date.today()
+    pool     = await _get_db_pool()
+    api_key  = os.getenv("MASSIVE_API_KEY", "")
+    cache_key = f"market:sector_leaders:{today.isoformat()}"
+    _redis   = await get_redis()
+
+    # Resolve the SP500 stock universe by calling the sector map helper to build _INDEX_MAP
+    # We run a minimal call to populate the local data — simpler than duplicating the dict here
+    _sp500_stocks, _sp500_etfs = await _resolve_sp500_universe()
+
+    if not refresh:
+        try:
+            cached = await _redis.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
+    # ── Fetch today's data if not already stored ──────────────────────────────
+    stored = await pool.fetchval(
+        "SELECT COUNT(*) FROM sector_leader_history WHERE trade_date=$1", today
+    )
+
+    if stored == 0 or refresh:
+        all_tickers = [t for stocks in _sp500_stocks.values() for t, _, _, _ in stocks]
+        changes: dict[str, tuple[float, float, int]] = {}
+
+        if api_key:
+            snap_url = (
+                f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+                f"?tickers={','.join(all_tickers)}&apiKey={api_key}"
+            )
+            try:
+                async with _aiohttp.ClientSession() as sess:
+                    async with sess.get(snap_url, timeout=_aiohttp.ClientTimeout(total=20)) as r:
+                        if r.status == 200:
+                            data = await r.json()
+                            for t in data.get("tickers", []):
+                                sym  = t.get("ticker", "")
+                                chg  = round(float(t.get("todaysChangePerc") or 0), 4)
+                                day  = t.get("day") or {}
+                                px   = round(float(day.get("c") or
+                                             (t.get("lastTrade") or {}).get("p") or 0), 4)
+                                vol  = int(day.get("v") or 0)
+                                changes[sym] = (chg, px, vol)
+            except Exception as e:
+                log.warning("sector_leaders.polygon_error", error=str(e))
+
+        if changes:
+            await pool.execute(
+                "DELETE FROM sector_leader_history WHERE trade_date=$1", today
+            )
+            rows_to_insert = []
+            for sector, stocks in _sp500_stocks.items():
+                ranked = sorted(
+                    [(tkr, *changes[tkr]) for tkr, _, _, _ in stocks if tkr in changes],
+                    key=lambda x: x[1], reverse=True,
+                )
+                for rank, (tkr, chg, px, vol) in enumerate(ranked, 1):
+                    rows_to_insert.append((today, sector, tkr, rank, chg, px, vol))
+
+            await pool.executemany(
+                """INSERT INTO sector_leader_history
+                   (trade_date, sector, ticker, rank, change_pct, price, volume)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7)
+                   ON CONFLICT (trade_date, sector, ticker) DO UPDATE
+                   SET rank=$4, change_pct=$5, price=$6, volume=$7""",
+                rows_to_insert,
+            )
+
+    # ── Load today's ranked data ───────────────────────────────────────────────
+    today_rows = await pool.fetch(
+        """SELECT sector, ticker, rank, change_pct, price, volume
+           FROM sector_leader_history WHERE trade_date=$1
+           ORDER BY sector, rank""",
+        today,
+    )
+
+    # ── Compute consecutive-day streaks (rank ≤ 5) ───────────────────────────
+    # Get all trading dates we have data for (most recent first)
+    date_rows = await pool.fetch(
+        "SELECT DISTINCT trade_date FROM sector_leader_history ORDER BY trade_date DESC LIMIT 60"
+    )
+    trading_dates = [r["trade_date"] for r in date_rows]
+
+    # Which (ticker, sector) pairs were in top-5 on each trading date
+    hist_rows = await pool.fetch(
+        """SELECT trade_date, ticker, sector
+           FROM sector_leader_history
+           WHERE trade_date >= CURRENT_DATE - INTERVAL '60 days' AND rank <= 5
+        """
+    )
+    top5_by_key: dict[tuple, set] = defaultdict(set)
+    for r in hist_rows:
+        top5_by_key[(r["ticker"], r["sector"])].add(r["trade_date"])
+
+    streak_map: dict[tuple, int] = {}
+    for key, date_set in top5_by_key.items():
+        streak = 0
+        for d in trading_dates:   # already ordered newest → oldest
+            if d in date_set:
+                streak += 1
+            else:
+                break
+        streak_map[key] = streak
+
+    # ── Build name + subsector lookup ─────────────────────────────────────────
+    meta: dict[str, tuple[str, str]] = {}  # ticker -> (name, subsector)
+    for sector, stocks in _sp500_stocks.items():
+        for tkr, name, _, subsector in stocks:
+            meta[tkr] = (name, subsector)
+
+    # ── Assemble sector cards ─────────────────────────────────────────────────
+    sector_buckets: dict[str, list] = defaultdict(list)
+    for r in today_rows:
+        name, subsector = meta.get(r["ticker"], (r["ticker"], ""))
+        streak = streak_map.get((r["ticker"], r["sector"]), 0)
+        sector_buckets[r["sector"]].append({
+            "ticker":    r["ticker"],
+            "name":      name,
+            "subsector": subsector,
+            "rank":      r["rank"],
+            "change":    float(r["change_pct"] or 0),
+            "price":     float(r["price"] or 0),
+            "volume":    r["volume"] or 0,
+            "streak":    streak,
+        })
+
+    sectors_out = []
+    for sector, stocks in _sp500_stocks.items():
+        bucket = sector_buckets.get(sector, [])
+        avg_chg = round(sum(s["change"] for s in bucket) / len(bucket), 2) if bucket else 0
+        sectors_out.append({
+            "sector":     sector,
+            "etf":        _sp500_etfs.get(sector, ""),
+            "avg_change": avg_chg,
+            "stocks":     bucket,
+        })
+
+    result = {
+        "date":    today.isoformat(),
+        "sectors": sectors_out,
+        "as_of":   datetime.utcnow().isoformat(),
+    }
+    try:
+        await _redis.setex(cache_key, 900, json.dumps(result))   # 15-min cache
+    except Exception:
+        pass
+    return result
+
+
 # ── API — Market bars (Massive MCP) ──────────────────────────────────────────
 
 @app.get("/api/market/bars")

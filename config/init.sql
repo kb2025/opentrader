@@ -358,3 +358,18 @@ CREATE TABLE IF NOT EXISTS equity_journal (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (account_id, ticker)
 );
+
+-- Sector leader history (daily per-sector rankings + streak tracking)
+CREATE TABLE IF NOT EXISTS sector_leader_history (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trade_date  DATE NOT NULL,
+  sector      TEXT NOT NULL,
+  ticker      TEXT NOT NULL,
+  rank        INT NOT NULL,
+  change_pct  NUMERIC(8,4),
+  price       NUMERIC(10,4),
+  volume      BIGINT,
+  UNIQUE (trade_date, sector, ticker)
+);
+CREATE INDEX IF NOT EXISTS slh_date_sector ON sector_leader_history (trade_date DESC, sector);
+CREATE INDEX IF NOT EXISTS slh_ticker_date ON sector_leader_history (ticker, trade_date DESC);
