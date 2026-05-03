@@ -4,7 +4,10 @@ Backtrader engine for OpenTrader strategy backtesting.
 This module runs inside a ProcessPoolExecutor worker — entirely synchronous,
 no FastAPI / asyncio dependencies.
 
-Entry point:  run_backtest(params: dict) -> dict
+Public entry points:
+  run_backtest(params)  — fetch OHLCV then run strategy, returns full result dict
+  _run_on_df(df, params) — run strategy on a pre-fetched dataframe (used by validator)
+  _fetch_ohlcv(ticker, period) — download and normalise OHLCV
 """
 import base64
 import io
@@ -15,6 +18,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import backtrader as bt
+import numpy as np
 import pandas as pd
 import yfinance as yf
 
@@ -277,11 +281,83 @@ def _build_chart(df: pd.DataFrame, trade_log: list, equity_curve: list, ticker: 
         return ""
 
 
-# ── Main entry point ───────────────────────────────────────────────────────────
+# ── Expanded metrics (Sortino, Calmar, Recovery Factor, PnL stats) ─────────────
 
-def run_backtest(params: dict) -> dict:
-    ticker          = params["ticker"].upper().strip()
-    period          = params.get("period", "2y")
+def _expanded_metrics(
+    trade_log: list,
+    equity_curve: list,
+    annualized_pct: float,
+    max_dd_pct: float,
+    total_ret_pct: float,
+) -> dict:
+    """Compute extra metrics from already-available backtest data.
+
+    All percentage inputs (annualized_pct, max_dd_pct, total_ret_pct) are in
+    percent (e.g. 12.5 means 12.5%). Returns a flat dict of additional metrics.
+    """
+    eq = np.asarray(equity_curve, dtype=float)
+    returns = np.diff(eq) / (eq[:-1] + 1e-12) if len(eq) > 1 else np.array([])
+
+    # Sortino
+    if len(returns) >= 2:
+        downside = returns[returns < 0]
+        d_std = float(np.std(downside, ddof=1)) if len(downside) > 1 else 1e-10
+        sortino = float(np.mean(returns)) / (d_std + 1e-10) * math.sqrt(252)
+    else:
+        sortino = 0.0
+
+    # Calmar and Recovery Factor (convert pct to decimal for ratios)
+    ann_dec   = annualized_pct / 100.0
+    dd_dec    = abs(max_dd_pct) / 100.0 or 1e-10
+    total_dec = total_ret_pct  / 100.0
+    calmar           = ann_dec   / dd_dec
+    recovery_factor  = total_dec / dd_dec
+
+    # Trade-level stats
+    pnls   = [t.get("pnl", 0) for t in trade_log]
+    wins   = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+
+    avg_win  = float(np.mean(wins))           if wins   else 0.0
+    avg_loss = abs(float(np.mean(losses)))    if losses else 1e-10
+    profit_loss_ratio = avg_win / avg_loss    if avg_loss > 1e-10 else 0.0
+    gross_loss        = abs(sum(losses))      or 1e-10
+    profit_factor     = sum(wins) / gross_loss if losses else 0.0
+    avg_trade_pnl     = float(np.mean(pnls))  if pnls   else 0.0
+
+    # Hold duration
+    hold_days: list[float] = []
+    for t in trade_log:
+        try:
+            delta = (pd.Timestamp(t["exit_date"]) - pd.Timestamp(t["entry_date"])).days
+            if delta >= 0:
+                hold_days.append(float(delta))
+        except Exception:
+            pass
+    avg_hold_days = float(np.mean(hold_days)) if hold_days else 0.0
+
+    return {
+        "sortino":           round(sortino, 4),
+        "calmar":            round(calmar, 4),
+        "recovery_factor":   round(recovery_factor, 4),
+        "profit_loss_ratio": round(profit_loss_ratio, 4),
+        "profit_factor":     round(profit_factor, 4),
+        "avg_trade_pnl":     round(avg_trade_pnl, 2),
+        "avg_hold_days":     round(avg_hold_days, 1),
+        "best_trade":        round(max(pnls), 2) if pnls else 0.0,
+        "worst_trade":       round(min(pnls), 2) if pnls else 0.0,
+    }
+
+
+# ── Core Backtrader runner (operates on a pre-fetched dataframe) ───────────────
+
+def _run_on_df(df: pd.DataFrame, params: dict) -> dict:
+    """Run the EMA crossover strategy on a pre-fetched OHLCV dataframe.
+
+    Separated from _fetch_ohlcv so that walk-forward validation can slice the
+    dataframe and re-use it across windows without re-downloading.
+    """
+    ticker          = params.get("ticker", "TICKER").upper().strip()
     stop_pct        = float(params.get("stop_pct",    1.5))
     tp_pct          = float(params.get("tp_pct",      3.0))
     confidence      = float(params.get("confidence",  0.70))
@@ -289,7 +365,6 @@ def run_backtest(params: dict) -> dict:
     max_pos         = float(params.get("max_pos",     500))
     initial_capital = float(params.get("initial_capital", 10_000))
 
-    df = _fetch_ohlcv(ticker, period)
     start_date = df.index[0].strftime("%Y-%m-%d")
     end_date   = df.index[-1].strftime("%Y-%m-%d")
 
@@ -298,7 +373,7 @@ def run_backtest(params: dict) -> dict:
     cerebro.broker.setcommission(commission=0.001)
     cerebro.broker.set_slippage_perc(0.001)
 
-    cerebro.adddata(bt.feeds.PandasData(dataname=df, name=ticker))
+    cerebro.adddata(bt.feeds.PandasData(dataname=df.copy(), name=ticker))
     cerebro.addstrategy(
         OpenTraderStrategy,
         stop_pct=stop_pct, tp_pct=tp_pct,
@@ -342,10 +417,14 @@ def run_backtest(params: dict) -> dict:
     n_years    = max(len(df) / 252, 0.01)
     annualized = round(((1 + total_ret / 100) ** (1 / n_years) - 1) * 100, 2)
 
-    monthly_returns = _build_monthly_returns(df)
-    chart_png_b64   = _build_chart(df, strat.trade_log, equity_curve, ticker)
+    expanded = _expanded_metrics(
+        strat.trade_log, equity_curve,
+        annualized_pct=annualized,
+        max_dd_pct=float(max_dd),
+        total_ret_pct=total_ret,
+    )
 
-    return {
+    result = {
         "engine":            "backtrader",
         "ticker":            ticker,
         "period":            f"{start_date} to {end_date}",
@@ -362,10 +441,27 @@ def run_backtest(params: dict) -> dict:
         "tp_pct":            tp_pct,
         "confidence":        confidence,
         "equity_curve":      equity_curve,
-        "monthly_returns":   monthly_returns,
         "trade_log":         strat.trade_log,
-        "chart_png_b64":     chart_png_b64,
     }
+    result.update(expanded)
+    return result
+
+
+# ── Main entry point ───────────────────────────────────────────────────────────
+
+def run_backtest(params: dict) -> dict:
+    ticker = params["ticker"].upper().strip()
+    period = params.get("period", "2y")
+    df     = _fetch_ohlcv(ticker, period)
+
+    result = _run_on_df(df, params)
+
+    # Chart and monthly returns require the full dataframe — add here, not in _run_on_df
+    result["monthly_returns"] = _build_monthly_returns(df)
+    result["chart_png_b64"]   = _build_chart(
+        df, result["trade_log"], result["equity_curve"], ticker
+    )
+    return result
 
 
 def _build_monthly_returns(df: pd.DataFrame) -> list[float]:
@@ -376,5 +472,3 @@ def _build_monthly_returns(df: pd.DataFrame) -> list[float]:
         return []
 
 
-def _bt_run_in_process(params: dict) -> dict:
-    return run_backtest(params)

@@ -1888,12 +1888,209 @@ async def get_position_sector_map():
 # ── API — Market sector map (Finviz-style) ────────────────────────────────────
 
 @app.get("/api/market/sector-map")
-async def get_market_sector_map():
+async def get_market_sector_map(index: str = "sp500"):
     """Return S&P 500 nested sector map via Polygon.io snapshot (MASSIVE_API_KEY)."""
     import aiohttp as _aiohttp
 
-    # Top S&P 500 constituents per sector: (ticker, short_name, approx_mcap_billions, subsector)
-    SECTOR_STOCKS: dict = {
+    # ── Sector / ticker universe per index ─────────────────────────────────────
+    _NDX100_STOCKS: dict = {
+        "Technology": [
+            ("MSFT","Microsoft",3100,"Software"),("AAPL","Apple",3200,"Hardware"),
+            ("NVDA","NVIDIA",2800,"Semiconductors"),("AVGO","Broadcom",900,"Semiconductors"),
+            ("ORCL","Oracle",530,"Software"),("CRM","Salesforce",295,"Software"),
+            ("AMD","AMD",220,"Semiconductors"),("NOW","ServiceNow",210,"Software"),
+            ("ADBE","Adobe",195,"Software"),("QCOM","Qualcomm",185,"Semiconductors"),
+            ("TXN","Texas Instr",165,"Semiconductors"),("AMAT","Applied Matls",160,"Semiconductors"),
+            ("MU","Micron",120,"Semiconductors"),("KLAC","KLA Corp",95,"Semiconductors"),
+            ("ADI","Analog Devices",90,"Semiconductors"),("CDNS","Cadence",88,"Software"),
+            ("SNPS","Synopsys",85,"Software"),("MRVL","Marvell Tech",82,"Semiconductors"),
+        ],
+        "Communication Services": [
+            ("META","Meta",1650,"Social & Search"),("GOOGL","Alphabet",2100,"Social & Search"),
+            ("NFLX","Netflix",400,"Streaming"),("TMUS","T-Mobile",270,"Telecom"),
+            ("CSCO","Cisco",220,"Networking"),
+        ],
+        "Consumer Discretionary": [
+            ("AMZN","Amazon",2400,"E-Commerce"),("TSLA","Tesla",850,"Auto & EV"),
+            ("BKNG","Booking",180,"Travel"),("MCD","McDonald's",235,"Restaurants"),
+            ("SBUX","Starbucks",105,"Restaurants"),("CMG","Chipotle",92,"Restaurants"),
+            ("ABNB","Airbnb",82,"Travel"),("MELI","MercadoLibre",75,"E-Commerce"),
+        ],
+        "Consumer Staples": [
+            ("COST","Costco",440,"Warehouse Retail"),("PEP","PepsiCo",248,"Beverages"),
+            ("MDLZ","Mondelez",92,"Food & Snacks"),("KDP","Keurig Dr Pepper",48,"Beverages"),
+            ("MNST","Monster Bev",48,"Beverages"),
+        ],
+        "Health Care": [
+            ("AMGN","Amgen",165,"Biotech"),("ISRG","Intuitive",225,"Med Devices"),
+            ("REGN","Regeneron",90,"Biotech"),("GILD","Gilead",85,"Biotech"),
+            ("IDXX","IDEXX Labs",40,"Life Sciences"),("DXCM","DexCom",35,"Med Devices"),
+            ("MRNA","Moderna",30,"Biotech"),
+        ],
+        "Industrials": [
+            ("HON","Honeywell",158,"Conglomerates"),("PCAR","PACCAR",60,"Machinery"),
+            ("FAST","Fastenal",45,"Distribution"),("CTAS","Cintas",50,"Business Svcs"),
+        ],
+        "Financials": [
+            ("PYPL","PayPal",65,"Payments"),("PAYX","Paychex",45,"Business Svcs"),
+        ],
+        "Software & Cloud": [
+            ("INTU","Intuit",175,"Fintech Software"),("WDAY","Workday",65,"Cloud HCM"),
+            ("CRWD","CrowdStrike",80,"Cybersecurity"),("PANW","Palo Alto",95,"Cybersecurity"),
+            ("DDOG","Datadog",45,"Observability"),("TEAM","Atlassian",55,"Collab"),
+            ("ZS","Zscaler",30,"Cybersecurity"),("FTNT","Fortinet",55,"Cybersecurity"),
+            ("APP","AppLovin",70,"Ad Tech"),
+        ],
+    }
+
+    _NDX100_ETFS = {
+        "Technology": "QQQ", "Communication Services": "XLC",
+        "Consumer Discretionary": "XLY", "Consumer Staples": "XLP",
+        "Health Care": "XLV", "Industrials": "XLI",
+        "Financials": "XLF", "Software & Cloud": "IGV",
+    }
+
+    _DOW30_STOCKS: dict = {
+        "Technology": [
+            ("AAPL","Apple",3200,"Hardware"),("MSFT","Microsoft",3100,"Software"),
+            ("NVDA","NVIDIA",2800,"Semiconductors"),("CRM","Salesforce",295,"Software"),
+            ("IBM","IBM",190,"IT Services"),("CSCO","Cisco",220,"Networking"),
+        ],
+        "Financials": [
+            ("JPM","JPMorgan",780,"Banks"),("GS","Goldman Sachs",225,"Capital Markets"),
+            ("V","Visa",640,"Payments"),("AXP","AmEx",220,"Payments"),
+        ],
+        "Health Care": [
+            ("UNH","UnitedHealth",540,"Health Services"),("JNJ","J&J",395,"Pharma"),
+            ("MRK","Merck",315,"Pharma"),("AMGN","Amgen",165,"Biotech"),
+        ],
+        "Industrials": [
+            ("BA","Boeing",125,"Aerospace/Defense"),("CAT","Caterpillar",190,"Machinery"),
+            ("HON","Honeywell",158,"Conglomerates"),("MMM","3M",62,"Conglomerates"),
+        ],
+        "Consumer Discretionary": [
+            ("AMZN","Amazon",2400,"E-Commerce"),("HD","Home Depot",385,"Home Improvement"),
+            ("MCD","McDonald's",235,"Restaurants"),("NKE","Nike",115,"Apparel"),
+            ("DIS","Disney",195,"Entertainment"),
+        ],
+        "Consumer Staples": [
+            ("WMT","Walmart",800,"Food Retail"),("KO","Coca-Cola",315,"Beverages"),
+            ("PG","P&G",385,"Household Products"),
+        ],
+        "Energy": [
+            ("CVX","Chevron",295,"Integrated Oil"),
+        ],
+        "Communication": [
+            ("VZ","Verizon",165,"Telecom"),
+        ],
+        "Materials": [
+            ("SHW","Sherwin-Williams",97,"Specialty Chems"),
+            ("DOW","Dow Inc",42,"Commodity Chems"),
+        ],
+        "Insurance": [
+            ("TRV","Travelers",62,"P&C Insurance"),
+        ],
+    }
+
+    _DOW30_ETFS = {
+        "Technology": "XLK","Financials":"XLF","Health Care":"XLV",
+        "Industrials":"XLI","Consumer Discretionary":"XLY","Consumer Staples":"XLP",
+        "Energy":"XLE","Communication":"XLC","Materials":"XLB","Insurance":"XLF",
+    }
+
+    _RUT2000_STOCKS: dict = {
+        "Financials": [
+            ("VIRT","Virtu Finl",4,"Market Making"),("CUBI","Customers Bancorp",2,"Banks"),
+            ("TBBK","The Bancorp",3,"Banks"),("HOMB","Home Bancorp",2,"Banks"),
+            ("IIPR","Innovative Ind REIT",4,"Healthcare REIT"),("STAG","STAG Ind REIT",7,"Industrial REIT"),
+            ("PLMR","Palomar Holdings",4,"Insurance"),("KLIC","Kulicke & Soffa",3,"Capital Markets"),
+            ("WD","Walker & Dunlop",3,"Real Estate Svcs"),("ARIS","Aris Water",2,"Specialty Finance"),
+        ],
+        "Health Care": [
+            ("INSP","Inspire Medical",8,"Med Devices"),("AXNX","Axonics",3,"Med Devices"),
+            ("PRVA","Privia Health",3,"Health Services"),("HIMS","Hims & Hers",4,"Telehealth"),
+            ("ACAD","Acadia Pharma",4,"Biotech"),("SRPT","Sarepta Therap",8,"Biotech"),
+            ("RXRX","Recursion Pharma",3,"Biotech"),("VCEL","Vericel",3,"Biotech"),
+        ],
+        "Technology": [
+            ("RIOT","Riot Platforms",4,"Crypto Mining"),("MARA","Marathon Digital",5,"Crypto Mining"),
+            ("CLBT","Cellebrite",5,"Cybersecurity"),("SPSC","SPS Commerce",5,"Supply Chain SW"),
+            ("POWI","Power Integrations",4,"Semiconductors"),("DIOD","Diodes Inc",3,"Semiconductors"),
+            ("CEVA","CEVA Inc",2,"Semiconductors"),("AMBA","Ambarella",3,"Semiconductors"),
+        ],
+        "Industrials": [
+            ("KTOS","Kratos Defense",5,"Aerospace/Defense"),("AXON","Axon Enterprise",25,"Public Safety"),
+            ("HTLF","Heartland BancCorp",3,"Transport"),("GNRC","Generac",15,"Electrical Equip"),
+            ("POWL","Powell Industries",3,"Electrical Equip"),("GTES","Gates Industrial",4,"Machinery"),
+        ],
+        "Consumer Discretionary": [
+            ("MODG","Acushnet",4,"Leisure"),("GOOS","Canada Goose",3,"Apparel"),
+            ("OXM","Oxford Industries",3,"Apparel"),("BOOT","Boot Barn",7,"Apparel"),
+            ("XPOF","Xponential Fitness",2,"Fitness"),("WINA","Winmark",2,"Franchise"),
+        ],
+        "Consumer Staples": [
+            ("COKE","Coca-Cola Consol",12,"Beverages"),("FIZZ","National Bev",8,"Beverages"),
+            ("CENTA","Central Garden",3,"Pet & Garden"),("JJSF","J&J Snack Foods",4,"Food"),
+        ],
+        "Energy": [
+            ("CIVI","Civitas Resources",8,"E&P"),("MGY","Magnolia Oil",4,"E&P"),
+            ("VTLE","Vital Energy",3,"E&P"),("NOG","Northern Oil",4,"E&P"),
+        ],
+        "Materials": [
+            ("TROX","Tronox",3,"Specialty Chems"),("KMPR","Kemper",3,"Specialty Chems"),
+            ("MERC","Mercer Intl",2,"Paper & Forest"),
+        ],
+        "Real Estate": [
+            ("REXR","Rexford Ind REIT",10,"Industrial REIT"),("CUBE","CubeSmart",9,"Self-Storage"),
+            ("IIPR","Innovative Ind REIT",4,"Healthcare REIT"),("IRT","Independence Realty",4,"Apartment REIT"),
+        ],
+    }
+
+    _RUT2000_ETFS = {
+        "Financials":"IWM","Health Care":"IWM","Technology":"IWM",
+        "Industrials":"IWM","Consumer Discretionary":"IWM","Consumer Staples":"IWM",
+        "Energy":"IWM","Materials":"IWM","Real Estate":"IWM",
+    }
+
+    _FUTURES_STOCKS: dict = {
+        "Equity Index": [
+            ("ES=F","S&P 500 Fut",1000,"Large Cap"),("NQ=F","Nasdaq 100 Fut",800,"Tech"),
+            ("YM=F","Dow Jones Fut",300,"Blue Chip"),("RTY=F","Russell 2000 Fut",200,"Small Cap"),
+            ("EMD=F","S&P MidCap 400",80,"Mid Cap"),
+        ],
+        "Energy": [
+            ("CL=F","Crude Oil WTI",500,"Crude"),("BZ=F","Brent Crude",400,"Crude"),
+            ("NG=F","Natural Gas",200,"Gas"),("RB=F","RBOB Gasoline",150,"Refined"),
+            ("HO=F","Heating Oil",130,"Refined"),
+        ],
+        "Metals": [
+            ("GC=F","Gold",600,"Precious"),("SI=F","Silver",150,"Precious"),
+            ("HG=F","Copper",200,"Industrial"),("PL=F","Platinum",80,"Precious"),
+            ("PA=F","Palladium",60,"Precious"),
+        ],
+        "Agriculture": [
+            ("ZC=F","Corn",200,"Grain"),("ZS=F","Soybeans",180,"Grain"),
+            ("ZW=F","Wheat",120,"Grain"),("KC=F","Coffee",90,"Soft"),
+            ("SB=F","Sugar",70,"Soft"),("CT=F","Cotton",60,"Soft"),
+        ],
+        "Currencies": [
+            ("DX=F","Dollar Index",250,"Major"),("6E=F","Euro FX",400,"Major"),
+            ("6J=F","Japanese Yen",300,"Major"),("6B=F","British Pound",200,"Major"),
+            ("6C=F","Canadian Dollar",150,"Major"),("6A=F","Australian Dollar",120,"Major"),
+        ],
+        "Fixed Income": [
+            ("ZN=F","10Y T-Note",600,"Treasury"),("ZB=F","30Y T-Bond",500,"Treasury"),
+            ("ZF=F","5Y T-Note",300,"Treasury"),("ZT=F","2Y T-Note",200,"Treasury"),
+            ("GE=F","Eurodollar",150,"Short Rate"),
+        ],
+    }
+
+    _FUTURES_ETFS = {
+        "Equity Index":"SPY","Energy":"XLE","Metals":"GLD",
+        "Agriculture":"DBA","Currencies":"UUP","Fixed Income":"TLT",
+    }
+
+    _SP500_STOCKS: dict = {
         "Technology": [
             ("MSFT","Microsoft",3100,"Software"),("AAPL","Apple",3200,"Hardware"),
             ("NVDA","NVIDIA",2800,"Semiconductors"),("AVGO","Broadcom",900,"Semiconductors"),
@@ -1982,15 +2179,24 @@ async def get_market_sector_map():
         ],
     }
 
-    SECTOR_ETFS = {
+    _SP500_ETFS = {
         "Technology": "XLK", "Financials": "XLF", "Health Care": "XLV",
         "Consumer Discretionary": "XLY", "Industrials": "XLI",
         "Communication Services": "XLC", "Consumer Staples": "XLP",
         "Energy": "XLE", "Real Estate": "XLRE", "Utilities": "XLU", "Materials": "XLB",
     }
 
+    _INDEX_MAP = {
+        "sp500":   (_SP500_STOCKS,   _SP500_ETFS),
+        "ndx100":  (_NDX100_STOCKS,  _NDX100_ETFS),
+        "dow30":   (_DOW30_STOCKS,   _DOW30_ETFS),
+        "rut2000": (_RUT2000_STOCKS, _RUT2000_ETFS),
+        "futures": (_FUTURES_STOCKS, _FUTURES_ETFS),
+    }
+    SECTOR_STOCKS, SECTOR_ETFS = _INDEX_MAP.get(index, _INDEX_MAP["sp500"])
+
     _redis = await get_redis()
-    cache_key = "market:sector_map_v3"
+    cache_key = f"market:sector_map_{index}_v3"
     try:
         cached = await _redis.get(cache_key)
         if cached:
@@ -2133,6 +2339,198 @@ async def get_market_sparklines(tickers: str = ""):
                 pass
 
     return results
+
+
+# ── API — Market Groups (Finviz-style performance table) ─────────────────────
+
+_MG_SECTORS = [
+    ("XLK",  "Technology"),
+    ("XLF",  "Financials"),
+    ("XLE",  "Energy"),
+    ("XLV",  "Health Care"),
+    ("XLI",  "Industrials"),
+    ("XLC",  "Communication Services"),
+    ("XLY",  "Consumer Discretionary"),
+    ("XLP",  "Consumer Staples"),
+    ("XLRE", "Real Estate"),
+    ("XLB",  "Materials"),
+    ("XLU",  "Utilities"),
+]
+
+_MG_INDUSTRIES = [
+    ("SOXX", "Semiconductors"),
+    ("IGV",  "Software"),
+    ("XBI",  "Biotech"),
+    ("IBB",  "Biotech (iShares)"),
+    ("KRE",  "Regional Banks"),
+    ("XHB",  "Homebuilders"),
+    ("XRT",  "Retail"),
+    ("XOP",  "Oil & Gas E&P"),
+    ("IYT",  "Transportation"),
+    ("HACK", "Cybersecurity"),
+    ("XME",  "Metals & Mining"),
+    ("KIE",  "Insurance"),
+    ("ARKK", "ARK Innovation"),
+    ("SKYY", "Cloud Computing"),
+    ("UUP",  "US Dollar"),
+    ("GDX",  "Gold Miners"),
+    ("CIBR", "Cybersecurity (iShares)"),
+]
+
+_MG_INDICES = [
+    ("SPY",  "S&P 500"),
+    ("QQQ",  "Nasdaq 100"),
+    ("DIA",  "Dow Jones Industrial"),
+    ("IWM",  "Russell 2000"),
+    ("MDY",  "S&P MidCap 400"),
+    ("VTI",  "Total US Market"),
+    ("EFA",  "Developed Markets"),
+    ("EEM",  "Emerging Markets"),
+    ("GLD",  "Gold"),
+    ("SLV",  "Silver"),
+    ("TLT",  "20+ Year Treasuries"),
+    ("HYG",  "High Yield Bonds"),
+    ("LQD",  "Investment Grade Bonds"),
+    ("VNQ",  "Real Estate (REITs)"),
+    ("BIL",  "Short-Term T-Bills"),
+]
+
+_MG_GROUP_MAP = {
+    "sectors":    _MG_SECTORS,
+    "industries": _MG_INDUSTRIES,
+    "indices":    _MG_INDICES,
+}
+
+
+@app.get("/api/market/groups")
+async def get_market_groups(group: str = "sectors"):
+    """Return ETF performance table (1D/1W/1M/3M/6M/YTD/1Y) via Polygon.io."""
+    import aiohttp as _aiohttp
+    import datetime as _dt
+
+    group = group.lower()
+    if group not in _MG_GROUP_MAP:
+        group = "sectors"
+
+    _redis = await get_redis()
+    cache_key = f"market:groups_{group}"
+    try:
+        cached = await _redis.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    group_items = _MG_GROUP_MAP[group]
+    tickers     = [t for t, _ in group_items]
+    name_map    = {t: n for t, n in group_items}
+
+    api_key  = os.getenv("MASSIVE_API_KEY", "")
+    today    = _dt.date.today()
+    today_s  = today.isoformat()
+    from_s   = (today - _dt.timedelta(days=400)).isoformat()  # ~1Y + holiday buffer
+    ytd_ms   = int(_dt.datetime(today.year, 1, 1, tzinfo=_dt.timezone.utc).timestamp() * 1000)
+
+    snap_1d:  dict[str, tuple[float, float, int]] = {}  # ticker -> (chg_pct, price, vol)
+    aggs_map: dict[str, list]                     = {}  # ticker -> [{t, c}, ...]
+
+    if api_key:
+        # ── Snapshot for 1D change ────────────────────────────────────────────
+        snap_url = (
+            f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+            f"?tickers={','.join(tickers)}&apiKey={api_key}"
+        )
+        try:
+            async with _aiohttp.ClientSession() as sess:
+                async with sess.get(snap_url, timeout=_aiohttp.ClientTimeout(total=20)) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        for t in data.get("tickers", []):
+                            sym   = t.get("ticker", "")
+                            chg   = round(float(t.get("todaysChangePerc") or 0), 2)
+                            day   = t.get("day") or {}
+                            price = round(float(day.get("c") or
+                                          (t.get("lastTrade") or {}).get("p") or 0), 2)
+                            vol   = int(day.get("v") or 0)
+                            snap_1d[sym] = (chg, price, vol)
+        except Exception as e:
+            log.warning("market_groups.snapshot_error", error=str(e))
+
+        # ── Historical aggs for period returns ───────────────────────────────
+        sem = asyncio.Semaphore(8)
+
+        async def _fetch_agg(sess, tkr):
+            async with sem:
+                url = (
+                    f"https://api.polygon.io/v2/aggs/ticker/{tkr}/range/1/day"
+                    f"/{from_s}/{today_s}?adjusted=true&sort=asc&limit=500&apiKey={api_key}"
+                )
+                try:
+                    async with sess.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as r:
+                        if r.status == 200:
+                            d    = await r.json()
+                            bars = [{"t": b["t"], "c": float(b["c"])}
+                                    for b in (d.get("results") or []) if "c" in b]
+                            return tkr, bars
+                except Exception as e:
+                    log.warning("market_groups.agg_error", ticker=tkr, error=str(e))
+                return tkr, []
+
+        async with _aiohttp.ClientSession() as sess:
+            fetched = await asyncio.gather(*[_fetch_agg(sess, t) for t in tickers])
+        for tkr, bars in fetched:
+            aggs_map[tkr] = bars
+
+    def _pct(bars: list, n_back: int) -> float | None:
+        if len(bars) < 2:
+            return None
+        cur  = bars[-1]["c"]
+        idx  = max(0, len(bars) - 1 - n_back)
+        past = bars[idx]["c"]
+        return round((cur - past) / past * 100, 2) if past else None
+
+    def _ytd(bars: list) -> float | None:
+        if not bars:
+            return None
+        pre = [b for b in bars if b["t"] < ytd_ms]
+        if not pre:
+            return None
+        past = pre[-1]["c"]
+        cur  = bars[-1]["c"]
+        return round((cur - past) / past * 100, 2) if past else None
+
+    items = []
+    for ticker, display_name in group_items:
+        bars            = aggs_map.get(ticker, [])
+        chg, price, vol = snap_1d.get(ticker, (0.0, 0.0, 0))
+
+        if chg == 0.0 and len(bars) >= 2:
+            c, p = bars[-1]["c"], bars[-2]["c"]
+            if p:
+                chg = round((c - p) / p * 100, 2)
+        if price == 0.0 and bars:
+            price = round(bars[-1]["c"], 2)
+
+        items.append({
+            "ticker":    ticker,
+            "name":      display_name,
+            "price":     price,
+            "volume":    vol,
+            "perf_1d":   chg,
+            "perf_1w":   _pct(bars, 5),
+            "perf_1m":   _pct(bars, 21),
+            "perf_3m":   _pct(bars, 63),
+            "perf_6m":   _pct(bars, 126),
+            "perf_ytd":  _ytd(bars),
+            "perf_1y":   _pct(bars, 252),
+        })
+
+    result = {"group": group, "items": items, "as_of": datetime.utcnow().isoformat()}
+    try:
+        await _redis.setex(cache_key, 1800, json.dumps(result))
+    except Exception:
+        pass
+    return result
 
 
 # ── API — Market bars (Massive MCP) ──────────────────────────────────────────

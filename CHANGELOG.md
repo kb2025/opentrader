@@ -3,6 +3,25 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.61] - 2026-05-02
+
+### Added
+- **Market Groups page** under Resources nav — Finviz Groups-style ETF performance table with three tabs: Sectors (11 SPDR ETFs), Industries (17 thematic ETFs: semis, software, biotech, banks, homebuilders, retail, oil & gas, cybersecurity, gold miners, ARK, cloud, fintech), and Indices (15 ETFs: S&P 500, Nasdaq, Dow, Russell 2000, mid-cap, international, commodities, fixed income); columns: Name, ETF, Price, 1D, 1W, 1M, 3M, 6M, YTD, 1Y, Volume; all percentage cells color-coded (deep green → neutral → deep red) with intensity proportional to magnitude
+- **`GET /api/market/groups?group=sectors|industries|indices`** — single Polygon.io snapshot call for 1D change + 8 concurrent agg fetches per tab for period returns; 30-minute Redis cache per group
+
+## [3.6.60] - 2026-05-02
+
+### Added
+- **Multi-index Sector Maps** — collapsible `▸ Sector Map` nav parent with 5 sub-pages: S&P 500, Nasdaq 100, Dow 30, Russell 2000, Futures; each index has its own stock universe and Redis cache key (`market:sector_map_{index}_v3`); Futures map uses asset-class groupings (Equity Index, Energy, Metals, Agriculture, Currencies, Fixed Income) with Yahoo Finance `=F` symbols and notional weights for tile sizing
+- **Three-level treemap** — Sector → Subsector header bar (dark `#141828` spanning the group) → individual stock tiles; subsector header stored in `_smSubsectorRects` for highlight and popup positioning
+- **Subsector header highlight** — hovering a stock tile turns the subsector header amber and draws yellow borders on all peer tiles in the same subsector; singleton fallback (≤1 peers) expands to full sector
+- **Equities Hindsight page** — Shadow Account renamed to Equities Hindsight and moved to the Equities nav group for better discoverability
+- **Backtester expanded metrics** — `_expanded_metrics()` in `backtest_runner.py` computes Sortino ratio, Calmar ratio, recovery factor, average win/loss, and profit factor from existing backtest data; `_run_on_df()` and `_fetch_ohlcv()` exposed as public helpers for the new `backtest_validator.py` cross-validation layer
+
+### Fixed
+- **Shadow Account visibility** — page was permanently hidden due to `style="display:none"` inline attribute on the page div (overrides `.page.active{display:block}`); removed the inline style
+- **Shadow `_apiFetch` undefined** — all shadow account functions were calling the undefined `_apiFetch` instead of `apiFetch`; corrected throughout
+
 ## [3.6.59] - 2026-05-02
 
 ### Fixed

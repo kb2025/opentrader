@@ -27,7 +27,24 @@ nav{padding:8px;flex:1;overflow-y:auto}
 .nav-item.drag-over{border-top:2px solid var(--blue);margin-top:-2px}
 .nav-item[draggable="true"]{cursor:grab}
 .nav-item[draggable="true"]:active{cursor:grabbing;opacity:.6}
+.nav-parent{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--muted);transition:.12s;font-size:13px;user-select:none;font-weight:500}
+.nav-parent:hover,.nav-parent.open{background:var(--surface2);color:var(--text)}
+.nav-children{overflow:hidden;max-height:0;transition:max-height 0.25s ease}
+.nav-children.open{max-height:200px}
+.nav-subitem{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 28px;border-radius:8px;cursor:pointer;color:var(--muted);transition:.12s;font-size:12px;user-select:none}
+.nav-subitem:hover{background:var(--surface2);color:var(--text)}
+.nav-subitem.active{background:rgba(59,130,246,.15);color:var(--blue)}
 .nav-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.mg-tab{padding:5px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:12px;cursor:pointer;transition:.12s}
+.mg-tab:hover{color:var(--fg)}
+.mg-tab.active{background:rgba(59,130,246,.18);border-color:var(--blue);color:var(--blue);font-weight:600}
+.mg-th{color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;user-select:none}
+.mg-th:hover{color:var(--fg)}
+.mg-th.sort-asc .mg-sort-ind::after{content:'▲';font-size:9px;margin-left:3px}
+.mg-th.sort-desc .mg-sort-ind::after{content:'▼';font-size:9px;margin-left:3px}
+.mg-row{border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s}
+.mg-row:hover{background:var(--surface2)}
+.mg-perf{text-align:right;padding:7px 8px;font-size:13px;font-weight:500;border-radius:3px}
 .sidebar-footer{padding:12px 16px;border-top:1px solid var(--border)}
 .market-pill{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
 .pulse{animation:pulse 2s infinite}
@@ -294,9 +311,21 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:var(--green)"></span>
         Equity Dividend Income
       </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-trading-sectormap')" data-page="page-trading-sectormap">
+      <div class="nav-parent" id="nav-parent-sectormap" onclick="_smNavToggle()">
         <span class="nav-dot" style="background:#38bdf8"></span>
         Sector Map
+        <span id="nav-sm-chevron" style="margin-left:auto;font-size:9px;transition:transform .2s">▸</span>
+      </div>
+      <div class="nav-children" id="nav-sm-children">
+        <div class="nav-subitem" data-sm-index="sp500" onclick="_smNavSelect('sp500')">S&amp;P 500</div>
+        <div class="nav-subitem" data-sm-index="ndx100" onclick="_smNavSelect('ndx100')">Nasdaq 100</div>
+        <div class="nav-subitem" data-sm-index="dow30" onclick="_smNavSelect('dow30')">Dow 30</div>
+        <div class="nav-subitem" data-sm-index="rut2000" onclick="_smNavSelect('rut2000')">Russell 2000</div>
+        <div class="nav-subitem" data-sm-index="futures" onclick="_smNavSelect('futures')">Futures</div>
+      </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-shadow-account')" data-page="page-shadow-account">
+        <span class="nav-dot" style="background:#a78bfa"></span>
+        Equities Hindsight
       </div>
     </div>
     <div class="nav-group" data-group="options">
@@ -332,10 +361,6 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#06b6d4"></span>
         Portfolio Optimizer
       </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-shadow-account')" data-page="page-shadow-account">
-        <span class="nav-dot" style="background:#a78bfa"></span>
-        Shadow Account
-      </div>
     </div>
     <div class="nav-group" data-group="resources">
       <div class="nav-label">Resources</div>
@@ -346,6 +371,10 @@ select option{background:var(--surface2)}
       <div class="nav-item" draggable="true" onclick="navigate('page-resources-backtester')" data-page="page-resources-backtester">
         <span class="nav-dot" style="background:#60a5fa"></span>
         Backtester
+      </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-resources-groups')" data-page="page-resources-groups">
+        <span class="nav-dot" style="background:#34d399"></span>
+        Market Groups
       </div>
     </div>
     <div class="nav-group" data-group="platform">
@@ -1503,7 +1532,7 @@ select option{background:var(--surface2)}
     <div class="page" id="page-trading-sectormap">
 
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">S&amp;P 500 Sector Map</span>
+        <span id="sector-map-title" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">S&amp;P 500 Sector Map</span>
         <div style="flex:1;height:1px;background:var(--border)"></div>
         <span id="sector-map-asof" style="font-size:10px;color:var(--dim)"></span>
         <button class="btn btn-ghost btn-xs" onclick="loadSectorMapPage()" title="Refresh">&#8635; Refresh</button>
@@ -1512,9 +1541,9 @@ select option{background:var(--surface2)}
       <!-- Color legend -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
         <span style="font-size:10px;color:var(--dim)">Performance:</span>
-        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#9d1010;border-radius:2px;display:inline-block"></span>&#8804;&#8722;5%</span>
-        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#c44040;border-radius:2px;display:inline-block"></span>&#8722;3%</span>
-        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#c47070;border-radius:2px;display:inline-block"></span>&#8722;1.5%</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#b00000;border-radius:2px;display:inline-block"></span>&#8804;&#8722;5%</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#cc1f1f;border-radius:2px;display:inline-block"></span>&#8722;3%</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#d94444;border-radius:2px;display:inline-block"></span>&#8722;1.5%</span>
         <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#585858;border-radius:2px;display:inline-block"></span>0%</span>
         <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#4a9a4a;border-radius:2px;display:inline-block"></span>+1.5%</span>
         <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="width:13px;height:13px;background:#2e8b2e;border-radius:2px;display:inline-block"></span>+3%</span>
@@ -1522,7 +1551,7 @@ select option{background:var(--surface2)}
         <span style="font-size:10px;color:var(--dim);margin-left:8px">Block size = market cap weight</span>
       </div>
 
-      <div id="sector-map-container" style="width:100%;min-height:456px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden" onmousemove="_smPositionTip(event)"></div>
+      <div id="sector-map-container" style="width:100%;min-height:420px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden" onmousemove="_smPositionTip(event)"></div>
 
       <!-- Stock tile tooltip (small, no pointer events) -->
       <div id="sector-map-tooltip" style="display:none;position:fixed;z-index:8000;
@@ -3264,13 +3293,13 @@ select option{background:var(--surface2)}
     </div><!-- /page-plan-optimizer -->
 
     <!-- ════════════════════════════════════════
-         PAGE: Shadow Account
+         PAGE: Equities Hindsight
     ════════════════════════════════════════ -->
-    <div class="page" id="page-shadow-account" style="display:none">
+    <div class="page" id="page-shadow-account">
 
       <!-- Controls -->
       <div class="card" style="padding:18px 20px;margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;color:var(--fg);margin-bottom:4px">Counterfactual P&amp;L Analysis</div>
+        <div style="font-size:14px;font-weight:600;color:var(--fg);margin-bottom:4px">Equities Hindsight</div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:14px">What did discipline lapses cost? Noise trades · Early exits · Late exits · Overtrading</div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
           <div>
@@ -3491,6 +3520,43 @@ select option{background:var(--surface2)}
       </div>
 
     </div><!-- /page-resources-backtester -->
+
+    <!-- ── page-resources-groups ── -->
+    <div class="page" id="page-resources-groups">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <h2 style="font-size:18px;font-weight:700;color:var(--fg);margin:0">Market Groups</h2>
+        <div style="display:flex;gap:6px;align-items:center">
+          <div id="mg-tabs" style="display:flex;gap:4px">
+            <button class="mg-tab active" onclick="_mgSetTab('sectors')">Sectors</button>
+            <button class="mg-tab" onclick="_mgSetTab('industries')">Industries</button>
+            <button class="mg-tab" onclick="_mgSetTab('indices')">Indices</button>
+          </div>
+          <button onclick="_mgRefresh()" style="padding:5px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:12px;cursor:pointer">↻ Refresh</button>
+          <span id="mg-as-of" style="font-size:11px;color:var(--muted)"></span>
+        </div>
+      </div>
+      <div id="mg-loading" style="text-align:center;padding:60px;color:var(--muted);font-size:14px">Loading…</div>
+      <div id="mg-table-wrap" style="display:none;overflow-x:auto">
+        <table id="mg-table" style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead id="mg-thead">
+            <tr id="mg-header-row" style="border-bottom:1px solid var(--border)">
+              <th class="mg-th mg-th-name" onclick="_mgSort('name')" style="text-align:left;padding:8px 10px;cursor:pointer;white-space:nowrap">Name <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('ticker')" style="text-align:left;padding:8px 6px;cursor:pointer;white-space:nowrap">ETF <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('price')" style="text-align:right;padding:8px 8px;cursor:pointer;white-space:nowrap">Price <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('perf_1d')" style="text-align:right;padding:8px 8px;cursor:pointer;white-space:nowrap">1D <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('perf_1w')" style="text-align:right;padding:8px 8px;cursor:pointer;white-space:nowrap">1W <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('perf_1m')" style="text-align:right;padding:8px 8px;cursor:pointer;white-space:nowrap">1M <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('perf_3m')" style="text-align:right;padding:8px 8px;cursor:pointer;white-space:nowrap">3M <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('perf_6m')" style="text-align:right;padding:8px 8px;cursor:pointer;white-space:nowrap">6M <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('perf_ytd')" style="text-align:right;padding:8px 8px;cursor:pointer;white-space:nowrap">YTD <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('perf_1y')" style="text-align:right;padding:8px 8px;cursor:pointer;white-space:nowrap">1Y <span class="mg-sort-ind"></span></th>
+              <th class="mg-th" onclick="_mgSort('volume')" style="text-align:right;padding:8px 10px;cursor:pointer;white-space:nowrap">Volume <span class="mg-sort-ind"></span></th>
+            </tr>
+          </thead>
+          <tbody id="mg-tbody"></tbody>
+        </table>
+      </div>
+    </div><!-- /page-resources-groups -->
 
   </div><!-- end .content -->
 </div><!-- end .main -->
@@ -3769,9 +3835,10 @@ const PAGE_TITLES = {
   'page-plan-library':       'Strategy Library',
   'page-plan-assignment':    'Strategy Assignment',
   'page-plan-optimizer':    'Portfolio Optimizer',
-  'page-shadow-account':    'Shadow Account',
+  'page-shadow-account':    'Equities Hindsight',
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
+  'page-resources-groups':     'Market Groups',
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3868,7 +3935,7 @@ async function apiFetch(path, opts = {}) {
 // ══════════════════════════════════════════════════════════════════════════════
 function navigate(pageId) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.nav-item,.nav-subitem').forEach(n => n.classList.remove('active'));
 
   const page = document.getElementById(pageId);
   if (page) page.classList.add('active');
@@ -3893,7 +3960,7 @@ function navigate(pageId) {
     case 'page-trading-trades':     loadTradesPage();    break;
     case 'page-trading-broker':     loadBrokerPage();       break;
     case 'page-trading-dividends':  loadDividendPage();     break;
-    case 'page-trading-sectormap':  loadSectorMapPage();    break;
+    case 'page-trading-sectormap':  /* loaded by _smNavSelect */ break;
     case 'page-trading-alerts':     loadAlertsPage(); break;
     case 'page-trading-options':    loadOptionsPositions(); loadOptionsGreeksPanel(); loadOptionsPerformancePanel(); loadOptionsExpiryCalendar(); break;
     case 'page-options-log':        loadOptionsLog(); loadOptionsPerformancePanel(); break;
@@ -3908,6 +3975,7 @@ function navigate(pageId) {
     case 'page-shadow-account':    loadShadowPage();       break;
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
+    case 'page-resources-groups':     loadMarketGroupsPage();    break;
   }
 }
 
@@ -10984,6 +11052,130 @@ function _renderBtResults(r) {
 function loadBacktesterPage() {
   const el = document.getElementById('bt-page-ticker');
   if (el) setTimeout(() => el.focus(), 80);
+}
+
+// ── Market Groups ─────────────────────────────────────────────────────────────
+let _mgTab     = 'sectors';
+let _mgData    = [];
+let _mgSortCol = 'perf_1d';
+let _mgSortDir = -1; // -1 = desc, 1 = asc
+
+async function loadMarketGroupsPage() {
+  await _mgFetch(_mgTab);
+}
+
+function _mgSetTab(tab) {
+  _mgTab = tab;
+  document.querySelectorAll('.mg-tab').forEach(b => {
+    b.classList.toggle('active', b.textContent.trim().toLowerCase().replace(' ', '') === tab ||
+      (tab === 'sectors' && b.textContent.trim() === 'Sectors') ||
+      (tab === 'industries' && b.textContent.trim() === 'Industries') ||
+      (tab === 'indices' && b.textContent.trim() === 'Indices'));
+  });
+  _mgFetch(tab);
+}
+
+async function _mgFetch(tab) {
+  document.getElementById('mg-loading').style.display = 'block';
+  document.getElementById('mg-table-wrap').style.display = 'none';
+  try {
+    const d = await apiFetch(`/api/market/groups?group=${tab}`);
+    _mgData = d.items || [];
+    const ts = d.as_of ? new Date(d.as_of + 'Z').toLocaleTimeString() : '';
+    const el = document.getElementById('mg-as-of');
+    if (el) el.textContent = ts ? `as of ${ts}` : '';
+    _mgRender();
+  } catch (e) {
+    document.getElementById('mg-loading').textContent = 'Error loading data.';
+  }
+}
+
+function _mgRefresh() {
+  _mgFetch(_mgTab);
+}
+
+function _mgSort(col) {
+  if (_mgSortCol === col) {
+    _mgSortDir *= -1;
+  } else {
+    _mgSortCol = col;
+    _mgSortDir = col === 'name' || col === 'ticker' ? 1 : -1;
+  }
+  _mgRender();
+}
+
+function _mgPerfColor(v) {
+  if (v === null || v === undefined) return '';
+  const abs = Math.abs(v);
+  if (v > 0) {
+    if (abs >= 10) return 'background:rgba(16,185,129,.40);color:#6ee7b7';
+    if (abs >= 5)  return 'background:rgba(16,185,129,.28);color:#6ee7b7';
+    if (abs >= 2)  return 'background:rgba(16,185,129,.18);color:#34d399';
+    if (abs >= 0.5) return 'background:rgba(16,185,129,.10);color:#34d399';
+    return 'color:rgba(52,211,153,.7)';
+  } else {
+    if (abs >= 10) return 'background:rgba(185,0,0,.45);color:#fca5a5';
+    if (abs >= 5)  return 'background:rgba(185,0,0,.30);color:#fca5a5';
+    if (abs >= 2)  return 'background:rgba(185,0,0,.20);color:#f87171';
+    if (abs >= 0.5) return 'background:rgba(185,0,0,.12);color:#f87171';
+    return 'color:rgba(248,113,113,.7)';
+  }
+}
+
+function _mgRender() {
+  const items = [..._mgData].sort((a, b) => {
+    const av = a[_mgSortCol] ?? (typeof a[_mgSortCol] === 'string' ? '' : -Infinity);
+    const bv = b[_mgSortCol] ?? (typeof b[_mgSortCol] === 'string' ? '' : -Infinity);
+    if (typeof av === 'string') return _mgSortDir * av.localeCompare(bv);
+    return _mgSortDir * ((av ?? -Infinity) - (bv ?? -Infinity));
+  });
+
+  // Update sort indicators
+  document.querySelectorAll('.mg-th').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+  });
+  const sortMap = {name:0,ticker:1,price:2,perf_1d:3,perf_1w:4,perf_1m:5,perf_3m:6,perf_6m:7,perf_ytd:8,perf_1y:9,volume:10};
+  const sortIdx = sortMap[_mgSortCol];
+  if (sortIdx !== undefined) {
+    const ths = document.querySelectorAll('#mg-header-row .mg-th');
+    if (ths[sortIdx]) {
+      ths[sortIdx].classList.add(_mgSortDir === 1 ? 'sort-asc' : 'sort-desc');
+    }
+  }
+
+  function fmtPct(v) {
+    if (v === null || v === undefined) return '<span style="color:var(--muted)">—</span>';
+    const sign = v >= 0 ? '+' : '';
+    return `${sign}${v.toFixed(2)}%`;
+  }
+  function fmtVol(v) {
+    if (!v) return '<span style="color:var(--muted)">—</span>';
+    if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+    if (v >= 1e3) return (v / 1e3).toFixed(0) + 'K';
+    return v.toString();
+  }
+
+  const tbody = document.getElementById('mg-tbody');
+  tbody.innerHTML = items.map((it, i) => {
+    const perf_cols = ['perf_1d','perf_1w','perf_1m','perf_3m','perf_6m','perf_ytd','perf_1y'];
+    const pCells = perf_cols.map(k => {
+      const v = it[k];
+      const style = _mgPerfColor(v);
+      return `<td class="mg-perf" style="${style}">${fmtPct(v)}</td>`;
+    }).join('');
+    const bg = i % 2 === 1 ? 'background:rgba(255,255,255,.02)' : '';
+    return `<tr class="mg-row" style="${bg}">
+      <td style="padding:7px 10px;color:var(--fg);font-weight:500;white-space:nowrap">${it.name}</td>
+      <td style="padding:7px 6px;color:var(--blue);font-size:12px;font-weight:600">${it.ticker}</td>
+      <td style="padding:7px 8px;text-align:right;color:var(--fg)">${it.price ? '$'+it.price.toFixed(2) : '—'}</td>
+      ${pCells}
+      <td style="padding:7px 10px;text-align:right;color:var(--muted);font-size:12px">${fmtVol(it.volume)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('mg-loading').style.display = 'none';
+  document.getElementById('mg-table-wrap').style.display = 'block';
 }
 
 async function runPageBacktest() {
@@ -18098,7 +18290,7 @@ async function loadShadowPage() {
 
   // Populate account selector from broker accounts
   try {
-    const data = await _apiFetch('/api/broker/accounts');
+    const data = await apiFetch('/api/broker/accounts');
     const sel  = document.getElementById('shadow-account');
     (data.accounts || []).forEach(a => {
       const o = document.createElement('option');
@@ -18108,7 +18300,7 @@ async function loadShadowPage() {
     });
   } catch(e) {}
 
-  await _shadowLoadHistory();
+  await _shadowLoadHistory(true);
 }
 
 async function _shadowRun() {
@@ -18118,7 +18310,7 @@ async function _shadowRun() {
   document.getElementById('shadow-results').style.display = 'none';
 
   try {
-    const result = await _apiFetch('/api/shadow/run', {
+    const result = await apiFetch('/api/shadow/run', {
       method: 'POST',
       body:   JSON.stringify({
         date_from:     document.getElementById('shadow-date-from').value,
@@ -18256,13 +18448,16 @@ function _shadowCatBadge(cat) {
   return `<span style="background:${c}22;border:1px solid ${c}44;border-radius:5px;padding:2px 7px;font-size:11px;color:${c};white-space:nowrap">${labels[cat]||cat}</span>`;
 }
 
-async function _shadowLoadHistory() {
+async function _shadowLoadHistory(autoLoad = false) {
   const el = document.getElementById('shadow-history');
   try {
-    const rows = await _apiFetch('/api/shadow/history?limit=10');
+    const rows = await apiFetch('/api/shadow/history?limit=10');
     if (!rows || !rows.length) {
       el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No previous runs.</div>';
       return;
+    }
+    if (autoLoad && rows[0]) {
+      _shadowLoadRun(rows[0].id);
     }
     el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr style="color:var(--muted)">
@@ -18288,7 +18483,7 @@ async function _shadowLoadHistory() {
 
 async function _shadowLoadRun(runId) {
   try {
-    const r = await _apiFetch(`/api/shadow/run/${runId}`);
+    const r = await apiFetch(`/api/shadow/run/${runId}`);
     _shadowRenderResults({
       ...r,
       counterfactual_top5: r.top5 || [],
@@ -18303,17 +18498,46 @@ async function _shadowLoadRun(runId) {
 // Sector Map — Finviz-style squarified treemap
 // ══════════════════════════════════════════════════════════════════════════════
 
-let _smSectorData    = {};   // sector name → { name, etf, change, stocks[] }
-let _smStockRects    = {};   // ticker → { x, y, w, h, sector, subsector, ...stock }
-let _smPanelTimer    = null; // debounce hide
-let _smCurrentKey    = null; // guard stale sparkline fetches (sector:subsector key)
+let _smActiveIndex = 'sp500';
+let _smSectorData      = {};   // sector name → { name, etf, change, stocks[] }
+let _smStockRects      = {};   // ticker → { x, y, w, h, sector, subsector, ...stock }
+let _smSubsectorRects  = {};   // "sector:subsector" → { x, y, w, h }
+let _smPanelTimer      = null; // debounce hide
+let _smCurrentKey      = null; // guard stale sparkline fetches (sector:subsector key)
 
-async function loadSectorMapPage() {
+function _smNavToggle() {
+  const ch = document.getElementById('nav-sm-children');
+  const cv = document.getElementById('nav-sm-chevron');
+  const pr = document.getElementById('nav-parent-sectormap');
+  if (!ch) return;
+  const open = ch.classList.toggle('open');
+  if (cv) cv.style.transform = open ? 'rotate(90deg)' : '';
+  if (pr) pr.classList.toggle('open', open);
+}
+
+function _smNavSelect(idx) {
+  document.querySelectorAll('.nav-subitem').forEach(n => n.classList.remove('active'));
+  const active = document.querySelector(`.nav-subitem[data-sm-index="${idx}"]`);
+  if (active) active.classList.add('active');
+  navigate('page-trading-sectormap');
+  loadSectorMapPage(idx);
+}
+
+const _SM_INDEX_LABELS = {
+  sp500: 'S&P 500 Sector Map', ndx100: 'Nasdaq 100 Sector Map',
+  dow30: 'Dow 30 Sector Map',  rut2000: 'Russell 2000 Sector Map',
+  futures: 'Futures Market Map',
+};
+
+async function loadSectorMapPage(idx) {
+  if (idx) _smActiveIndex = idx;
   const el = document.getElementById('sector-map-container');
   if (!el) return;
+  const titleEl = document.getElementById('sector-map-title');
+  if (titleEl) titleEl.textContent = _SM_INDEX_LABELS[_smActiveIndex] || 'Sector Map';
   el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:24px">Loading sector data…</div>';
   try {
-    const r = await apiFetch('/api/market/sector-map');
+    const r = await apiFetch(`/api/market/sector-map?index=${_smActiveIndex}`);
     _renderSectorMap(r);
   } catch(e) {
     el.innerHTML = `<div style="color:var(--coral);font-size:12px;padding:24px">Failed to load sector data: ${e.detail||e.message||e}</div>`;
@@ -18321,10 +18545,10 @@ async function loadSectorMapPage() {
 }
 
 function _sectorColor(chg) {
-  if (chg <= -5)   return '#9d1010';
-  if (chg <= -3)   return '#c44040';
-  if (chg <= -1.5) return '#c47070';
-  if (chg <= -0.5) return '#996060';
+  if (chg <= -5)   return '#b00000';
+  if (chg <= -3)   return '#cc1f1f';
+  if (chg <= -1.5) return '#d94444';
+  if (chg <= -0.5) return '#b05050';
   if (chg <   0.5) return '#585858';
   if (chg <   1.5) return '#4a9a4a';
   if (chg <   3)   return '#2e8b2e';
@@ -18411,11 +18635,12 @@ function _renderSectorMap(data) {
     return;
   }
 
-  _smSectorData = {};   // reset on each render
-  _smStockRects = {};
+  _smSectorData     = {};   // reset on each render
+  _smStockRects     = {};
+  _smSubsectorRects = {};
 
   const W   = el.clientWidth || 900;
-  const H   = Math.max(475, Math.round(W * 0.532));
+  const H   = Math.max(437, Math.round(W * 0.4902));
   const GAP = 3;   // gap between sector panels
   const HDR = 18;  // sector header bar height
 
@@ -18439,45 +18664,84 @@ function _renderSectorMap(data) {
     const ix = sx + 1, iy = sy + HDR, iw = sw - 2, ih = sh - HDR - 1;
 
     if (iw > 10 && ih > 10 && sr.stocks && sr.stocks.length) {
-      const stockRects = _squarifyTreemap(
-        sr.stocks.map(s => ({ ...s, value: s.mcap })), ix, iy, iw, ih
+      const SHDR = 13;  // subsector header height
+
+      // Group stocks by subsector, sorted by total mcap descending
+      const subMap = {};
+      for (const stk of sr.stocks) {
+        const key = stk.subsector || 'Other';
+        if (!subMap[key]) subMap[key] = { name: key, stocks: [], mcap: 0 };
+        subMap[key].stocks.push(stk);
+        subMap[key].mcap += stk.mcap || 0;
+      }
+      const subsectors = Object.values(subMap).sort((a, b) => b.mcap - a.mcap);
+
+      const ssRects = _squarifyTreemap(
+        subsectors.map(ss => ({ ...ss, value: ss.mcap })), ix, iy, iw, ih
       );
 
-      for (const stk of stockRects) {
-        const rw = stk.w - 1, rh = stk.h - 1;
-        if (rw < 2 || rh < 2) continue;
-        const color = _sectorColor(stk.change);
-        const cx = stk.x + stk.w / 2, cy = stk.y + stk.h / 2;
+      for (const ssr of ssRects) {
+        const ssx = ssr.x + 0.5, ssy = ssr.y + 0.5;
+        const ssw = ssr.w - 1,   ssh = ssr.h - 1;
+        if (ssw < 4 || ssh < 4) continue;
 
-        const showTicker = rw > 26 && rh > 16;
-        const showChg    = rh > 32 && rw > 24;
-        const showName   = rh > 54 && rw > 58;
+        const showSubHdr  = ssh > SHDR + 8 && ssw > 20;
+        const stockAreaY  = ssy + (showSubHdr ? SHDR : 0);
+        const stockAreaH  = ssh - (showSubHdr ? SHDR : 0);
 
-        let txt = '';
-        if (showName) {
-          txt += `<text x="${f(cx)}" y="${f(cy-14)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffffaa" font-size="9" font-family="system-ui,sans-serif">${stk.name}</text>`;
-        }
-        if (showTicker) {
-          const tfs = rw > 58 ? 12 : rw > 40 ? 11 : 9;
-          const ty  = showChg ? cy - 7 : cy;
-          txt += `<text x="${f(cx)}" y="${f(ty)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffff" font-size="${tfs}" font-weight="700" font-family="system-ui,sans-serif">${stk.ticker}</text>`;
-        }
-        if (showChg) {
-          const sign = stk.change >= 0 ? '+' : '';
-          const cy2  = showTicker ? cy + 9 : cy;
-          txt += `<text x="${f(cx)}" y="${f(cy2)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffffaa" font-size="9" font-family="system-ui,sans-serif">${sign}${stk.change.toFixed(2)}%</text>`;
+        // Subsector header bar
+        if (showSubHdr) {
+          svg.push(`<rect x="${f(ssx)}" y="${f(ssy)}" width="${f(ssw)}" height="${SHDR}" fill="#141828" rx="1"/>`);
+          if (ssw > 28) {
+            const maxChars = Math.floor((ssw - 8) / 5.5);
+            const lbl = ssr.name.length > maxChars ? ssr.name.slice(0, maxChars - 1) + '…' : ssr.name;
+            svg.push(`<text x="${f(ssx + 4)}" y="${f(ssy + SHDR / 2)}" dominant-baseline="middle" fill="#7a88b0" font-size="8" font-weight="600" font-family="system-ui,sans-serif" pointer-events="none">${lbl}</text>`);
+          }
+          _smSubsectorRects[`${sr.name}:${ssr.name}`] = { x: ssx, y: ssy, w: ssw, h: SHDR };
         }
 
-        // Store tile position for highlight system
-        _smStockRects[stk.ticker] = { x: stk.x, y: stk.y, w: stk.w, h: stk.h,
-          sector: sr.name, subsector: stk.subsector || '', ...stk };
+        // Stock tiles within subsector
+        if (stockAreaH > 6 && ssw > 6 && ssr.stocks.length) {
+          const stockRects = _squarifyTreemap(
+            ssr.stocks.map(s => ({ ...s, value: s.mcap })), ssx, stockAreaY, ssw, stockAreaH
+          );
 
-        const tip = JSON.stringify({ ticker: stk.ticker, name: stk.name, change: stk.change,
-          price: stk.price, sector: sr.name, subsector: stk.subsector || '', mcap: stk.mcap
-        }).replace(/'/g,"&#39;");
-        svg.push(`<g data-sm='${tip}' onmouseenter="_smStockEnter(event,this)" onmouseleave="_smStockLeave()" style="cursor:pointer">
-          <rect x="${f(stk.x)}" y="${f(stk.y)}" width="${f(rw)}" height="${f(rh)}" fill="${color}" rx="2"/>
-          ${txt}</g>`);
+          for (const stk of stockRects) {
+            const rw = stk.w - 1, rh = stk.h - 1;
+            if (rw < 2 || rh < 2) continue;
+            const color = _sectorColor(stk.change);
+            const cx = stk.x + stk.w / 2, cy = stk.y + stk.h / 2;
+
+            const showTicker = rw > 26 && rh > 16;
+            const showChg    = rh > 32 && rw > 24;
+            const showName   = rh > 54 && rw > 58;
+
+            let txt = '';
+            if (showName) {
+              txt += `<text x="${f(cx)}" y="${f(cy-14)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffffaa" font-size="9" font-family="system-ui,sans-serif">${stk.name}</text>`;
+            }
+            if (showTicker) {
+              const tfs = rw > 58 ? 12 : rw > 40 ? 11 : 9;
+              const ty  = showChg ? cy - 7 : cy;
+              txt += `<text x="${f(cx)}" y="${f(ty)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffff" font-size="${tfs}" font-weight="700" font-family="system-ui,sans-serif">${stk.ticker}</text>`;
+            }
+            if (showChg) {
+              const sign = stk.change >= 0 ? '+' : '';
+              const cy2  = showTicker ? cy + 9 : cy;
+              txt += `<text x="${f(cx)}" y="${f(cy2)}" text-anchor="middle" dominant-baseline="middle" fill="#ffffffaa" font-size="9" font-family="system-ui,sans-serif">${sign}${stk.change.toFixed(2)}%</text>`;
+            }
+
+            _smStockRects[stk.ticker] = { x: stk.x, y: stk.y, w: stk.w, h: stk.h,
+              sector: sr.name, subsector: stk.subsector || '', ...stk };
+
+            const tip = JSON.stringify({ ticker: stk.ticker, name: stk.name, change: stk.change,
+              price: stk.price, sector: sr.name, subsector: stk.subsector || '', mcap: stk.mcap
+            }).replace(/'/g,"&#39;");
+            svg.push(`<g data-sm='${tip}' onmouseenter="_smStockEnter(event,this)" onmouseleave="_smStockLeave()" style="cursor:pointer">
+              <rect x="${f(stk.x)}" y="${f(stk.y)}" width="${f(rw)}" height="${f(rh)}" fill="${color}" rx="2"/>
+              ${txt}</g>`);
+          }
+        }
       }
     }
 
@@ -18550,12 +18814,22 @@ function _smSparkline(closes, w, h, up) {
   return `<svg width="${w}" height="${h}" style="display:block;overflow:visible"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
-function _smHighlight(peers) {
+function _smHighlight(peers, hovSubsectorKey) {
   const hlg = document.getElementById('sm-hl');
   if (!hlg) return;
-  hlg.innerHTML = peers.map(d =>
+
+  // Stock tile borders
+  let html = peers.map(d =>
     `<rect x="${f(d.x)}" y="${f(d.y)}" width="${f(d.w - 1)}" height="${f(d.h - 1)}" fill="none" stroke="#fbbf24" stroke-width="2.5" rx="2"/>`
   ).join('');
+
+  // Highlight only the hovered stock's own subsector header
+  if (hovSubsectorKey) {
+    const r = _smSubsectorRects[hovSubsectorKey];
+    if (r) html += `<rect x="${f(r.x)}" y="${f(r.y)}" width="${f(r.w)}" height="${f(r.h)}" fill="rgba(251,191,36,.12)" stroke="#fbbf24" stroke-width="1.5" rx="1"/>`;
+  }
+
+  hlg.innerHTML = html;
 }
 
 function _smClearHighlight() {
@@ -18574,16 +18848,16 @@ function _smStockEnter(e, el) {
 
   let displaySubsector = d.subsector;
 
-  // If subsector has ≤2 stocks, fall back to the full sector
-  if (peers.length <= 2) {
+  // If subsector is a singleton, fall back to the full sector
+  if (peers.length <= 1) {
     peers = Object.values(_smStockRects)
       .filter(s => s.sector === d.sector)
       .sort((a, b) => b.mcap - a.mcap);
     displaySubsector = d.sector;
   }
 
-  _smHighlight(peers);
-  _smBuildPanel(d.sector, displaySubsector, peers, e);
+  _smHighlight(peers, `${d.sector}:${d.subsector}`);
+  _smBuildPanel(d.sector, displaySubsector, peers, e, d);
 }
 
 function _smStockLeave() {
@@ -18594,7 +18868,7 @@ function _smStockLeave() {
   }, 160);
 }
 
-function _smBuildPanel(sector, subsector, peers, e) {
+function _smBuildPanel(sector, subsector, peers, e, hovered) {
   _smCurrentKey = `${sector}:${subsector}`;
   const panel = document.getElementById('sector-map-panel');
   if (!panel) return;
@@ -18605,15 +18879,39 @@ function _smBuildPanel(sector, subsector, peers, e) {
   const sign = avgChg >= 0 ? '+' : '';
   const cc   = avgChg >= 0 ? '#4ade80' : '#f87171';
 
+  // Hovered stock card
+  const hov = hovered || peers[0];
+  const hovSc  = hov.change >= 0 ? '#4ade80' : '#f87171';
+  const hovSs  = hov.change >= 0 ? '+' : '';
+  const hovPrice = hov.price ? `$${hov.price.toFixed(2)}` : '—';
+  const hovCard = `
+    <div style="padding:10px 14px 10px;border-bottom:1px solid #232848;background:#0e1221">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:15px;font-weight:800;color:#e8eeff;letter-spacing:.02em">${hov.ticker}</div>
+          <div style="font-size:10px;color:#5a6490;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${hov.name || ''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:14px;font-weight:700;color:#8896b8">${hovPrice}</div>
+          <div style="font-size:13px;font-weight:700;color:${hovSc}">${hovSs}${hov.change.toFixed(2)}%</div>
+        </div>
+      </div>
+      <div id="smp-hov-${hov.ticker.replace(/[^A-Z0-9]/g,'_')}" style="margin-top:6px;height:28px">${_smSparkline(null,250,26,hov.change>=0)}</div>
+    </div>`;
+
+  // Peers sorted by gain descending (hovered stock excluded from list)
+  const sorted = [...peers].sort((a, b) => b.change - a.change);
+
   let rows = '';
-  for (const stk of peers) {
-    const sc  = stk.change >= 0 ? '#4ade80' : '#f87171';
-    const ss  = stk.change >= 0 ? '+' : '';
-    const isSelf = stk.ticker === (peers[0] || {}).ticker;
+  for (const stk of sorted) {
+    const sc    = stk.change >= 0 ? '#4ade80' : '#f87171';
+    const ss    = stk.change >= 0 ? '+' : '';
     const price = stk.price ? `$${stk.price.toFixed(2)}` : '—';
+    const isSelf = stk.ticker === hov.ticker;
+    const rowBg  = isSelf ? 'background:rgba(221,228,255,.05);' : '';
     rows += `<div style="display:grid;grid-template-columns:46px 1fr 64px 58px;align-items:center;gap:6px;
-        padding:5px 14px;border-bottom:1px solid #1a1e35">
-      <div style="font-size:11px;font-weight:700;color:#dde4ff">${stk.ticker}</div>
+        padding:5px 14px;border-bottom:1px solid #1a1e35;${rowBg}">
+      <div style="font-size:11px;font-weight:${isSelf?'800':'700'};color:${isSelf?'#e8eeff':'#dde4ff'}">${stk.ticker}</div>
       <div id="smp-${stk.ticker.replace(/[^A-Z0-9]/g,'_')}" style="display:flex;align-items:center;height:22px">${_smSparkline(null,64,18,stk.change>=0)}</div>
       <div style="font-size:11px;color:#8896b8;text-align:right">${price}</div>
       <div style="font-size:11px;font-weight:700;color:${sc};text-align:right">${ss}${stk.change.toFixed(2)}%</div>
@@ -18621,27 +18919,26 @@ function _smBuildPanel(sector, subsector, peers, e) {
   }
 
   panel.innerHTML = `
-    <div style="padding:10px 14px 8px;border-bottom:1px solid #232848">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <div>
-          <div style="font-size:13px;font-weight:700;color:#e8eeff">${subsector}</div>
-          <div style="font-size:10px;color:#5a6490;margin-top:2px">${sector} &nbsp;·&nbsp; ${peers.length} stock${peers.length!==1?'s':''}</div>
-        </div>
-        <div style="font-size:15px;font-weight:700;color:${cc};flex-shrink:0">${sign}${avgChg.toFixed(2)}%</div>
+    ${hovCard}
+    <div style="padding:7px 14px 6px;border-bottom:1px solid #232848;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#e8eeff">${subsector}</div>
+        <div style="font-size:10px;color:#5a6490;margin-top:1px">${sector} &nbsp;·&nbsp; ${peers.length} stock${peers.length!==1?'s':''}</div>
       </div>
+      <div style="font-size:14px;font-weight:700;color:${cc};flex-shrink:0">${sign}${avgChg.toFixed(2)}%</div>
     </div>
-    <div style="overflow-y:auto;max-height:480px">
+    <div style="overflow-y:auto;max-height:420px">
       <div style="display:grid;grid-template-columns:46px 1fr 64px 58px;gap:6px;padding:4px 14px 3px;border-bottom:1px solid #232848">
         <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em">Ticker</div>
         <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em">5-Day</div>
         <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em;text-align:right">Price</div>
-        <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em;text-align:right">Chg</div>
+        <div style="font-size:9px;color:#4a5480;text-transform:uppercase;letter-spacing:.05em;text-align:right">Chg%</div>
       </div>
       ${rows}
     </div>`;
 
   panel.style.display = 'block';
-  _smPositionPanel(e);
+  _smPositionPanel(peers, e);
 
   // Fetch sparklines async
   const fetchKey  = _smCurrentKey;
@@ -18651,21 +18948,61 @@ function _smBuildPanel(sector, subsector, peers, e) {
       if (_smCurrentKey !== fetchKey) return;
       for (const stk of peers) {
         const el = document.getElementById(`smp-${stk.ticker.replace(/[^A-Z0-9]/g,'_')}`);
-        if (!el) continue;
-        const closes = sparkData[stk.ticker];
-        if (closes && closes.length >= 2) el.innerHTML = _smSparkline(closes, 64, 18, stk.change >= 0);
+        if (el) {
+          const closes = sparkData[stk.ticker];
+          if (closes && closes.length >= 2) el.innerHTML = _smSparkline(closes, 64, 18, stk.change >= 0);
+        }
+        // Also update the wide hovered-stock sparkline at the top
+        const hovEl = document.getElementById(`smp-hov-${stk.ticker.replace(/[^A-Z0-9]/g,'_')}`);
+        if (hovEl) {
+          const closes = sparkData[stk.ticker];
+          if (closes && closes.length >= 2) hovEl.innerHTML = _smSparkline(closes, 250, 26, stk.change >= 0);
+        }
       }
     })
     .catch(() => {});
 }
 
-function _smPositionPanel(e) {
+function _smPositionPanel(peers, e) {
   const panel = document.getElementById('sector-map-panel');
   if (!panel || panel.style.display === 'none') return;
   const pw = 320, ph = panel.offsetHeight || 520;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const margin = 12;
+
+  // Compute the bounding box of the highlighted region in screen coords
+  const ctr = document.getElementById('sector-map-container');
+  if (peers && peers.length && ctr) {
+    const cr  = ctr.getBoundingClientRect();
+    const rx1 = cr.left + Math.min(...peers.map(p => p.x));
+    const ry1 = cr.top  + Math.min(...peers.map(p => p.y));
+    const rx2 = cr.left + Math.max(...peers.map(p => p.x + p.w));
+    const ry2 = cr.top  + Math.max(...peers.map(p => p.y + p.h));
+
+    // Try: right → left → below → above the region
+    const candidates = [
+      { x: rx2 + margin,      y: ry1 },
+      { x: rx1 - pw - margin, y: ry1 },
+      { x: rx1,               y: ry2 + margin },
+      { x: rx1,               y: ry1 - ph - margin },
+    ];
+    for (const c of candidates) {
+      const cx = Math.max(6, Math.min(c.x, vw - pw - 6));
+      const cy = Math.max(6, Math.min(c.y, vh - ph - 6));
+      // Accept if the panel doesn't overlap the highlighted region
+      const panelR = cx + pw, panelB = cy + ph;
+      if (panelR < rx1 - 4 || cx > rx2 + 4 || panelB < ry1 - 4 || cy > ry2 + 4) {
+        panel.style.left = cx + 'px';
+        panel.style.top  = cy + 'px';
+        return;
+      }
+    }
+  }
+
+  // Fallback: near cursor
   let x = e.clientX + 16, y = e.clientY - 20;
-  if (x + pw > window.innerWidth  - 10) x = e.clientX - pw - 10;
-  if (y + ph > window.innerHeight - 10) y = window.innerHeight - ph - 10;
+  if (x + pw > vw - 10) x = e.clientX - pw - 10;
+  if (y + ph > vh - 10) y = vh - ph - 10;
   panel.style.left = Math.max(6, x) + 'px';
   panel.style.top  = Math.max(6, y) + 'px';
 }
