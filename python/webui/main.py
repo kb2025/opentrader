@@ -10085,7 +10085,7 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
 
         # Get latest predictor signal for this ticker
         sig_rows = await pool.fetch(
-            """SELECT direction, confidence, ml_confidence, raw
+            """SELECT direction, confidence, payload AS raw
                FROM signals WHERE ticker = $1
                ORDER BY ts DESC LIMIT 3""",
             ticker,
@@ -10111,7 +10111,8 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
             latest_sig = sig_rows[0]
             direction  = latest_sig["direction"]
             confidence = float(latest_sig["confidence"] or 0.5)
-            raw        = latest_sig["raw"] or {}
+            _raw       = latest_sig["raw"] or {}
+            raw        = json.loads(_raw) if isinstance(_raw, str) else (_raw or {})
             price      = float(raw.get("price", raw.get("entry_price", 0)))
             rsi        = raw.get("rsi")
             if direction == "long":

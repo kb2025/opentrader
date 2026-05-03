@@ -19547,6 +19547,7 @@ async function loadQuickIntel() {
   if (!input || !el) return;
   const ticker = (input.value || '').trim().toUpperCase();
   if (!ticker) return;
+  const token = getToken();
   el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Generating analysis…</div>';
   if (meta) meta.textContent = '';
   try {
@@ -19585,7 +19586,7 @@ async function loadQuickIntel() {
         </div>` : ''}
       </div>`;
   } catch(e) {
-    el.innerHTML = `<div style="font-size:12px;color:var(--muted)">Analysis unavailable</div>`;
+    el.innerHTML = `<div style="font-size:12px;color:var(--coral)">Analysis unavailable: ${e.message || e}</div>`;
   }
 }
 

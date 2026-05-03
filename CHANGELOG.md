@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.76] - 2026-05-03
+
+### Fixed
+- **Quick Intel** — missing `getToken()` call caused ReferenceError caught as "analysis unavailable"; fixed JS to fetch token correctly
+- **Quick Intel** — backend query referenced non-existent columns `ml_confidence` and `raw`; corrected to use `payload AS raw` matching actual `signals` table schema
+- **Quick Intel** — `payload` JSON string from asyncpg now parsed before `.get()` access
+
 ## [3.6.75] - 2026-05-03
 
 ### Changed
