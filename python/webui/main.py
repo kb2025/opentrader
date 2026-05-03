@@ -10263,15 +10263,18 @@ async def _compute_trending(_redis, pool) -> list[dict]:
     except Exception:
         pass
 
-    # Sentiment magnitude
+    # Sentiment magnitude — normalize F&G (0-100) to [-1, +1] range before scoring
     try:
         sent_all = await _redis.hgetall("sentiment:latest")
         for t, val_raw in (sent_all or {}).items():
             val = json.loads(val_raw)
-            score_mag = abs(float(val.get("score", 0)))
-            if score_mag > 0.2:
+            raw_score = float(val.get("score", 0))
+            # Yahoo F&G scores are 0-100; VADER scores are -1 to +1
+            normalized = (raw_score / 50.0 - 1.0) if abs(raw_score) > 1 else raw_score
+            score_mag  = abs(normalized)
+            if score_mag > 0.1:
                 scores[t] = scores.get(t, 0) + score_mag
-                meta.setdefault(t, {})["sentiment_score"] = round(float(val.get("score", 0)), 3)
+                meta.setdefault(t, {})["sentiment_score"] = round(normalized, 3)
     except Exception:
         pass
 
