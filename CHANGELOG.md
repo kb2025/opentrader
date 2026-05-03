@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.78] - 2026-05-03
+
+### Added
+- **Quick Intel technical indicators** — `_fetch_technical_indicators()` fetches 280 days of daily OHLCV bars from Massive/Polygon (yfinance fallback) and computes RSI-14, MA50, MA200, ATR-14, support (avg 3 lowest lows / 60 bars), and resistance (avg 3 highest highs / 60 bars); trend derived from price vs MA relationship; MA crossover and RSI extremes added as bullish/bearish factors; UI shows a Technicals mini-grid alongside the signal display
+
 ## [3.6.77] - 2026-05-03
 
 ### Added

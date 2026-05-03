@@ -10139,7 +10139,28 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
             elif score < -0.2:
                 bearish_factors.append(f"Sentiment score={score:.2f}")
 
-        trend = "uptrend" if signal == "BUY" else ("downtrend" if signal == "SELL" else "sideways")
+        # Fetch real technical indicators from Massive/yfinance
+        tech = await _fetch_technical_indicators(ticker)
+        if tech.get("price"):
+            price = tech["price"]
+        if tech.get("rsi") is not None:
+            rsi = tech["rsi"]
+
+        # Enrich factors with technical context
+        if tech.get("rsi") is not None:
+            r = tech["rsi"]
+            if r < 30:
+                bullish_factors.append(f"RSI oversold ({r:.1f})")
+            elif r > 70:
+                bearish_factors.append(f"RSI overbought ({r:.1f})")
+        if tech.get("ma_50") and tech.get("ma_200") and tech.get("price"):
+            p, m50, m200 = tech["price"], tech["ma_50"], tech["ma_200"]
+            if p > m50 > m200:
+                bullish_factors.append(f"Price above MA50 & MA200 ({m50:.2f} / {m200:.2f})")
+            elif p < m50 < m200:
+                bearish_factors.append(f"Price below MA50 & MA200 ({m50:.2f} / {m200:.2f})")
+
+        trend = tech.get("trend") or ("uptrend" if signal == "BUY" else ("downtrend" if signal == "SELL" else "sideways"))
         summary = await _generate_stock_summary(ticker, signal, confidence, price, rsi, trend, bullish_factors, bearish_factors)
 
         return {
@@ -10147,11 +10168,11 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
             "confidence":      round(confidence, 3),
             "price":           price,
             "rsi":             float(rsi) if rsi else None,
-            "atr":             None,
-            "support":         None,
-            "resistance":      None,
-            "ma_50":           None,
-            "ma_200":          None,
+            "atr":             tech.get("atr"),
+            "support":         tech.get("support"),
+            "resistance":      tech.get("resistance"),
+            "ma_50":           tech.get("ma_50"),
+            "ma_200":          tech.get("ma_200"),
             "trend":           trend,
             "bullish_factors": bullish_factors,
             "bearish_factors": bearish_factors,
@@ -10165,6 +10186,122 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
     except Exception as e:
         log.warning("stock_analysis.generate_error", ticker=ticker, error=str(e))
         return None
+
+
+async def _fetch_technical_indicators(ticker: str) -> dict:
+    """Fetch daily bars and compute RSI-14, MA50, MA200, ATR-14, support, resistance, price."""
+    import aiohttp as _aiohttp
+    from datetime import date as _date, timedelta
+
+    sym       = ticker.upper()
+    to_date   = _date.today().isoformat()
+    from_date = (_date.today() - timedelta(days=280)).isoformat()  # ~200 trading days
+
+    closes: list[float] = []
+    highs:  list[float] = []
+    lows:   list[float] = []
+
+    env     = _read_env_file()
+    api_key = env.get("MASSIVE_API_KEY") or os.getenv("MASSIVE_API_KEY", "")
+
+    if api_key:
+        url = (
+            f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+            f"/{from_date}/{to_date}?adjusted=true&sort=asc&limit=300&apiKey={api_key}"
+        )
+        try:
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for b in data.get("results", []):
+                            closes.append(float(b.get("c") or 0))
+                            highs.append(float(b.get("h") or 0))
+                            lows.append(float(b.get("l") or 0))
+        except Exception as e:
+            log.warning("stock_analysis.bars_error", ticker=sym, error=str(e))
+
+    if not closes:
+        try:
+            import yfinance as _yf
+            import asyncio as _asyncio
+            df = await _asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: _yf.download(sym, period="280d", interval="1d", progress=False, auto_adjust=True),
+            )
+            if df is not None and not df.empty:
+                closes = [float(v) for v in df["Close"].dropna().tolist()]
+                highs  = [float(v) for v in df["High"].dropna().tolist()]
+                lows   = [float(v) for v in df["Low"].dropna().tolist()]
+        except Exception as e:
+            log.warning("stock_analysis.yfinance_error", ticker=sym, error=str(e))
+
+    if len(closes) < 20:
+        return {}
+
+    price = closes[-1]
+
+    # RSI-14
+    rsi = None
+    if len(closes) >= 15:
+        deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+        gains  = [max(d, 0) for d in deltas[-14:]]
+        losses = [abs(min(d, 0)) for d in deltas[-14:]]
+        avg_gain = sum(gains) / 14
+        avg_loss = sum(losses) / 14
+        if avg_loss == 0:
+            rsi = 100.0
+        else:
+            rs  = avg_gain / avg_loss
+            rsi = round(100 - (100 / (1 + rs)), 2)
+
+    # Moving averages
+    ma_50  = round(sum(closes[-50:])  / min(len(closes), 50),  2) if len(closes) >= 20 else None
+    ma_200 = round(sum(closes[-200:]) / min(len(closes), 200), 2) if len(closes) >= 20 else None
+
+    # ATR-14 (using last 14 bars with negative indices)
+    atr = None
+    if len(closes) >= 15 and len(highs) >= 15 and len(lows) >= 15:
+        true_ranges = []
+        for i in range(-14, 0):
+            tr = max(
+                highs[i]  - lows[i],
+                abs(highs[i] - closes[i - 1]),
+                abs(lows[i]  - closes[i - 1]),
+            )
+            true_ranges.append(tr)
+        atr = round(sum(true_ranges) / 14, 4)
+
+    # Support: avg of 3 lowest lows in last 60 bars
+    # Resistance: avg of 3 highest highs in last 60 bars
+    recent_lows  = sorted(lows[-60:])[:3]  if len(lows)  >= 20 else []
+    recent_highs = sorted(highs[-60:])[-3:] if len(highs) >= 20 else []
+    support    = round(sum(recent_lows)  / len(recent_lows),  2) if recent_lows  else None
+    resistance = round(sum(recent_highs) / len(recent_highs), 2) if recent_highs else None
+
+    # Trend from MAs
+    if ma_50 and ma_200:
+        if price > ma_50 > ma_200:
+            trend = "uptrend"
+        elif price < ma_50 < ma_200:
+            trend = "downtrend"
+        elif price > ma_50:
+            trend = "uptrend"
+        else:
+            trend = "sideways"
+    else:
+        trend = None
+
+    return {
+        "price":      round(price, 4),
+        "rsi":        rsi,
+        "ma_50":      ma_50,
+        "ma_200":     ma_200,
+        "atr":        atr,
+        "support":    support,
+        "resistance": resistance,
+        "trend":      trend,
+    }
 
 
 async def _generate_stock_summary(
