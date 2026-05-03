@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.66] - 2026-05-03
+
+### Added
+- **Sector Leaders — bar chart header** — horizontal bar chart above the sector cards ranks all 11 sectors by daily avg % change; bars are column-normalized (best sector = full width), green for positive / red for negative with a colored leading-edge border; rank number and ETF ticker shown alongside each bar; #1 row has a subtle gold highlight
+
 ## [3.6.65] - 2026-05-03
 
 ### Added

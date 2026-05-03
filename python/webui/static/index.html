@@ -3403,7 +3403,13 @@ select option{background:var(--surface2)}
         </div>
       </div>
       <div id="sl-loading" style="text-align:center;padding:60px;color:var(--muted);font-size:14px">Loading…</div>
-      <div id="sl-grid" style="display:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
+      <div id="sl-chart-wrap" style="display:none;margin-bottom:18px">
+        <div class="card" style="padding:14px 18px">
+          <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Sector Performance — Daily</div>
+          <div id="sl-chart"></div>
+        </div>
+      </div>
+      <div id="sl-grid" style="display:none;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
     </div><!-- /page-equities-sector-leaders -->
 
     <!-- ══════════════════════════════════���═════
@@ -11144,8 +11150,9 @@ async function _slRefresh() {
 }
 
 async function _slFetch(refresh) {
-  document.getElementById('sl-loading').style.display = 'block';
-  document.getElementById('sl-grid').style.display    = 'none';
+  document.getElementById('sl-loading').style.display    = 'block';
+  document.getElementById('sl-grid').style.display       = 'none';
+  document.getElementById('sl-chart-wrap').style.display = 'none';
   try {
     const d = await apiFetch(`/api/market/sector-leaders${refresh ? '?refresh=true' : ''}`);
     _slData = d;
@@ -11185,6 +11192,37 @@ function _slRender(data) {
 
   // Sort sectors: biggest positive avg_change first
   const sectors = [...(data.sectors || [])].sort((a, b) => b.avg_change - a.avg_change);
+
+  // ── Bar chart ─────────────────────────────────────────────────────────────
+  const chartEl = document.getElementById('sl-chart');
+  if (chartEl && sectors.length) {
+    const maxAbs = Math.max(...sectors.map(s => Math.abs(s.avg_change)), 0.01);
+    // bar track width available; each row is name label + bar + value
+    chartEl.innerHTML = sectors.map((sec, i) => {
+      const v       = sec.avg_change;
+      const isPos   = v >= 0;
+      const sign    = isPos ? '+' : '';
+      const barPct  = Math.min(96, Math.abs(v) / maxAbs * 92);
+      const barClr  = isPos ? 'rgba(74,222,128,0.28)' : 'rgba(248,113,113,0.28)';
+      const border  = isPos ? 'rgba(74,222,128,0.7)'  : 'rgba(248,113,113,0.7)';
+      const txtClr  = isPos ? '#4ade80' : '#f87171';
+      const dir     = isPos ? 'to right' : 'to left';
+      const rankNum = i + 1;
+      const rankClr = rankNum === 1 ? '#f59e0b' : rankNum === 2 ? '#94a3b8' : rankNum === 3 ? '#c07a30' : 'var(--dim)';
+      // highlight the #1 row slightly
+      const rowBg   = rankNum === 1 ? 'background:rgba(245,158,11,.04)' : '';
+      return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:5px;${rowBg};border-radius:5px;padding:2px 0">
+        <span style="width:16px;text-align:right;font-size:10px;font-weight:700;color:${rankClr};flex-shrink:0">${rankNum}</span>
+        <span style="width:148px;font-size:12px;font-weight:${rankNum<=3?'700':'500'};color:var(--fg);flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sec.sector}</span>
+        <div style="flex:1;position:relative;height:22px">
+          <div style="position:absolute;inset:0;background:linear-gradient(${dir},${barClr} ${barPct}%,transparent ${barPct}%);border-${isPos?'left':'right'}:2px solid ${border};border-radius:${isPos?'0 3px 3px 0':'3px 0 0 3px'}"></div>
+        </div>
+        <span style="width:54px;text-align:right;font-size:12px;font-weight:700;color:${txtClr};flex-shrink:0">${sign}${v.toFixed(2)}%</span>
+        ${sec.etf ? `<span style="width:36px;font-size:10px;color:var(--blue);flex-shrink:0">${sec.etf}</span>` : ''}
+      </div>`;
+    }).join('');
+    document.getElementById('sl-chart-wrap').style.display = 'block';
+  }
 
   grid.innerHTML = sectors.map(sec => {
     const avgClr  = sec.avg_change >= 0 ? 'var(--green)' : 'var(--red)';
