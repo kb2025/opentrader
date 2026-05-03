@@ -321,6 +321,8 @@ KNOWN_SECRETS = [
     # ── Market Data ───────────────────────────────────────────────────────────
     ("---", "Market Data"),
     ("POLYGON_API_KEY",            "Polygon.io — API Key"),
+    ("MASSIVE_API_KEY",            "Massive.com — API Key"),
+    ("ALPHA_VANTAGE_API_KEY",      "Alpha Vantage — API Key"),
     ("UNUSUAL_WHALES_API_KEY",     "Unusual Whales — API Key"),
     # ── AI / LLM ──────────────────────────────────────────────────────────────
     ("---", "AI / LLM"),
