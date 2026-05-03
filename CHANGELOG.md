@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.75] - 2026-05-03
+
+### Changed
+- **Quick Intel** — moved from Trading Dashboard to Equity Dashboard, positioned between the portfolio risk pie charts and the positions table
+
 ## [3.6.74] - 2026-05-03
 
 ### Fixed
