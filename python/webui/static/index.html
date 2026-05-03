@@ -7643,6 +7643,8 @@ const CFG_META = {
       { key: 'MASSIVE_API_KEY', label: 'API Key', type: 'password', required: true, mono: true, hint: 'Your Massive.com (formerly Polygon.io) API key from massive.com/dashboard' },
       { type: 'separator', label: 'MCP Server' },
       { key: 'MASSIVE_MCP_URL', label: 'MCP URL', type: 'text', hint: 'Default: http://ot-mcp-massive:8000/mcp (auto-set)' },
+      { type: 'separator', label: 'Alpha Vantage' },
+      { key: 'ALPHA_VANTAGE_API_KEY', label: 'API Key', type: 'password', mono: true, hint: 'Free key at alphavantage.co — required for news sentiment scraper (ot-scraper-news)' },
     ],
   },
   google_books: {
@@ -7650,13 +7652,6 @@ const CFG_META = {
     fields: [
       { key: 'GOOGLE_BOOKS_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
         hint: 'Get a free key at console.cloud.google.com → APIs → Books API — enables ISBN lookups in the Library' },
-    ],
-  },
-  alphavantage: {
-    label: 'Alpha Vantage', letter: 'AV', bg: '#16a34a', fg: '#fff',
-    fields: [
-      { key: 'ALPHA_VANTAGE_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
-        hint: 'Get a free key at alphavantage.co/support/#api-key — required for news sentiment scraper (ot-scraper-news)' },
     ],
   },
   unusualwhales: {

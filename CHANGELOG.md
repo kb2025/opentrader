@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.73] - 2026-05-03
+
+### Changed
+- **User Configuration** — moved `ALPHA_VANTAGE_API_KEY` field into the Massive (market data) panel under an "Alpha Vantage" separator; removed standalone Alpha Vantage panel
+
 ## [3.6.72] - 2026-05-03
 
 ### Changed
