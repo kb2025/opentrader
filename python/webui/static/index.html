@@ -811,20 +811,6 @@ select option{background:var(--surface2)}
             <div id="pwd-status" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
           </div>
 
-          <!-- Report Delivery -->
-          <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
-            <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Report Delivery</div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Email address where downloaded/emailed option position reports are sent.</div>
-            <div style="display:flex;align-items:end;gap:8px;max-width:400px">
-              <div style="flex:1">
-                <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Recipient Email</label>
-                <input id="us-report-recipient-email" type="email" class="input-field" style="width:100%" placeholder="you@example.com">
-              </div>
-              <button class="btn btn-primary btn-sm" onclick="_saveReportEmail()" style="white-space:nowrap">Save</button>
-            </div>
-            <div id="us-report-email-status" style="font-size:11px;margin-top:8px;display:none"></div>
-          </div>
-
           <!-- Clock & Display -->
           <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
             <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Clock &amp; Display</div>
@@ -7627,7 +7613,7 @@ const CFG_META = {
       { key: 'AGENTMAIL_REVIEW_INBOX',       label: 'Review Inbox',        type: 'text' },
       { key: 'AGENTMAIL_EOD_INBOX',          label: 'EOD Reports Inbox',   type: 'text' },
       { key: 'AGENTMAIL_ALERTS_INBOX',       label: 'Alerts Inbox',        type: 'text' },
-      { key: 'REPORT_RECIPIENT_EMAIL',       label: 'Report Recipient Email', type: 'text', hint: 'Where EOD reports are delivered' },
+      { key: 'REPORT_RECIPIENT_EMAIL',       label: 'Report Recipient Email', type: 'text', hint: 'Email address where option position reports, EOD summaries, alerts, and trade confirmations are delivered' },
     ],
   },
   ovtlyr: {
@@ -7983,8 +7969,6 @@ async function loadProfilePage() {
   // User settings
   _loadUserExclusions();
   _loadRiskControls();
-  _loadReportEmail();
-
   // Secrets list
   const grid = document.getElementById('secrets-grid');
   grid.innerHTML = '<div class="empty-state">Loading…</div>';
@@ -13901,42 +13885,6 @@ function _renderDailyLog(data) {
      RISK CONTROLS JS
      ══════════════════════════════════════════════════════════════════════════ -->
 <script>
-async function _loadReportEmail() {
-  try {
-    const token = getToken();
-    const r = await fetch('/api/broker/env/reveal', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, keys: ['REPORT_RECIPIENT_EMAIL'] }),
-    });
-    if (r.ok) {
-      const env = await r.json();
-      const el = document.getElementById('us-report-recipient-email');
-      if (el) el.value = env['REPORT_RECIPIENT_EMAIL'] || '';
-    }
-  } catch(_) {}
-}
-
-async function _saveReportEmail() {
-  const email = (document.getElementById('us-report-recipient-email') || {}).value || '';
-  const st    = document.getElementById('us-report-email-status');
-  try {
-    const token = getToken();
-    const r = await fetch('/api/broker/env', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, vars: { REPORT_RECIPIENT_EMAIL: email } }),
-    });
-    if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
-    st.textContent  = 'Saved.';
-    st.style.color  = 'var(--green)';
-    st.style.display = 'block';
-    setTimeout(() => { st.style.display = 'none'; }, 2500);
-  } catch(e) {
-    st.textContent  = 'Save failed: ' + e.message;
-    st.style.color  = 'var(--coral)';
-    st.style.display = 'block';
-  }
-}
-
 async function _loadRiskControls() {
   const token = getToken();
   try {

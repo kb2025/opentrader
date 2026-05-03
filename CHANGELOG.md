@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.72] - 2026-05-03
+
+### Changed
+- **User Configuration** — removed standalone "Report Delivery" section; `REPORT_RECIPIENT_EMAIL` now lives solely in the AgentMail panel with an updated hint describing all delivery types (reports, alerts, EOD summaries, trade confirmations)
+
 ## [3.6.71] - 2026-05-03
 
 ### Fixed
