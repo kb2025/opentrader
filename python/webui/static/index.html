@@ -30,7 +30,7 @@ nav{padding:8px;flex:1;overflow-y:auto}
 .nav-parent{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--muted);transition:.12s;font-size:13px;user-select:none;font-weight:500}
 .nav-parent:hover,.nav-parent.open{background:var(--surface2);color:var(--text)}
 .nav-children{overflow:hidden;max-height:0;transition:max-height 0.25s ease}
-.nav-children.open{max-height:200px}
+.nav-children.open{max-height:400px}
 .nav-subitem{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 28px;border-radius:8px;cursor:pointer;color:var(--muted);transition:.12s;font-size:12px;user-select:none}
 .nav-subitem:hover{background:var(--surface2);color:var(--text)}
 .nav-subitem.active{background:rgba(59,130,246,.15);color:var(--blue)}
@@ -359,25 +359,34 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#60a5fa"></span>
         Backtester
       </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-resources-groups')" data-page="page-resources-groups">
-        <span class="nav-dot" style="background:#34d399"></span>
-        Market Groups
+      <div class="nav-parent" id="nav-parent-sectorinsight" onclick="_siNavToggle()">
+        <span class="nav-dot" style="background:#a78bfa"></span>
+        Sector Insight
+        <span id="nav-si-chevron" style="margin-left:auto;font-size:9px;transition:transform .2s">▸</span>
       </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-equities-sector-leaders')" data-page="page-equities-sector-leaders">
-        <span class="nav-dot" style="background:#f59e0b"></span>
-        Sector Leaders
-      </div>
-      <div class="nav-parent" id="nav-parent-sectormap" onclick="_smNavToggle()">
-        <span class="nav-dot" style="background:#38bdf8"></span>
-        Sector Map
-        <span id="nav-sm-chevron" style="margin-left:auto;font-size:9px;transition:transform .2s">▸</span>
-      </div>
-      <div class="nav-children" id="nav-sm-children">
-        <div class="nav-subitem" data-sm-index="sp500" onclick="_smNavSelect('sp500')">S&amp;P 500</div>
-        <div class="nav-subitem" data-sm-index="ndx100" onclick="_smNavSelect('ndx100')">Nasdaq 100</div>
-        <div class="nav-subitem" data-sm-index="dow30" onclick="_smNavSelect('dow30')">Dow 30</div>
-        <div class="nav-subitem" data-sm-index="rut2000" onclick="_smNavSelect('rut2000')">Russell 2000</div>
-        <div class="nav-subitem" data-sm-index="futures" onclick="_smNavSelect('futures')">Futures</div>
+      <div class="nav-children" id="nav-si-children" style="max-height:0">
+        <div class="nav-subitem" draggable="true" onclick="navigate('page-resources-groups')" data-page="page-resources-groups">
+          <span class="nav-dot" style="background:#34d399;width:6px;height:6px"></span>Market Groups
+        </div>
+        <div class="nav-subitem" draggable="true" onclick="navigate('page-equities-sector-leaders')" data-page="page-equities-sector-leaders">
+          <span class="nav-dot" style="background:#f59e0b;width:6px;height:6px"></span>Sector Leaders
+        </div>
+        <div style="padding:4px 10px 2px 28px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)">Sector Map</div>
+        <div class="nav-subitem" id="nav-si-sectormap" data-sm-index="sp500" onclick="_smNavSelect('sp500')">
+          <span class="nav-dot" style="background:#38bdf8;width:6px;height:6px"></span>S&amp;P 500
+        </div>
+        <div class="nav-subitem" data-sm-index="ndx100" onclick="_smNavSelect('ndx100')">
+          <span class="nav-dot" style="background:#38bdf8;width:6px;height:6px"></span>Nasdaq 100
+        </div>
+        <div class="nav-subitem" data-sm-index="dow30" onclick="_smNavSelect('dow30')">
+          <span class="nav-dot" style="background:#38bdf8;width:6px;height:6px"></span>Dow 30
+        </div>
+        <div class="nav-subitem" data-sm-index="rut2000" onclick="_smNavSelect('rut2000')">
+          <span class="nav-dot" style="background:#38bdf8;width:6px;height:6px"></span>Russell 2000
+        </div>
+        <div class="nav-subitem" data-sm-index="futures" onclick="_smNavSelect('futures')">
+          <span class="nav-dot" style="background:#38bdf8;width:6px;height:6px"></span>Futures
+        </div>
       </div>
     </div>
     <div class="nav-group" data-group="platform">
@@ -18771,6 +18780,16 @@ let _smSubsectorRects  = {};   // "sector:subsector" → { x, y, w, h }
 let _smPanelTimer      = null; // debounce hide
 let _smCurrentKey      = null; // guard stale sparkline fetches (sector:subsector key)
 
+function _siNavToggle() {
+  const ch = document.getElementById('nav-si-children');
+  const cv = document.getElementById('nav-si-chevron');
+  const pr = document.getElementById('nav-parent-sectorinsight');
+  if (!ch) return;
+  const open = ch.classList.toggle('open');
+  if (cv) cv.style.transform = open ? 'rotate(90deg)' : '';
+  if (pr) pr.classList.toggle('open', open);
+}
+
 function _smNavToggle() {
   const ch = document.getElementById('nav-sm-children');
   const cv = document.getElementById('nav-sm-chevron');
@@ -18782,6 +18801,15 @@ function _smNavToggle() {
 }
 
 function _smNavSelect(idx) {
+  // Ensure Sector Insight parent is open
+  const ch = document.getElementById('nav-si-children');
+  const cv = document.getElementById('nav-si-chevron');
+  const pr = document.getElementById('nav-parent-sectorinsight');
+  if (ch && !ch.classList.contains('open')) {
+    ch.classList.add('open');
+    if (cv) cv.style.transform = 'rotate(90deg)';
+    if (pr) pr.classList.add('open');
+  }
   document.querySelectorAll('.nav-subitem').forEach(n => n.classList.remove('active'));
   const active = document.querySelector(`.nav-subitem[data-sm-index="${idx}"]`);
   if (active) active.classList.add('active');

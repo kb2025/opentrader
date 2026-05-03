@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.68] - 2026-05-03
+
+### Changed
+- **Resources nav** — Market Groups, Sector Leaders, and all Sector Map sub-items grouped under a new collapsible `▸ Sector Insight` parent; Sector Map entries remain accessible with a "Sector Map" section label inside the group
+
 ## [3.6.67] - 2026-05-03
 
 ### Changed
