@@ -19555,7 +19555,7 @@ async function loadNewsSentiment() {
     const url = '/api/market/news-sentiment?limit=15' + (cat ? `&category=${cat}` : '');
     const data = await apiFetch(url);
     const arts = data.articles || [];
-    if (!arts.length) { el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">No news data yet — Alpha Vantage key required</div>'; return; }
+    if (!arts.length) { el.innerHTML = `<div style="padding:12px 16px;font-size:12px;color:var(--muted)">${cat ? `No articles for category "${cat}"` : 'No news data yet — Alpha Vantage key required'}</div>`; return; }
     el.innerHTML = arts.map(a => {
       const sc = a.overall_score || 0;
       const scColor = sc > 0.1 ? 'var(--green)' : sc < -0.1 ? 'var(--red)' : 'var(--muted)';

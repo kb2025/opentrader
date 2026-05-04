@@ -2,6 +2,7 @@
 Alpha Vantage News Sentiment Scraper
 Fetches categorized financial news with sentiment scores.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -62,7 +63,7 @@ async def fetch_news_sentiment(api_key: str, limit: int = 50) -> list[dict]:
     seen_urls = set()
 
     async with aiohttp.ClientSession() as session:
-        for topic in TOPICS[:8]:  # limit API calls; rotate topics
+        for topic in TOPICS:  # AV free = 25 req/day; delay prevents per-minute throttle
             category = TOPIC_CATEGORY.get(topic, "macro")
             try:
                 params = {
@@ -118,5 +119,6 @@ async def fetch_news_sentiment(api_key: str, limit: int = 50) -> list[dict]:
                     })
             except Exception as e:
                 log.warning("av_news.topic_error", topic=topic, error=str(e))
+            await asyncio.sleep(13)  # stay under 5 req/min AV rate limit
 
     return results
