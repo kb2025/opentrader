@@ -1,5 +1,7 @@
 """Alpha Vantage News Sentiment Scraper Agent"""
 import asyncio
+import base64
+import hashlib
 import json
 import os
 from urllib.parse import urlparse, unquote
@@ -13,8 +15,15 @@ from .scraper import fetch_news_sentiment
 
 log = structlog.get_logger("scraper-news")
 
-DB_URL  = os.getenv("DB_URL", "")
-AV_KEY  = os.getenv("ALPHA_VANTAGE_API_KEY", "")
+DB_URL     = os.getenv("DB_URL", "")
+_ENV_KEY   = os.getenv("ALPHA_VANTAGE_API_KEY", "")
+_SECRET_KEY = os.getenv("SECRET_KEY", "change-me-please-set-SECRET_KEY-in-env")
+
+
+def _decrypt(token: str) -> str:
+    from cryptography.fernet import Fernet
+    raw = hashlib.sha256(_SECRET_KEY.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(raw)).decrypt(token.encode()).decode()
 
 
 class NewsSentimentAgent(BaseAgent):
@@ -22,6 +31,21 @@ class NewsSentimentAgent(BaseAgent):
     def __init__(self):
         super().__init__("scraper-news")
         self._db: asyncpg.Pool | None = None
+
+    async def _get_api_key(self) -> str:
+        if _ENV_KEY:
+            return _ENV_KEY
+        if not self._db:
+            return ""
+        try:
+            row = await self._db.fetchrow(
+                "SELECT encrypted_value FROM user_secrets WHERE key='ALPHA_VANTAGE_API_KEY' LIMIT 1"
+            )
+            if row:
+                return _decrypt(row["encrypted_value"])
+        except Exception as e:
+            log.warning("news_sentiment.key_load_error", error=str(e))
+        return ""
 
     async def run(self):
         await self.setup()
@@ -73,11 +97,12 @@ class NewsSentimentAgent(BaseAgent):
                 await asyncio.sleep(10)
 
     async def _scrape(self):
-        if not AV_KEY:
+        av_key = await self._get_api_key()
+        if not av_key:
             log.warning("news_sentiment.no_api_key")
             return
         try:
-            articles = await fetch_news_sentiment(AV_KEY)
+            articles = await fetch_news_sentiment(av_key)
             if self._db:
                 await self._persist(articles)
             await self._cache(articles)
@@ -100,7 +125,6 @@ class NewsSentimentAgent(BaseAgent):
                 log.warning("news_sentiment.persist_error", error=str(e))
 
     async def _cache(self, articles: list[dict]):
-        # Group by category, keep top 10 per category
         by_cat: dict[str, list] = {}
         for a in articles:
             by_cat.setdefault(a["category"], []).append(a)
