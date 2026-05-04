@@ -1125,6 +1125,30 @@ async def on_startup():
         try:
             pool = await _get_db_pool()
             await pool.execute("""
+                CREATE TABLE IF NOT EXISTS signal_reflections (
+                    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                    ticker            TEXT        NOT NULL,
+                    analysis_ts       TIMESTAMPTZ NOT NULL,
+                    signal            TEXT        NOT NULL,
+                    price_at_analysis NUMERIC(12,4),
+                    price_5d_later    NUMERIC(12,4),
+                    return_pct        NUMERIC(8,4),
+                    alpha_vs_spy      NUMERIC(8,4),
+                    reflection        TEXT,
+                    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            await pool.execute("""
+                CREATE INDEX IF NOT EXISTS idx_signal_reflections_ticker
+                ON signal_reflections (ticker, created_at DESC)
+            """)
+        except Exception:
+            pass
+
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute("""
                 CREATE TABLE IF NOT EXISTS library_categories (
                     id         UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
                     name       TEXT        NOT NULL UNIQUE,
@@ -5898,6 +5922,13 @@ def _bt_validate_in_process(params: dict) -> dict:
     return run_validation(params)
 
 
+def _bt_distribution_in_process(params: dict) -> dict:
+    """Top-level wrapper for distribution backtest — required for ProcessPoolExecutor pickling."""
+    from webui.backtest_runner import run_distribution_backtest
+    step_days = int(params.pop("step_days", 21))
+    return run_distribution_backtest(params, step_days=step_days)
+
+
 async def _run_backtest_task(job_id: str, version_dict: dict, body: BacktestRunBody,
                               family_id: str, version: int):
     _bt_jobs[job_id]["status"] = "running"
@@ -6162,6 +6193,58 @@ class BacktestValidateBody(BaseModel):
     n_perms:         int   = 1000   # Monte Carlo permutations
     n_bootstrap:     int   = 1000   # Bootstrap samples
     token:           str   = ""
+
+
+class DistributionBacktestBody(BaseModel):
+    ticker:          str
+    period:          str   = "2y"
+    initial_capital: float = 10_000.0
+    stop_pct:        float = 1.5
+    tp_pct:          float = 3.0
+    confidence:      float = 0.70
+    direction:       str   = "long"
+    max_pos:         float = 500.0
+    step_days:       int   = 21     # trading days between sampled start dates
+    token:           str   = ""
+
+
+@app.post("/api/backtest/distribution")
+async def distribution_backtest(body: DistributionBacktestBody):
+    """Run the strategy from every sampled start date and return a return distribution.
+
+    Samples entry points every `step_days` trading days. Each run starts at that
+    date and runs to the end of the history window, giving a full distribution of
+    outcomes across all historical entry points.
+
+    Returns per-run metrics plus a summary with percentiles (p10/p25/median/p75/p90),
+    pct_positive, mean_sharpe, and mean_drawdown.
+
+    Typical runtime: 10–60 s depending on period and step_days. Timeout: 300 s.
+    """
+    check_token(body.token)
+    params = {
+        "ticker":          body.ticker,
+        "period":          body.period,
+        "initial_capital": body.initial_capital,
+        "stop_pct":        body.stop_pct,
+        "tp_pct":          body.tp_pct,
+        "confidence":      body.confidence,
+        "direction":       body.direction,
+        "max_pos":         body.max_pos,
+        "step_days":       body.step_days,
+    }
+    loop = asyncio.get_event_loop()
+    try:
+        with ProcessPoolExecutor(max_workers=1) as pool:
+            results = await asyncio.wait_for(
+                loop.run_in_executor(pool, _bt_distribution_in_process, params),
+                timeout=300,
+            )
+        return results
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Distribution backtest timed out (300 s limit)")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/backtest/validate")
@@ -9970,6 +10053,54 @@ async def get_macro_regime(history: bool = False):
     }
 
 
+@app.get("/api/market/macro-news")
+async def get_macro_news(limit: int = 15):
+    """Fetch broad market/macro news via yfinance (SPY, QQQ, ^GSPC). Cached 15 min."""
+    import asyncio as _asyncio
+    _redis = await get_redis()
+    cached = await _redis.get("macro_news:latest")
+    if cached:
+        return {"articles": json.loads(cached)[:limit], "source": "cache"}
+
+    def _fetch_news_sync() -> list[dict]:
+        try:
+            import yfinance as _yf
+            seen_urls: set = set()
+            articles: list = []
+            for sym in ("SPY", "QQQ", "^GSPC", "^DJI", "^VIX"):
+                try:
+                    t = _yf.Ticker(sym)
+                    for item in (t.news or []):
+                        content = item.get("content") or {}
+                        if isinstance(content, dict) and content.get("contentType") == "STORY":
+                            url     = (content.get("canonicalUrl") or {}).get("url", "")
+                            title   = content.get("title", "")
+                            summary = content.get("summary", "") or content.get("description", "")
+                            pub_ts  = content.get("pubDate", "")
+                        else:
+                            url     = item.get("link", "")
+                            title   = item.get("title", "")
+                            summary = item.get("summary", "")
+                            pub_ts  = ""
+                        if not title or url in seen_urls:
+                            continue
+                        seen_urls.add(url or title)
+                        articles.append({"title": title, "summary": summary,
+                                         "url": url, "source": sym, "pub_ts": pub_ts})
+                except Exception:
+                    pass
+            articles.sort(key=lambda x: x.get("pub_ts", ""), reverse=True)
+            return articles[:30]
+        except Exception:
+            return []
+
+    loop = _asyncio.get_event_loop()
+    articles = await loop.run_in_executor(None, _fetch_news_sync)
+    if articles:
+        await _redis.setex("macro_news:latest", 900, json.dumps(articles))
+    return {"articles": articles[:limit], "source": "live"}
+
+
 # ── Feature 5: News sentiment ─────────────────────────────────────────────────
 
 @app.get("/api/market/news-sentiment")
@@ -10118,11 +10249,11 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
             price      = float(raw.get("price", raw.get("entry_price", 0)))
             rsi        = raw.get("rsi")
             if direction == "long":
-                signal = "BUY"
+                signal = "Buy" if confidence > 0.75 else "Overweight"
             elif direction == "short":
-                signal = "SELL"
+                signal = "Sell" if confidence > 0.75 else "Underweight"
             else:
-                signal = "HOLD"
+                signal = "Hold"
 
         if ovtlyr:
             ov_signal = ovtlyr.get("signal", "")
@@ -10160,8 +10291,47 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
             elif p < m50 < m200:
                 bearish_factors.append(f"Price below MA50 & MA200 ({m50:.2f} / {m200:.2f})")
 
-        trend = tech.get("trend") or ("uptrend" if signal == "BUY" else ("downtrend" if signal == "SELL" else "sideways"))
-        summary = await _generate_stock_summary(ticker, signal, confidence, price, rsi, trend, bullish_factors, bearish_factors)
+        # Fetch fundamental data (yfinance) — non-blocking, best-effort
+        fund = await _fetch_fundamentals(ticker)
+        if fund.get("pe_ratio"):
+            if fund["pe_ratio"] > 35:
+                bearish_factors.append(f"High P/E ({fund['pe_ratio']:.1f}x)")
+            elif fund["pe_ratio"] < 15:
+                bullish_factors.append(f"Low P/E ({fund['pe_ratio']:.1f}x)")
+        if fund.get("net_insider_shares"):
+            net = fund["net_insider_shares"]
+            if net > 0:
+                bullish_factors.append(f"Net insider buys +{net:,} shares (90d)")
+            elif net < 0:
+                bearish_factors.append(f"Net insider sells {net:,} shares (90d)")
+        if fund.get("revenue_growth") and fund["revenue_growth"] > 20:
+            bullish_factors.append(f"Revenue growth {fund['revenue_growth']:.0f}% YoY")
+        elif fund.get("revenue_growth") and fund["revenue_growth"] < -5:
+            bearish_factors.append(f"Revenue declining {fund['revenue_growth']:.0f}% YoY")
+
+        # Past outcome reflections for LLM context
+        past_reflections: list[str] = []
+        try:
+            ref_rows = await pool.fetch(
+                """SELECT signal, return_pct, alpha_vs_spy, reflection
+                   FROM signal_reflections WHERE ticker = $1
+                   ORDER BY created_at DESC LIMIT 3""",
+                ticker,
+            )
+            for rr in ref_rows:
+                past_reflections.append(
+                    f"{rr['signal']} → {float(rr['return_pct'] or 0):+.1f}% "
+                    f"(α {float(rr['alpha_vs_spy'] or 0):+.1f}%): {rr['reflection']}"
+                )
+        except Exception:
+            pass
+
+        trend = tech.get("trend") or ("uptrend" if signal in ("Buy", "Overweight") else ("downtrend" if signal in ("Sell", "Underweight") else "sideways"))
+        summary = await _generate_stock_summary(
+            ticker, signal, confidence, price, rsi, trend,
+            bullish_factors, bearish_factors, fund=fund,
+            past_reflections=past_reflections,
+        )
 
         return {
             "signal":          signal,
@@ -10177,6 +10347,7 @@ async def _generate_stock_analysis(ticker: str, pool) -> dict | None:
             "bullish_factors": bullish_factors,
             "bearish_factors": bearish_factors,
             "summary":         summary,
+            "fundamentals":    fund,
             "raw":             {
                 "ovtlyr":    ovtlyr,
                 "sentiment": sent,
@@ -10304,9 +10475,67 @@ async def _fetch_technical_indicators(ticker: str) -> dict:
     }
 
 
+async def _fetch_fundamentals(ticker: str) -> dict:
+    """Fetch fundamental data + net insider share purchases via yfinance."""
+    import asyncio as _asyncio
+    sym = ticker.upper()
+
+    def _sync_fetch(s: str) -> dict:
+        try:
+            import yfinance as _yf
+            import pandas as _pd
+            t    = _yf.Ticker(s)
+            info = t.info or {}
+            result: dict = {
+                "pe_ratio":           info.get("trailingPE") or info.get("forwardPE"),
+                "pb_ratio":           info.get("priceToBook"),
+                "roe":                info.get("returnOnEquity"),
+                "profit_margin":      info.get("profitMargins"),
+                "revenue_growth":     info.get("revenueGrowth"),
+                "debt_to_equity":     info.get("debtToEquity"),
+                "market_cap":         info.get("marketCap"),
+                "analyst_target":     info.get("targetMeanPrice"),
+                "recommendation":     info.get("recommendationKey"),
+                "net_insider_shares": None,
+            }
+            # Convert decimal fields to percentages
+            for k in ("roe", "profit_margin", "revenue_growth"):
+                if result[k] is not None:
+                    try:
+                        result[k] = round(float(result[k]) * 100, 2)
+                    except Exception:
+                        result[k] = None
+            for k in ("pe_ratio", "pb_ratio", "debt_to_equity", "analyst_target"):
+                if result[k] is not None:
+                    try:
+                        result[k] = round(float(result[k]), 2)
+                    except Exception:
+                        result[k] = None
+            # Net insider share purchases last 90 days
+            try:
+                txns = t.insider_transactions
+                if txns is not None and not txns.empty:
+                    if txns.index.tz is None:
+                        txns.index = txns.index.tz_localize("UTC")
+                    cutoff = _pd.Timestamp.now(tz="UTC") - _pd.Timedelta(days=90)
+                    recent = txns[txns.index >= cutoff]
+                    if "Shares" in recent.columns and not recent.empty:
+                        result["net_insider_shares"] = int(recent["Shares"].sum())
+            except Exception:
+                pass
+            return result
+        except Exception:
+            return {}
+
+    loop = _asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_fetch, sym)
+
+
 async def _generate_stock_summary(
     ticker: str, signal: str, confidence: float, price: float,
     rsi, trend: str, bullish_factors: list, bearish_factors: list,
+    fund: dict | None = None,
+    past_reflections: list | None = None,
 ) -> str:
     """Call OpenRouter to produce a concise natural-language market snapshot. Falls back to a template."""
     bull_str = "; ".join(bullish_factors[:3]) or "none identified"
@@ -10327,9 +10556,29 @@ async def _generate_stock_summary(
     model = env.get("LLM_ANALYST_MODEL") or os.getenv("LLM_ANALYST_MODEL", "") or \
             env.get("LLM_PREDICTOR_MODEL") or os.getenv("LLM_PREDICTOR_MODEL", "anthropic/claude-haiku-4-5")
 
+    # Build fundamentals line for prompt
+    fund_line = ""
+    if fund:
+        parts = []
+        if fund.get("pe_ratio"):    parts.append(f"P/E {fund['pe_ratio']:.1f}")
+        if fund.get("pb_ratio"):    parts.append(f"P/B {fund['pb_ratio']:.2f}")
+        if fund.get("roe"):         parts.append(f"ROE {fund['roe']:.0f}%")
+        if fund.get("profit_margin"): parts.append(f"Margin {fund['profit_margin']:.0f}%")
+        if fund.get("revenue_growth"): parts.append(f"RevGrowth {fund['revenue_growth']:.0f}%")
+        if fund.get("debt_to_equity"): parts.append(f"D/E {fund['debt_to_equity']:.1f}")
+        if fund.get("analyst_target"): parts.append(f"Target ${fund['analyst_target']:.2f}")
+        if fund.get("recommendation"): parts.append(f"Rating {fund['recommendation']}")
+        if parts:
+            fund_line = f"Fundamentals: {', '.join(parts)}\n"
+
+    # Past outcomes context
+    past_line = ""
+    if past_reflections:
+        past_line = "Past outcomes:\n" + "\n".join(f"  {p}" for p in past_reflections) + "\n"
+
     prompt = (
         "Write one concise market snapshot paragraph for a trading dashboard.\n"
-        "Rules: under 60 words, specific and grounded in the supplied metrics only, "
+        "Rules: under 75 words, specific and grounded in the supplied metrics only, "
         "mention the strongest support and strongest risk, no bullet points, "
         "no AI disclaimers, no uncertainty hedges.\n\n"
         f"Symbol: {ticker}\n"
@@ -10340,6 +10589,8 @@ async def _generate_stock_summary(
         f"RSI: {rsi_str}\n"
         f"Bullish factors: {bull_str}\n"
         f"Bearish factors: {bear_str}\n"
+        + fund_line
+        + past_line
     )
 
     try:
@@ -10349,7 +10600,7 @@ async def _generate_stock_summary(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers={"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"},
                 json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                      "max_tokens": 120, "temperature": 0.4},
+                      "max_tokens": 150, "temperature": 0.4},
                 timeout=_aiohttp.ClientTimeout(total=20),
             ) as resp:
                 data = await resp.json()
@@ -10357,11 +10608,162 @@ async def _generate_stock_summary(
         if choices:
             content = (choices[0].get("message") or {}).get("content", "")
             if content and content.strip():
-                return content.strip()[:500]
+                content = content.strip()[:600]
+                # Feature 7: Bear-case challenge for bullish signals
+                if signal in ("Buy", "Overweight"):
+                    bear_prompt = (
+                        f"Given this analysis of {ticker}:\n{content}\n\n"
+                        "Name the 2 strongest bear-case risks in one sentence each. "
+                        "Format exactly: 'Bear risks: [risk1]; [risk2]'. No other text."
+                    )
+                    try:
+                        async with _aiohttp.ClientSession() as _bs:
+                            async with _bs.post(
+                                "https://openrouter.ai/api/v1/chat/completions",
+                                headers={"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"},
+                                json={"model": model, "messages": [{"role": "user", "content": bear_prompt}],
+                                      "max_tokens": 80, "temperature": 0.3},
+                                timeout=_aiohttp.ClientTimeout(total=15),
+                            ) as _br:
+                                _bd = await _br.json()
+                        _bc = ((_bd.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+                        if _bc and _bc.strip():
+                            content = content + "\n" + _bc.strip()[:250]
+                    except Exception as _be:
+                        log.warning("stock_analysis.bear_challenge_error", ticker=ticker, error=str(_be))
+                return content
     except Exception as e:
         log.warning("stock_analysis.llm_error", ticker=ticker, error=str(e))
 
     return fallback
+
+
+@app.post("/api/market/stock-analysis/{ticker}/reflect")
+async def reflect_stock_signal(ticker: str, token: str = ""):
+    """Compute 5-day return + alpha vs SPY, call LLM for reflection, save to signal_reflections."""
+    check_token(token)
+    import asyncio as _asyncio
+    ticker = ticker.upper()
+    pool   = await _get_db_pool()
+
+    row = await pool.fetchrow(
+        """SELECT ts, signal, price, summary
+           FROM stock_analysis_snapshots WHERE ticker = $1
+           ORDER BY ts DESC LIMIT 1""",
+        ticker,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="No analysis snapshot found for ticker")
+
+    analysis_ts = row["ts"]
+    signal_at   = row["signal"]
+    price_at    = float(row["price"] or 0)
+    summary_at  = row["summary"] or ""
+
+    def _fetch_prices_sync(sym: str) -> dict:
+        try:
+            import yfinance as _yf
+            hist = _yf.Ticker(sym).history(period="10d", auto_adjust=True)
+            if hist is None or hist.empty:
+                return {}
+            return {
+                "current":  float(hist["Close"].iloc[-1]),
+                "five_ago": float(hist["Close"].iloc[-5]) if len(hist) >= 5 else float(hist["Close"].iloc[0]),
+            }
+        except Exception:
+            return {}
+
+    loop = _asyncio.get_event_loop()
+    prices_sym, prices_spy = await _asyncio.gather(
+        loop.run_in_executor(None, _fetch_prices_sync, ticker),
+        loop.run_in_executor(None, _fetch_prices_sync, "SPY"),
+    )
+
+    current_price = prices_sym.get("current", price_at)
+    return_pct    = ((current_price - price_at) / price_at * 100) if price_at else 0.0
+    spy_curr      = prices_spy.get("current", 0)
+    spy_ago       = prices_spy.get("five_ago", spy_curr)
+    spy_ret       = ((spy_curr - spy_ago) / spy_ago * 100) if spy_ago else 0.0
+    alpha_vs_spy  = return_pct - spy_ret
+
+    reflection_text = f"Signal {signal_at} at ${price_at:.2f}; current price ${current_price:.2f} ({return_pct:+.1f}%), alpha vs SPY {alpha_vs_spy:+.1f}%."
+    env = _read_env_file()
+    openrouter_key = env.get("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_API_KEY", "")
+    if openrouter_key and not openrouter_key.startswith("your_"):
+        model = env.get("LLM_ANALYST_MODEL") or os.getenv("LLM_ANALYST_MODEL", "") or \
+                env.get("LLM_PREDICTOR_MODEL") or os.getenv("LLM_PREDICTOR_MODEL", "anthropic/claude-haiku-4-5")
+        ref_prompt = (
+            f"You issued a {signal_at} signal on {ticker} at ${price_at:.2f}. "
+            f"Current price is ${current_price:.2f} ({return_pct:+.1f}%), "
+            f"alpha vs SPY: {alpha_vs_spy:+.1f}%. "
+            f"Original analysis: {summary_at[:300]}\n\n"
+            "Write 2-4 sentences reflecting on what the signal got right or wrong "
+            "and one concrete lesson for next time. Be specific, no disclaimers."
+        )
+        try:
+            import aiohttp as _aiohttp
+            async with _aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"},
+                    json={"model": model, "messages": [{"role": "user", "content": ref_prompt}],
+                          "max_tokens": 180, "temperature": 0.4},
+                    timeout=_aiohttp.ClientTimeout(total=20),
+                ) as resp:
+                    rd = await resp.json()
+            rc = ((rd.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+            if rc and rc.strip():
+                reflection_text = rc.strip()[:600]
+        except Exception as e:
+            log.warning("reflect.llm_error", ticker=ticker, error=str(e))
+
+    await pool.execute(
+        """INSERT INTO signal_reflections
+               (ticker, analysis_ts, signal, price_at_analysis, price_5d_later,
+                return_pct, alpha_vs_spy, reflection)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
+        ticker, analysis_ts, signal_at, price_at, current_price,
+        round(return_pct, 4), round(alpha_vs_spy, 4), reflection_text,
+    )
+    return {
+        "ticker":       ticker,
+        "signal":       signal_at,
+        "price_at":     price_at,
+        "price_now":    current_price,
+        "return_pct":   round(return_pct, 2),
+        "alpha_vs_spy": round(alpha_vs_spy, 2),
+        "reflection":   reflection_text,
+    }
+
+
+@app.get("/api/market/stock-analysis/{ticker}/reflections")
+async def get_stock_reflections(ticker: str, limit: int = 5):
+    """Return last N signal reflections for a ticker."""
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT id, ticker, analysis_ts, signal, price_at_analysis, price_5d_later,
+                  return_pct, alpha_vs_spy, reflection, created_at
+           FROM signal_reflections
+           WHERE ticker = $1 ORDER BY created_at DESC LIMIT $2""",
+        ticker.upper(), limit,
+    )
+    return {
+        "ticker":      ticker.upper(),
+        "reflections": [
+            {
+                "id":             str(r["id"]),
+                "analysis_ts":    r["analysis_ts"].isoformat(),
+                "signal":         r["signal"],
+                "price_at":       float(r["price_at_analysis"] or 0),
+                "price_5d_later": float(r["price_5d_later"] or 0),
+                "return_pct":     float(r["return_pct"] or 0),
+                "alpha_vs_spy":   float(r["alpha_vs_spy"] or 0),
+                "reflection":     r["reflection"],
+                "created_at":     r["created_at"].isoformat(),
+            }
+            for r in rows
+        ],
+    }
 
 
 @app.get("/api/market/stock-analysis")

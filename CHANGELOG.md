@@ -3,6 +3,17 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.79] - 2026-05-04
+
+### Added
+- **Quick Intel — Fundamental data** — `_fetch_fundamentals()` fetches P/E, P/B, ROE, profit margin, revenue growth, D/E, market cap, analyst target price, and recommendation key from yfinance; P/E extremes (<15 bullish, >35 bearish), revenue growth, and net insider buys/sells (90d) are automatically injected as bullish/bearish factors
+- **Quick Intel — 5-tier investment rating** — signal now outputs Buy / Overweight / Hold / Underweight / Sell (confidence >0.75 → Buy/Sell, else Overweight/Underweight) replacing binary BUY/HOLD/SELL
+- **Quick Intel — Fundamentals panel** — Equity Dashboard Quick Intel card shows P/E, P/B, ROE, Margin, D/E, Analyst Target in a dedicated mini-grid alongside Technicals
+- **Quick Intel — Enhanced LLM prompt** — fundamentals line and past outcome reflections injected into `_generate_stock_summary()` for richer, context-aware analysis paragraphs
+- **Quick Intel — Bear-case challenge** — for Buy/Overweight signals, a second LLM call appends the 2 strongest bear-case risks to the summary
+- **Quick Intel — Signal outcome memory** — new `signal_reflections` DB table; `POST /api/market/stock-analysis/{ticker}/reflect` computes 5-day return vs SPY alpha and generates an LLM reflection; past reflections injected into future Quick Intel prompts; collapsible "Past Outcomes" section in UI with "Record Reflection" button
+- **Global Macro News card** — new `GET /api/market/macro-news` endpoint fetches deduplicated market news from SPY/QQQ/^GSPC/^DJI/^VIX via yfinance (15-min Redis cache); new card on Trading Dashboard
+
 ## [3.6.78] - 2026-05-03
 
 ### Added
