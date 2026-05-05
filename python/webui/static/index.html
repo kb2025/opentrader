@@ -359,10 +359,6 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#60a5fa"></span>
         Backtester
       </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-polymarket')" data-page="page-polymarket">
-        <span class="nav-dot" style="background:#f97316"></span>
-        Polymarket
-      </div>
       <div class="nav-parent" id="nav-parent-sectorinsight" onclick="_siNavToggle()">
         <span class="nav-dot" style="background:#a78bfa"></span>
         Sector Insight
@@ -532,6 +528,18 @@ select option{background:var(--surface2)}
         <div class="stat-card" id="stat-directives-card">
           <div class="stat-label">Active Directives</div>
           <div class="stat-value" id="stat-directives" style="color:var(--muted)">—</div>
+        </div>
+        <div class="stat-card" id="stat-version-card">
+          <div class="stat-label">Version</div>
+          <div class="stat-value" id="stat-version" style="color:var(--muted);font-size:18px">—</div>
+        </div>
+        <div class="stat-card" id="stat-total-trades-card">
+          <div class="stat-label">Total Trades</div>
+          <div class="stat-value" id="stat-total-trades" style="color:var(--blue)">—</div>
+        </div>
+        <div class="stat-card" id="stat-plat-pnl-card">
+          <div class="stat-label">Today's P&amp;L</div>
+          <div class="stat-value" id="stat-plat-pnl" style="color:var(--muted)">—</div>
         </div>
       </div>
 
@@ -1306,62 +1314,73 @@ select option{background:var(--surface2)}
       </div>
       </div><!-- end flex wrapper -->
 
-      <!-- Market Breadth -->
-      <div class="card" id="breadth-card" style="margin-bottom:16px">
-        <div class="card-header" style="padding:12px 16px">
-          <div style="display:flex;align-items:center;gap:10px">
-            <span class="card-title">Market Breadth</span>
-            <span style="font-size:10px;color:var(--muted)">OVTLYR Bull / (Bull + Bear)</span>
+      <!-- Market Breadth + Macro Regime -->
+      <div style="display:grid;grid-template-columns:1fr 280px;gap:12px;margin-bottom:16px;align-items:stretch">
+        <div class="card" id="breadth-card" style="margin-bottom:0">
+          <div class="card-header" style="padding:12px 16px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="card-title">Market Breadth</span>
+              <span style="font-size:10px;color:var(--muted)">OVTLYR Bull / (Bull + Bear)</span>
+            </div>
+            <span id="breadth-updated" style="font-size:10px;color:var(--dim)"></span>
           </div>
-          <span id="breadth-updated" style="font-size:10px;color:var(--dim)"></span>
+          <div class="card-body" style="padding:14px 16px">
+            <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+              <!-- Gauge -->
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:80px">
+                <svg id="breadth-gauge" width="80" height="44" viewBox="0 0 80 44">
+                  <path d="M8,40 A34,34 0 0,1 72,40" fill="none" stroke="var(--surface2)" stroke-width="8" stroke-linecap="round"/>
+                  <path id="breadth-gauge-arc" d="M8,40 A34,34 0 0,1 72,40" fill="none" stroke="var(--muted)" stroke-width="8" stroke-linecap="round" stroke-dasharray="0 107"/>
+                </svg>
+                <div id="breadth-pct-label" style="font-size:22px;font-weight:800;line-height:1;margin-top:-8px;color:var(--muted)">—</div>
+                <div id="breadth-signal-badge" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px;background:var(--surface2);color:var(--muted)">No data</div>
+              </div>
+              <!-- Counts -->
+              <div style="display:flex;flex-direction:column;gap:6px;min-width:110px">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                  <span style="font-size:11px;color:var(--muted)">Bull List</span>
+                  <span id="breadth-bull-count" style="font-size:13px;font-weight:700;color:var(--green)">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                  <span style="font-size:11px;color:var(--muted)">Bear List</span>
+                  <span id="breadth-bear-count" style="font-size:13px;font-weight:700;color:var(--red)">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                  <span style="font-size:11px;color:var(--muted)">Total</span>
+                  <span id="breadth-total-count" style="font-size:13px;font-weight:700;color:var(--fg)">—</span>
+                </div>
+              </div>
+              <!-- Trend chart -->
+              <div style="flex:1;min-width:180px">
+                <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Breadth Trend (last 200 readings)</div>
+                <svg id="breadth-chart" width="100%" height="60" preserveAspectRatio="none" viewBox="0 0 400 60" style="display:block;overflow:visible">
+                  <line x1="0" y1="30" x2="400" y2="30" stroke="var(--border)" stroke-width="1" stroke-dasharray="4,4"/>
+                  <text x="2" y="28" fill="var(--dim)" font-size="8">50%</text>
+                  <polyline id="breadth-chart-line" points="" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                  <g id="breadth-chart-crosses"></g>
+                </svg>
+              </div>
+              <!-- Trade direction guidance -->
+              <div id="breadth-direction-box" style="min-width:130px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);text-align:center">
+                <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Trade Direction</div>
+                <div id="breadth-direction-label" style="font-size:14px;font-weight:800;color:var(--muted)">—</div>
+                <div id="breadth-direction-sub" style="font-size:10px;color:var(--dim);margin-top:3px">Align trades with breadth</div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="card-body" style="padding:14px 16px">
-          <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
-            <!-- Gauge -->
-            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:80px">
-              <svg id="breadth-gauge" width="80" height="44" viewBox="0 0 80 44">
-                <path d="M8,40 A34,34 0 0,1 72,40" fill="none" stroke="var(--surface2)" stroke-width="8" stroke-linecap="round"/>
-                <path id="breadth-gauge-arc" d="M8,40 A34,34 0 0,1 72,40" fill="none" stroke="var(--muted)" stroke-width="8" stroke-linecap="round" stroke-dasharray="0 107"/>
-              </svg>
-              <div id="breadth-pct-label" style="font-size:22px;font-weight:800;line-height:1;margin-top:-8px;color:var(--muted)">—</div>
-              <div id="breadth-signal-badge" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px;background:var(--surface2);color:var(--muted)">No data</div>
-            </div>
-            <!-- Counts -->
-            <div style="display:flex;flex-direction:column;gap:6px;min-width:110px">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-                <span style="font-size:11px;color:var(--muted)">Bull List</span>
-                <span id="breadth-bull-count" style="font-size:13px;font-weight:700;color:var(--green)">—</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-                <span style="font-size:11px;color:var(--muted)">Bear List</span>
-                <span id="breadth-bear-count" style="font-size:13px;font-weight:700;color:var(--red)">—</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-                <span style="font-size:11px;color:var(--muted)">Total</span>
-                <span id="breadth-total-count" style="font-size:13px;font-weight:700;color:var(--fg)">—</span>
-              </div>
-            </div>
-            <!-- Trend chart -->
-            <div style="flex:1;min-width:180px">
-              <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Breadth Trend (last 200 readings)</div>
-              <svg id="breadth-chart" width="100%" height="60" preserveAspectRatio="none" viewBox="0 0 400 60" style="display:block;overflow:visible">
-                <line x1="0" y1="30" x2="400" y2="30" stroke="var(--border)" stroke-width="1" stroke-dasharray="4,4"/>
-                <text x="2" y="28" fill="var(--dim)" font-size="8">50%</text>
-                <polyline id="breadth-chart-line" points="" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
-                <g id="breadth-chart-crosses"></g>
-              </svg>
-            </div>
-            <!-- Trade direction guidance -->
-            <div id="breadth-direction-box" style="min-width:130px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);text-align:center">
-              <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Trade Direction</div>
-              <div id="breadth-direction-label" style="font-size:14px;font-weight:800;color:var(--muted)">—</div>
-              <div id="breadth-direction-sub" style="font-size:10px;color:var(--dim);margin-top:3px">Align trades with breadth</div>
-            </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header" style="padding:10px 16px">
+            <span class="card-title">Macro Regime</span>
+            <button class="btn btn-ghost btn-xs" onclick="loadMacroRegime()">&#8635;</button>
+          </div>
+          <div class="card-body" style="padding:12px 16px">
+            <div id="macro-regime-widget"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
           </div>
         </div>
       </div>
 
-      <!-- Portfolio NAV History + Daily P&L -->
+      <!-- Portfolio NAV + Daily P&L -->
       <div style="display:grid;grid-template-columns:1fr minmax(220px,280px);gap:12px;margin-bottom:16px;align-items:stretch">
         <div class="card" style="margin-bottom:0">
           <div class="card-header" style="padding:10px 16px">
@@ -1369,7 +1388,7 @@ select option{background:var(--surface2)}
             <span style="font-size:10px;color:var(--dim)">90-day performance</span>
           </div>
           <div class="card-body" style="padding:12px 16px">
-            <div id="nav-chart-container" style="min-height:80px"></div>
+            <div id="nav-chart-container" style="min-height:120px"></div>
           </div>
         </div>
         <div class="card" style="margin-bottom:0">
@@ -1517,42 +1536,28 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
-      <!-- ── Macro Regime + News Sentiment row ──────────────────────── -->
-      <div style="display:grid;grid-template-columns:300px 1fr;gap:12px;margin-bottom:16px">
-        <div class="card" style="margin-bottom:0">
-          <div class="card-header" style="padding:10px 16px">
-            <span class="card-title">Macro Regime</span>
-            <button class="btn btn-ghost btn-xs" onclick="loadMacroRegime()">&#8635;</button>
-          </div>
-          <div class="card-body" style="padding:12px 16px">
-            <div id="macro-regime-widget"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
-          </div>
-        </div>
-        <div class="card" style="margin-bottom:0">
-          <div class="card-header" style="padding:10px 16px">
-            <span class="card-title">News Sentiment</span>
-            <select id="news-category-filter" onchange="loadNewsSentiment()" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
-              <option value="">All</option>
+      <!-- Unified Market News -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="padding:10px 16px">
+          <span class="card-title">Market News</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <select id="news-source-filter" onchange="loadUnifiedNews()" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
+              <option value="">All Sources</option>
+              <option value="av">Alpha Vantage</option>
+              <option value="mkt">Market News</option>
+            </select>
+            <select id="news-category-filter" onchange="loadUnifiedNews()" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
+              <option value="">All Categories</option>
               <option value="equities">Equities</option>
               <option value="macro">Macro</option>
               <option value="technology">Technology</option>
               <option value="energy">Energy</option>
             </select>
-          </div>
-          <div class="card-body" style="padding:0;max-height:260px;overflow-y:auto">
-            <div id="news-sentiment-list"><div style="padding:12px 16px;font-size:12px;color:var(--muted)">Loading…</div></div>
+            <button class="btn btn-ghost btn-xs" onclick="loadUnifiedNews()">&#8635;</button>
           </div>
         </div>
-      </div>
-
-      <!-- Global Macro News -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-header" style="padding:10px 16px">
-          <span class="card-title">Global Macro News</span>
-          <button class="btn btn-ghost btn-xs" onclick="loadMacroNews()">&#8635;</button>
-        </div>
-        <div class="card-body" style="padding:0;max-height:300px;overflow-y:auto">
-          <div id="macro-news-list"><div style="padding:12px 16px;font-size:12px;color:var(--muted)">Loading…</div></div>
+        <div class="card-body" style="padding:0;max-height:340px;overflow-y:auto">
+          <div id="unified-news-list"><div style="padding:12px 16px;font-size:12px;color:var(--muted)">Loading…</div></div>
         </div>
       </div>
 
@@ -2212,6 +2217,53 @@ select option{background:var(--surface2)}
         </div>
         <div id="optlog-modal-body" style="padding:20px">
           <div style="text-align:center;color:var(--muted);padding:40px">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Options Log — Record Close / Roll Modal -->
+    <div id="optlog-close-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9200;overflow-y:auto;padding:40px 20px">
+      <div style="max-width:480px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--card-header);border-bottom:1px solid var(--border)">
+          <span id="optlog-close-modal-title" style="font-size:14px;font-weight:700;color:var(--fg)">Record Close / Roll</span>
+          <button onclick="document.getElementById('optlog-close-modal').style.display='none'"
+            style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);padding:4px 8px">✕</button>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+          <input type="hidden" id="optlog-close-pos-id">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">Close Reason</div>
+            <select id="optlog-close-reason" onchange="_optlogCloseReasonChange()"
+              style="width:100%;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px">
+              <option value="closed">Closed (bought back / sold)</option>
+              <option value="rolled">Rolled (close + reopen)</option>
+              <option value="expired">Expired worthless</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">Closing Contract Price <span style="color:var(--muted);font-weight:400;text-transform:none">(per share, e.g. 0.45)</span></div>
+            <input type="number" id="optlog-close-price" step="0.01" min="0" placeholder="0.00"
+              style="width:100%;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;box-sizing:border-box">
+          </div>
+          <div id="optlog-close-new-sym-row">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">New Contract Symbol <span style="color:var(--muted);font-weight:400;text-transform:none">(optional)</span></div>
+            <input type="text" id="optlog-close-new-sym" placeholder="e.g. CVE250620P00020000"
+              style="width:100%;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;box-sizing:border-box;text-transform:uppercase">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">Notes <span style="color:var(--muted);font-weight:400;text-transform:none">(optional)</span></div>
+            <input type="text" id="optlog-close-notes" placeholder="e.g. took profit at 50%"
+              style="width:100%;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;box-sizing:border-box">
+          </div>
+          <div id="optlog-close-pnl-preview" style="display:none;padding:10px 14px;background:var(--card-header);border-radius:6px;font-size:12px;color:var(--muted)">
+            Estimated P&amp;L: <span id="optlog-close-pnl-val" style="font-weight:700">—</span>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+            <button onclick="document.getElementById('optlog-close-modal').style.display='none'"
+              style="background:var(--card-header);border:1px solid var(--border);color:var(--fg);padding:8px 18px;border-radius:6px;font-size:12px;cursor:pointer">Cancel</button>
+            <button onclick="_optlogSubmitClose()"
+              style="background:var(--blue);color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Record</button>
+          </div>
         </div>
       </div>
     </div>
@@ -3447,6 +3499,9 @@ select option{background:var(--surface2)}
       <!-- Results (hidden until first run) -->
       <div id="shadow-results" style="display:none">
 
+        <!-- Context header: account + date range + fresh vs historical -->
+        <div id="shadow-context-header" style="margin-bottom:14px"></div>
+
         <!-- 4 summary cards -->
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px" id="shadow-summary-row"></div>
 
@@ -3507,52 +3562,6 @@ select option{background:var(--surface2)}
       <div id="sl-grid" style="display:none;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
     </div><!-- /page-equities-sector-leaders -->
 
-    <!-- PAGE: Polymarket Paper Trading -->
-    <div class="page" id="page-polymarket">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-        <div>
-          <div style="font-size:14px;font-weight:700;color:var(--fg)">Polymarket Paper Trading</div>
-          <div style="font-size:11px;color:var(--muted)">Browse prediction markets and paper-trade YES/NO outcomes</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input id="pm-search" type="text" placeholder="Search markets..." style="width:200px;font-size:12px;padding:5px 10px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:6px" onkeydown="if(event.key==='Enter')loadPolymarketMarkets()">
-          <button class="btn btn-sm" onclick="loadPolymarketMarkets()" style="font-size:11px">Search</button>
-          <button class="btn btn-sm" onclick="loadPolymarketPositions()" style="font-size:11px;background:var(--surface2)">My Positions</button>
-        </div>
-      </div>
-      <div id="pm-positions-banner" style="display:none;margin-bottom:12px"></div>
-      <div id="pm-markets-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-bottom:16px">
-        <div style="grid-column:1/-1;padding:20px;text-align:center;font-size:12px;color:var(--muted)">Loading markets...</div>
-      </div>
-      <div class="card" id="pm-positions-section" style="display:none;margin-bottom:16px">
-        <div class="card-header">
-          <span class="card-title">Paper Positions</span>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-ghost btn-xs" id="pm-tab-open" onclick="loadPolymarketPositions('open')" style="color:var(--blue)">Open</button>
-            <button class="btn btn-ghost btn-xs" id="pm-tab-closed" onclick="loadPolymarketPositions('closed')">Closed</button>
-            <button class="btn btn-ghost btn-xs" id="pm-tab-settled" onclick="loadPolymarketPositions('settled')">Settled</button>
-            <button class="btn btn-ghost btn-xs" onclick="settlePolymarketPositions()" style="color:var(--green)">Check Settlement</button>
-          </div>
-        </div>
-        <div class="card-body" style="padding:0">
-          <table style="width:100%;border-collapse:collapse">
-            <thead><tr style="background:var(--surface2)">
-              <th style="padding:7px 10px;font-size:10px;font-weight:600;color:var(--muted);text-align:left">Market</th>
-              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:left">Outcome</th>
-              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Qty</th>
-              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Entry</th>
-              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Current</th>
-              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:right">Unr. P&amp;L</th>
-              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:center">Status</th>
-              <th style="padding:7px 8px;font-size:10px;font-weight:600;color:var(--muted);text-align:center">Action</th>
-            </tr></thead>
-            <tbody id="pm-positions-tbody">
-              <tr><td colspan="8" style="padding:16px;text-align:center;font-size:12px;color:var(--muted)">No positions</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div><!-- /page-polymarket -->
 
 
     <!-- ══════════════════════════════════���═════
@@ -4035,7 +4044,6 @@ const PAGE_TITLES = {
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
   'page-resources-groups':     'Market Groups',
-  'page-polymarket':           'Polymarket',
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4113,6 +4121,10 @@ async function apiFetch(path, opts = {}) {
   if (tok && !path.includes('token=')) {
     path += (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(tok);
   }
+  // Auto-add Content-Type for JSON string bodies
+  if (opts.body && typeof opts.body === 'string' && !(opts.headers || {})['Content-Type']) {
+    opts = { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } };
+  }
   const r = await fetch(path, opts);
   if (!r.ok) {
     let msg = `HTTP ${r.status}`;
@@ -4145,13 +4157,14 @@ function navigate(pageId) {
 
   // Lazy-load page data on first visit
   switch(pageId) {
+    case 'page-platform-dashboard': loadPlatformDailyPnl(); break;
     case 'page-platform-agents':    loadAgentsPage();    break;
     case 'page-platform-scheduler': _initSchedThead(); loadSchedulerPage(); break;
     case 'page-platform-system':    _ctRenderThead();  loadSystemPage();   break;
     case 'page-platform-ssl':       loadSslPage();       break;
     case 'page-platform-profile':   loadProfilePage();   break;
     case 'page-platform-config':    loadConfigPage();    break;
-    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); loadPredictorSignals(); loadTrendingSymbols(); loadETFFlows(); loadMacroRegime(); loadNewsSentiment(); loadMacroNews(); break;
+    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); loadPredictorSignals(); loadTrendingSymbols(); loadETFFlows(); loadMacroRegime(); loadUnifiedNews(); break;
     case 'page-trading-unified':    loadUnifiedPositions(); break;
 
     case 'page-trading-trades':     loadTradesPage();    break;
@@ -4174,7 +4187,6 @@ function navigate(pageId) {
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
     case 'page-resources-groups':     loadMarketGroupsPage();    break;
-    case 'page-polymarket':           loadPolymarketMarkets(); loadPolymarketPositions(); break;
   }
 }
 
@@ -4338,12 +4350,40 @@ function renderPlatformDashboard(data) {
     }
   }
 
+  // ── Version ───────────────────────────────────────────────────────────────
+  if (data.app_version) {
+    const vEl = document.getElementById('stat-version');
+    if (vEl) { vEl.textContent = 'v' + data.app_version; vEl.style.color = 'var(--blue)'; }
+  }
+
+  // ── Total trades ──────────────────────────────────────────────────────────
+  if (ov && ov.metrics && ov.metrics.total_trades != null) {
+    const tEl = document.getElementById('stat-total-trades');
+    if (tEl) tEl.textContent = ov.metrics.total_trades.toLocaleString();
+  }
+
   // ── Topology + events ─────────────────────────────────────────────────────
   if (data.agents) {
     drawTopology(data.agents);
     const toggle = document.getElementById('topo-labels-toggle');
     if (toggle && !toggle.checked) toggleTopoLabels(false);
     renderRecentEvents(data);
+  }
+}
+
+async function loadPlatformDailyPnl() {
+  const el   = document.getElementById('stat-plat-pnl');
+  const card = document.getElementById('stat-plat-pnl-card');
+  if (!el) return;
+  try {
+    const d   = await apiFetch('/api/trading/daily-pnl');
+    const pnl = d.current_pnl ?? 0;
+    const fmt = (pnl >= 0 ? '+' : '-') + '$' + Math.abs(pnl).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    el.textContent   = fmt;
+    el.style.color   = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    if (card) card.style.borderColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+  } catch(_) {
+    el.textContent = '—';
   }
 }
 
@@ -16772,6 +16812,8 @@ function _optlogRenderPositionRow(p) {
       <span style="margin-left:auto;font-size:12px;font-weight:700;color:${pnlColor}">${p.realized_pnl != null ? _optFmtPnl(p.realized_pnl) : '—'}</span>
       <button onclick="event.stopPropagation();_optlogOpenDetailModal('${p.id}','${p.underlying}')"
         style="background:var(--card-header);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:10px;cursor:pointer;color:var(--fg)">Detail</button>
+      ${p.status === 'active' ? `<button onclick="event.stopPropagation();_optlogOpenCloseModal('${p.id}','${p.underlying}',${p.entry_price||0},${p.qty||1})"
+        style="background:#1f6feb22;color:#58a6ff;border:1px solid #1f6feb55;border-radius:5px;padding:2px 8px;font-size:10px;cursor:pointer;font-weight:600">Record Close / Roll</button>` : ''}
     </div>
     ${netRiskHtml}
     ${chainHtml}
@@ -16915,6 +16957,96 @@ function _optFmtPnl(v) {
 
 function _escHtml(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Record Close / Roll ───────────────────────────────────────────────────────
+
+let _optlogCloseEntryPrice = 0;
+let _optlogCloseQty        = 1;
+
+function _optlogOpenCloseModal(posId, underlying, entryPrice, qty) {
+  _optlogCloseEntryPrice = entryPrice || 0;
+  _optlogCloseQty        = Math.abs(qty || 1);
+  document.getElementById('optlog-close-pos-id').value  = posId;
+  document.getElementById('optlog-close-modal-title').textContent = `Record Close / Roll — ${underlying}`;
+  document.getElementById('optlog-close-reason').value  = 'closed';
+  document.getElementById('optlog-close-price').value   = '';
+  document.getElementById('optlog-close-new-sym').value = '';
+  document.getElementById('optlog-close-notes').value   = '';
+  document.getElementById('optlog-close-pnl-preview').style.display = 'none';
+  _optlogCloseReasonChange();
+  document.getElementById('optlog-close-modal').style.display = 'block';
+  setTimeout(() => document.getElementById('optlog-close-price').focus(), 80);
+  document.getElementById('optlog-close-price').addEventListener('input', _optlogUpdatePnlPreview);
+}
+
+function _optlogCloseReasonChange() {
+  const reason = document.getElementById('optlog-close-reason').value;
+  const symRow = document.getElementById('optlog-close-new-sym-row');
+  const priceEl = document.getElementById('optlog-close-price');
+  if (reason === 'rolled') {
+    symRow.style.display = 'block';
+  } else {
+    symRow.style.display = 'none';
+    document.getElementById('optlog-close-new-sym').value = '';
+  }
+  if (reason === 'expired') {
+    priceEl.value = '0';
+    priceEl.disabled = true;
+  } else {
+    priceEl.disabled = false;
+  }
+  _optlogUpdatePnlPreview();
+}
+
+function _optlogUpdatePnlPreview() {
+  const cp   = parseFloat(document.getElementById('optlog-close-price').value);
+  const prev = document.getElementById('optlog-close-pnl-preview');
+  const val  = document.getElementById('optlog-close-pnl-val');
+  if (isNaN(cp) || _optlogCloseEntryPrice === 0) { prev.style.display = 'none'; return; }
+  const pnl = (_optlogCloseEntryPrice - cp) * _optlogCloseQty * 100;
+  const color = pnl >= 0 ? '#22c55e' : '#ef4444';
+  val.textContent = (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toFixed(2);
+  val.style.color = color;
+  prev.style.display = 'block';
+}
+
+async function _optlogSubmitClose() {
+  const posId  = document.getElementById('optlog-close-pos-id').value;
+  const reason = document.getElementById('optlog-close-reason').value;
+  const price  = parseFloat(document.getElementById('optlog-close-price').value);
+  const newSym = document.getElementById('optlog-close-new-sym').value.trim().toUpperCase();
+  const notes  = document.getElementById('optlog-close-notes').value.trim();
+
+  if (isNaN(price) || price < 0) {
+    toast('error', 'Validation', 'Enter a valid closing price (0 for expired)');
+    return;
+  }
+
+  const token = getToken();
+  try {
+    const res = await apiFetch(
+      `/api/options/positions/${posId}/close?token=${encodeURIComponent(token)}`,
+      {
+        method:  'POST',
+        headers: {'Content-Type': 'application/json'},
+        body:    JSON.stringify({
+          contract_price:      price,
+          close_reason:        reason,
+          notes:               notes,
+          new_contract_symbol: newSym,
+        }),
+      }
+    );
+    document.getElementById('optlog-close-modal').style.display = 'none';
+    const pnlStr = res.realized_pnl >= 0
+      ? `+$${res.realized_pnl.toFixed(2)}`
+      : `-$${Math.abs(res.realized_pnl).toFixed(2)}`;
+    toast('success', 'Position Recorded', `${reason} at $${price.toFixed(2)} · P&L ${pnlStr}`);
+    await loadOptionsLog();
+  } catch(e) {
+    toast('error', 'Failed', e.message);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -17258,7 +17390,7 @@ function _renderDailyLossWidget(el, d) {
   const broken = d.circuit_broken;
   const pnlColor = pnl >= 0 ? '#22c55e' : '#ef4444';
   const barColor = pct >= 100 ? '#ef4444' : pct >= 75 ? '#f97316' : pct >= 50 ? '#eab308' : '#22c55e';
-  const pnlFmt   = (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const pnlFmt   = (pnl >= 0 ? '+' : '-') + '$' + Math.abs(pnl).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const limitBar = d.limit_enabled ? `
     <div style="margin-top:8px">
       <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:3px">
@@ -18660,6 +18792,8 @@ async function _otPlaceOrder() {
 // Shadow Account — Counterfactual P&L
 // ══════════════════════════════════════════════════════════════════════════════
 
+let _shadowAccountNames = {};  // label → friendly display name
+
 async function loadShadowPage() {
   const today = new Date();
   const from  = new Date(today); from.setDate(from.getDate() - 30);
@@ -18667,14 +18801,26 @@ async function loadShadowPage() {
   document.getElementById('shadow-date-from').value = fmt(from);
   document.getElementById('shadow-date-to').value   = fmt(today);
 
-  // Populate account selector from broker accounts
+  // Populate account selector — all configured accounts, annotated with trade count
   try {
-    const data = await apiFetch('/api/broker/accounts');
-    const sel  = document.getElementById('shadow-account');
-    (data.accounts || []).forEach(a => {
-      const o = document.createElement('option');
-      o.value = a.account_id || a.label || '';
-      o.textContent = a.display_name || a.label || a.account_id || '';
+    const [brokerData, shadowData] = await Promise.all([
+      apiFetch('/api/broker/accounts'),
+      apiFetch('/api/shadow/accounts'),
+    ]);
+    const sel = document.getElementById('shadow-account');
+    const countMap = {};
+    (shadowData.accounts || []).forEach(a => { countMap[a.label] = a.trade_count; });
+
+    (brokerData.accounts || []).forEach(a => {
+      const lbl  = a.account_id || a.label || '';
+      const name = a.display_name || a.label || lbl;
+      const cnt  = countMap[lbl];
+      _shadowAccountNames[lbl] = name;
+      const o    = document.createElement('option');
+      o.value = lbl;
+      o.dataset.displayName = name;
+      o.textContent = cnt ? `${name}  (${cnt} trades)` : `${name}  — no data`;
+      if (!cnt) o.style.color = 'var(--muted)';
       sel.appendChild(o);
     });
   } catch(e) {}
@@ -18688,15 +18834,22 @@ async function _shadowRun() {
   btn.disabled = true; spin.style.display = 'inline';
   document.getElementById('shadow-results').style.display = 'none';
 
+  const sel      = document.getElementById('shadow-account');
+  const acctVal  = sel.value || null;
+  const acctName = acctVal
+    ? (sel.options[sel.selectedIndex]?.dataset?.displayName || acctVal)
+    : 'All Accounts';
+  const dateFrom = document.getElementById('shadow-date-from').value;
+  const dateTo   = document.getElementById('shadow-date-to').value;
+
   try {
     const result = await apiFetch('/api/shadow/run', {
       method: 'POST',
-      body:   JSON.stringify({
-        date_from:     document.getElementById('shadow-date-from').value,
-        date_to:       document.getElementById('shadow-date-to').value,
-        account_label: document.getElementById('shadow-account').value || null,
-      }),
+      body:   JSON.stringify({ date_from: dateFrom, date_to: dateTo, account_label: acctVal }),
     });
+    result._account   = acctName;
+    result._date_from = dateFrom;
+    result._date_to   = dateTo;
     _shadowRenderResults(result);
     await _shadowLoadHistory();
   } catch(e) {
@@ -18708,6 +18861,34 @@ async function _shadowRun() {
 
 function _shadowRenderResults(r) {
   const $ = id => document.getElementById(id);
+
+  // ── Context header ───────────────────────────────────────────────────────
+  const acctDisplay = r._account || r.account_label || 'All Accounts';
+  const dfDisplay   = r._date_from || r.date_from || '—';
+  const dtDisplay   = r._date_to   || r.date_to   || '—';
+  const isHistory   = !!r._is_history;
+  $('shadow-context-header').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
+      ${isHistory ? '<span style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.3);border-radius:5px;padding:2px 8px;font-size:11px;color:#f59e0b;font-weight:600">HISTORICAL RUN</span>' : '<span style="background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.3);border-radius:5px;padding:2px 8px;font-size:11px;color:#4ade80;font-weight:600">FRESH RUN</span>'}
+      <span style="font-size:13px;font-weight:600;color:var(--fg)">${acctDisplay}</span>
+      <span style="font-size:12px;color:var(--muted)">${dfDisplay} → ${dtDisplay}</span>
+    </div>`;
+
+  // ── Empty state ──────────────────────────────────────────────────────────
+  if (!r.trade_count) {
+    $('shadow-summary-row').innerHTML = '';
+    $('shadow-cats-row').innerHTML = '';
+    $('shadow-top5').innerHTML = '';
+    $('shadow-rules').innerHTML = '';
+    $('shadow-trade-count').textContent = '0 trades';
+    $('shadow-trade-list').innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">
+      No trades found for <strong style="color:var(--fg)">${acctDisplay}</strong> between ${dfDisplay} and ${dtDisplay}.<br>
+      <span style="font-size:12px;margin-top:6px;display:block">Only accounts with automated equity fills (e.g. Alpaca Paper, Tradier Sandbox) have trade history available.</span>
+    </div>`;
+    $('shadow-results').style.display = 'block';
+    $('shadow-results').scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
 
   // ── Summary row ─────────────────────────────────────────────────────────
   const actual = r.actual_pnl || 0, ideal = r.ideal_pnl || 0, disc = r.discipline_cost || 0;
@@ -18784,20 +18965,26 @@ function _shadowRenderResults(r) {
   $('shadow-trade-list').innerHTML = trades.length ? `
     <table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr style="color:var(--muted)">
-        ${['Ticker','Dir','Actual P&L','Ideal P&L','Gap','Category','Confidence','Date'].map(h =>
-          `<th style="padding:5px 8px;text-align:${h==='Ticker'||h==='Dir'||h==='Category'||h==='Date'?'left':'right'}">${h}</th>`
+        ${['Account','Type','Ticker','Dir','Actual P&L','Gap','Category','Date'].map(h =>
+          `<th style="padding:5px 8px;text-align:${h==='Account'||h==='Type'||h==='Ticker'||h==='Dir'||h==='Category'||h==='Date'?'left':'right'}">${h}</th>`
         ).join('')}
       </tr></thead>
       <tbody>${trades.map(t => {
-        const confColor = t.signal_confidence > 0 && t.signal_confidence < 0.65 ? '#f87171' : 'var(--muted)';
+        const isOpt = t.trade_type === 'option';
+        const typeLabel = isOpt
+          ? `<span style="background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);border-radius:4px;padding:1px 6px;font-size:10px;color:#60a5fa">OPT</span>`
+          : `<span style="background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.3);border-radius:4px;padding:1px 6px;font-size:10px;color:#4ade80">EQ</span>`;
+        const ticker = isOpt && t.opt_strike
+          ? `${t.ticker}<span style="font-size:10px;color:var(--muted);margin-left:3px">${t.opt_type||''} $${t.opt_strike}</span>`
+          : t.ticker;
         return `<tr style="border-top:1px solid var(--border)">
-          <td style="padding:6px 8px;font-weight:600;color:var(--fg)">${t.ticker}</td>
+          <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${t.account_id||'—'}</td>
+          <td style="padding:6px 8px">${typeLabel}</td>
+          <td style="padding:6px 8px;font-weight:600;color:var(--fg)">${ticker}</td>
           <td style="padding:6px 8px;color:${t.direction==='long'?'var(--green)':'var(--red)'}">${t.direction}</td>
           <td style="padding:6px 8px;text-align:right;color:${t.actual_pnl>=0?'var(--green)':'var(--red)'}">${_shadowFmtPnl(t.actual_pnl)}</td>
-          <td style="padding:6px 8px;text-align:right;color:var(--blue)">${_shadowFmtPnl(t.ideal_pnl)}</td>
           <td style="padding:6px 8px;text-align:right;color:${t.discipline_cost>0?'#f59e0b':'var(--muted)'}">${t.discipline_cost > 0 ? '-' + _fmtUsd(t.discipline_cost) : '—'}</td>
           <td style="padding:6px 8px">${_shadowCatBadge(t.category)}</td>
-          <td style="padding:6px 8px;text-align:right;color:${confColor}">${t.signal_confidence > 0 ? (t.signal_confidence*100).toFixed(0)+'%' : '—'}</td>
           <td style="padding:6px 8px;color:var(--muted)">${(t.ts||'').slice(0,10)}</td>
         </tr>`;
       }).join('')}
@@ -18835,21 +19022,19 @@ async function _shadowLoadHistory(autoLoad = false) {
       el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No previous runs.</div>';
       return;
     }
-    if (autoLoad && rows[0]) {
-      _shadowLoadRun(rows[0].id);
-    }
+    // autoLoad intentionally removed — don't show stale historical data on page open
     el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr style="color:var(--muted)">
-        ${['Date Range','Trades','Actual P&L','Ideal P&L','Discipline Cost','Run At'].map(h =>
+        ${['Account','Date Range','Trades','Actual P&L','Discipline Cost','Run At'].map(h =>
           `<th style="padding:5px 8px;text-align:${h==='Trades'||h.includes('P&L')||h==='Discipline Cost'?'right':'left'}">${h}</th>`
         ).join('')}
       </tr></thead>
       <tbody>${rows.map(r => `
         <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="_shadowLoadRun('${r.id}')" title="Reload this run">
+          <td style="padding:7px 8px;font-size:11px;color:var(--muted)">${r.account_label ? (_shadowAccountNames[r.account_label] || r.account_label) : 'All Accounts'}</td>
           <td style="padding:7px 8px;color:var(--fg)">${r.date_from} → ${r.date_to}</td>
           <td style="padding:7px 8px;text-align:right;color:var(--muted)">${r.trade_count||0}</td>
           <td style="padding:7px 8px;text-align:right;color:${(r.actual_pnl||0)>=0?'var(--green)':'var(--red)'}">${_shadowFmtPnl(r.actual_pnl)}</td>
-          <td style="padding:7px 8px;text-align:right;color:var(--blue)">${_shadowFmtPnl(r.ideal_pnl)}</td>
           <td style="padding:7px 8px;text-align:right;color:${(r.discipline_cost||0)>0?'#f59e0b':'var(--muted)'}">-${_fmtUsd(r.discipline_cost||0)}</td>
           <td style="padding:7px 8px;color:var(--muted)">${(r.ts||'').slice(0,16).replace('T',' ')}</td>
         </tr>`).join('')}
@@ -18867,6 +19052,10 @@ async function _shadowLoadRun(runId) {
       ...r,
       counterfactual_top5: r.top5 || [],
       trades:              r.trades_detail || [],
+      _is_history:  true,
+      _account:     r.account_label ? (_shadowAccountNames[r.account_label] || r.account_label) : 'All Accounts',
+      _date_from:   r.date_from,
+      _date_to:     r.date_to,
     });
   } catch(e) {
     _toast('error', 'Failed to load run: ' + (e.detail || e.message || e));
@@ -19520,55 +19709,60 @@ async function loadMacroRegime() {
   }
 }
 
-async function loadMacroNews() {
-  const el = document.getElementById('macro-news-list');
+async function loadUnifiedNews() {
+  const el = document.getElementById('unified-news-list');
   if (!el) return;
+  const src = (document.getElementById('news-source-filter') || {}).value || '';
+  const cat = (document.getElementById('news-category-filter') || {}).value || '';
+  // Dim category filter when market-only selected (AV categories don't apply)
+  const catSel = document.getElementById('news-category-filter');
+  if (catSel) catSel.style.opacity = src === 'mkt' ? '0.4' : '1';
   el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">Loading…</div>';
   try {
-    const data = await apiFetch('/api/market/macro-news?limit=15');
-    const arts = data.articles || [];
-    if (!arts.length) {
-      el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">No macro news available</div>';
+    const fetches = [];
+    if (src !== 'mkt') {
+      const avUrl = '/api/market/news-sentiment?limit=20' + (cat ? `&category=${cat}` : '');
+      fetches.push(apiFetch(avUrl).then(d => (d.articles || []).map(a => ({
+        _src: 'av', _ts: a.ts ? new Date(a.ts) : new Date(0),
+        title: a.title, url: a.url,
+        byline: a.source + (a.ts ? ' · ' + new Date(a.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''),
+        score: a.overall_score || 0, ticker: a.ticker, category: a.category,
+      }))).catch(() => []));
+    }
+    if (src !== 'av') {
+      fetches.push(apiFetch('/api/market/macro-news?limit=20').then(d => (d.articles || []).map(a => ({
+        _src: 'mkt', _ts: a.pub_ts ? new Date(a.pub_ts) : new Date(0),
+        title: a.title, url: a.url,
+        byline: a.source + (a.pub_ts ? ' · ' + new Date(a.pub_ts).toLocaleDateString() : ''),
+        summary: a.summary,
+      }))).catch(() => []));
+    }
+    const all = (await Promise.all(fetches)).flat().sort((a, b) => b._ts - a._ts);
+    if (!all.length) {
+      const msg = cat && src !== 'mkt' ? `No articles for category "${cat}"` : 'No news available';
+      el.innerHTML = `<div style="padding:12px 16px;font-size:12px;color:var(--muted)">${msg}</div>`;
       return;
     }
-    el.innerHTML = arts.map(a => `
-      <div style="padding:8px 14px;border-bottom:1px solid var(--border)">
-        <div style="font-size:12px;color:var(--fg);line-height:1.4">
-          ${a.url ? `<a href="${a.url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;hover:color:var(--blue)">${a.title}</a>` : a.title}
-        </div>
-        <div style="font-size:10px;color:var(--dim);margin-top:2px">${a.source}${a.pub_ts ? ' · ' + new Date(a.pub_ts).toLocaleDateString() : ''}</div>
-        ${a.summary ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.3">${a.summary.slice(0,140)}${a.summary.length>140?'…':''}</div>` : ''}
-      </div>`).join('');
-  } catch(e) {
-    el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">Macro news unavailable</div>';
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Feature 5: News Sentiment Feed
-// ══════════════════════════════════════════════════════════════════════════════
-async function loadNewsSentiment() {
-  const el  = document.getElementById('news-sentiment-list');
-  if (!el) return;
-  const cat = (document.getElementById('news-category-filter') || {}).value || '';
-  try {
-    const url = '/api/market/news-sentiment?limit=15' + (cat ? `&category=${cat}` : '');
-    const data = await apiFetch(url);
-    const arts = data.articles || [];
-    if (!arts.length) { el.innerHTML = `<div style="padding:12px 16px;font-size:12px;color:var(--muted)">${cat ? `No articles for category "${cat}"` : 'No news data yet — Alpha Vantage key required'}</div>`; return; }
-    el.innerHTML = arts.map(a => {
-      const sc = a.overall_score || 0;
-      const scColor = sc > 0.1 ? 'var(--green)' : sc < -0.1 ? 'var(--red)' : 'var(--muted)';
-      const ticker = a.ticker ? `<span style="font-size:10px;background:rgba(59,130,246,.15);color:var(--blue);border-radius:3px;padding:1px 5px;margin-right:4px">${a.ticker}</span>` : '';
-      const catBadge = `<span style="font-size:9px;background:var(--surface2);color:var(--muted);border-radius:3px;padding:1px 5px;margin-right:4px">${a.category}</span>`;
+    el.innerHTML = all.map(a => {
+      const srcBadge = a._src === 'av'
+        ? `<span style="font-size:9px;font-weight:700;letter-spacing:.03em;background:rgba(245,158,11,.15);color:#f59e0b;border-radius:3px;padding:1px 5px">AV</span>`
+        : `<span style="font-size:9px;font-weight:700;letter-spacing:.03em;background:rgba(59,130,246,.15);color:var(--blue);border-radius:3px;padding:1px 5px">MKT</span>`;
+      const ticker = a.ticker ? `<span style="font-size:10px;background:rgba(59,130,246,.12);color:var(--blue);border-radius:3px;padding:1px 5px">${a.ticker}</span>` : '';
+      const catBadge = a.category ? `<span style="font-size:9px;background:var(--surface2);color:var(--muted);border-radius:3px;padding:1px 5px">${a.category}</span>` : '';
+      const score = a.score != null ? (() => {
+        const c = a.score > 0.1 ? 'var(--green)' : a.score < -0.1 ? 'var(--red)' : 'var(--muted)';
+        return `<span style="margin-left:auto;font-size:10px;font-weight:600;color:${c}">${a.score > 0 ? '+' : ''}${a.score.toFixed(2)}</span>`;
+      })() : '';
+      const summary = a.summary ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.35">${a.summary.slice(0,150)}${a.summary.length > 150 ? '…' : ''}</div>` : '';
       return `<div style="padding:8px 14px;border-bottom:1px solid var(--border)">
-        <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">${ticker}${catBadge}<span style="font-size:10px;color:${scColor};margin-left:auto;font-weight:600">${sc > 0 ? '+' : ''}${sc.toFixed(2)}</span></div>
-        <div style="font-size:12px;color:var(--fg);line-height:1.4">${a.url ? `<a href="${a.url}" target="_blank" style="color:inherit;text-decoration:none">${a.title}</a>` : a.title}</div>
-        <div style="font-size:10px;color:var(--dim);margin-top:2px">${a.source} · ${a.ts ? new Date(a.ts).toLocaleTimeString() : ''}</div>
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;flex-wrap:wrap">${srcBadge}${ticker}${catBadge}${score}</div>
+        <div style="font-size:12px;color:var(--fg);line-height:1.4">${a.url ? `<a href="${a.url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${a.title}</a>` : a.title}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">${a.byline}</div>
+        ${summary}
       </div>`;
     }).join('');
   } catch(e) {
-    el.innerHTML = `<div style="padding:12px 16px;font-size:12px;color:var(--muted)">News feed unavailable</div>`;
+    el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">News feed unavailable</div>';
   }
 }
 
@@ -19711,119 +19905,6 @@ async function _reflectQuickIntel(ticker, btn) {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Feature 8: Polymarket Paper Trading
-// ══════════════════════════════════════════════════════════════════════════════
-async function loadPolymarketMarkets() {
-  const grid   = document.getElementById('pm-markets-grid');
-  const search = (document.getElementById('pm-search') || {}).value || '';
-  if (!grid) return;
-  grid.innerHTML = '<div style="grid-column:1/-1;padding:20px;text-align:center;font-size:12px;color:var(--muted)">Loading…</div>';
-  try {
-    const url = '/api/polymarket/markets?limit=20' + (search ? `&search=${encodeURIComponent(search)}` : '');
-    const data = await apiFetch(url);
-    const mkts = data.markets || [];
-    if (!mkts.length) { grid.innerHTML = '<div style="grid-column:1/-1;padding:20px;text-align:center;font-size:12px;color:var(--muted)">No markets found</div>'; return; }
-    grid.innerHTML = mkts.map(m => {
-      const outcomes   = m.outcomes   || [];
-      const prices     = m.outcome_prices || [];
-      const outcomeHtml = outcomes.map((o, i) => {
-        const p = prices[i] ? (parseFloat(prices[i]) * 100).toFixed(0) : '—';
-        const pColor = parseFloat(prices[i]||0) > 0.5 ? 'var(--green)' : 'var(--muted)';
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-top:1px solid var(--border)">
-          <span style="font-size:12px;color:var(--fg)">${o}</span>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:13px;font-weight:700;color:${pColor}">${p}¢</span>
-            <button class="btn btn-xs" style="font-size:10px;background:var(--green);color:#000;border-color:var(--green)"
-              onclick="openPolymarketTrade('${m.condition_id}','${(m.tokens||[{token_id:''}])[i]?.token_id||i}','${m.question?.replace(/'/g,'')?.slice(0,80)||''}','${o}','buy')">Buy</button>
-            <button class="btn btn-xs" style="font-size:10px;background:var(--red);color:#fff;border-color:var(--red)"
-              onclick="openPolymarketTrade('${m.condition_id}','${(m.tokens||[{token_id:''}])[i]?.token_id||i}','${m.question?.replace(/'/g,'')?.slice(0,80)||''}','${o}','sell')">Sell</button>
-          </div>
-        </div>`;
-      }).join('');
-      const vol = m.volume ? `$${parseFloat(m.volume).toLocaleString('en-US',{maximumFractionDigits:0})}` : '—';
-      return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
-        <div style="padding:12px 14px">
-          <div style="font-size:12px;font-weight:600;color:var(--fg);line-height:1.4;margin-bottom:6px">${m.question||'Unknown market'}</div>
-          <div style="font-size:10px;color:var(--dim)">Volume: ${vol}${m.end_date ? ' · Ends: '+m.end_date.slice(0,10) : ''}</div>
-        </div>
-        ${outcomeHtml}
-      </div>`;
-    }).join('');
-  } catch(e) {
-    grid.innerHTML = `<div style="grid-column:1/-1;padding:20px;text-align:center;font-size:12px;color:var(--muted)">Markets unavailable: ${e.message||e}</div>`;
-  }
-}
-
-async function openPolymarketTrade(conditionId, tokenId, question, outcome, side) {
-  const qty = parseFloat(prompt(`Paper trade: ${side.toUpperCase()} ${outcome}\nQuantity (shares):`, '10'));
-  if (!qty || qty <= 0) return;
-  try {
-    const resp = await fetch(`/api/polymarket/trade?token=${encodeURIComponent(token)}`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ condition_id: conditionId, token_id: tokenId, market_question: question, outcome, side, qty, market_slug: '' }),
-    });
-    const data = await resp.json();
-    if (resp.ok) {
-      showToast(`${data.action === 'opened' ? 'Opened' : 'Closed'} position @ ${(data.entry_price||data.exit_price||0).toFixed(3)}`, 'success');
-      loadPolymarketPositions();
-    } else {
-      showToast(data.detail || 'Trade failed', 'error');
-    }
-  } catch(e) { showToast('Trade error: ' + e.message, 'error'); }
-}
-
-async function loadPolymarketPositions(status = 'open') {
-  const section = document.getElementById('pm-positions-section');
-  const tbody   = document.getElementById('pm-positions-tbody');
-  const banner  = document.getElementById('pm-positions-banner');
-  if (!tbody) return;
-  if (section) section.style.display = 'block';
-  try {
-    const data = await apiFetch(`/api/polymarket/positions?status=${status}`);
-    const pos  = data.positions || [];
-    if (!pos.length) { tbody.innerHTML = `<tr><td colspan="8" style="padding:16px;text-align:center;font-size:12px;color:var(--muted)">No ${status} positions</td></tr>`; return; }
-    // Update banner
-    if (banner && status === 'open') {
-      const totalPnl = pos.reduce((s, p) => s + (p.unrealized_pnl || 0), 0);
-      const pnlColor = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
-      banner.style.display = 'block';
-      banner.innerHTML = `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--muted)">
-        ${pos.length} open position${pos.length>1?'s':''} · Unrealized P&L: <span style="color:${pnlColor};font-weight:700">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</span>
-      </div>`;
-    }
-    tbody.innerHTML = pos.map(p => {
-      const pnl = p.unrealized_pnl || 0;
-      const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-      const statusBadge = `<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${p.status==='open'?'rgba(34,197,94,.15)':p.status==='settled'?'rgba(99,102,241,.15)':'var(--surface2)'};color:${p.status==='open'?'var(--green)':p.status==='settled'?'var(--blue)':'var(--muted)'}">${p.status}</span>`;
-      const question = (p.market_question || p.condition_id || '').slice(0, 50);
-      return `<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${question}</td>
-        <td style="padding:8px 8px;font-size:12px;font-weight:600;color:var(--fg)">${p.outcome}</td>
-        <td style="padding:8px 8px;text-align:right;font-size:12px;color:var(--fg)">${p.qty}</td>
-        <td style="padding:8px 8px;text-align:right;font-size:12px;color:var(--muted)">${(p.entry_price*100).toFixed(1)}¢</td>
-        <td style="padding:8px 8px;text-align:right;font-size:12px;color:var(--muted)">${(p.current_price*100).toFixed(1)}¢</td>
-        <td style="padding:8px 8px;text-align:right;font-size:12px;font-weight:600;color:${pnlColor}">${pnl>=0?'+':''}$${pnl.toFixed(2)}</td>
-        <td style="padding:8px 8px;text-align:center">${statusBadge}</td>
-        <td style="padding:8px 8px;text-align:center">
-          ${p.status==='open' ? `<button class="btn btn-xs" style="font-size:10px;color:var(--amber)" onclick="openPolymarketTrade('${p.condition_id}','${p.token_id}','${(p.market_question||'').slice(0,80).replace(/'/g,'')}','${p.outcome}','sell')">Close</button>` : '—'}
-        </td>
-      </tr>`;
-    }).join('');
-  } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="8" style="padding:12px;text-align:center;font-size:12px;color:var(--muted)">Positions unavailable</td></tr>`;
-  }
-}
-
-async function settlePolymarketPositions() {
-  try {
-    const resp = await fetch(`/api/polymarket/settle?token=${encodeURIComponent(token)}`, { method: 'POST' });
-    const data = await resp.json();
-    showToast(`Settlement check: ${data.settled} position(s) settled`, data.settled > 0 ? 'success' : 'info');
-    if (data.settled > 0) loadPolymarketPositions();
-  } catch(e) { showToast('Settlement error', 'error'); }
-}
 </script>
 
 <!-- Ticker chip hover popup -->

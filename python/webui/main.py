@@ -4382,6 +4382,51 @@ async def test_broker_connection(broker: str):
         return {"ok": False, "message": f"Connection error: {str(e)[:100]}"}
 
 
+@app.get("/api/broker/accounts")
+async def get_broker_accounts():
+    """Return all configured accounts from accounts.toml with their friendly display names.
+
+    Reads the same source as the Broker dashboard so every configured account
+    appears regardless of whether it has DB activity yet.  Display names come
+    from {LABEL}_DISPLAY_NAME env vars (e.g. WEBULL_LIVE_2_DISPLAY_NAME).
+    Only accounts whose account-ID env var resolves to a non-empty value are
+    included (unconfigured slots are skipped).
+    """
+    import re as _re
+    env = _read_env_file()
+
+    def ev(key: str) -> str:
+        return env.get(key) or os.getenv(key, "")
+
+    def resolve(val: str) -> str:
+        return _re.sub(r'\$\{(\w+)\}', lambda m: ev(m.group(1)) or "", val or "")
+
+    accounts = []
+    try:
+        import toml as _toml
+        raw = _toml.load(ACCOUNTS_CONFIG)
+        for a in raw.get("accounts", []):
+            if a.get("enabled") is False:
+                continue
+            label      = a.get("label", "")
+            account_id = resolve(a.get("id", ""))
+            if not account_id:
+                continue
+            dn_key       = label.upper().replace("-", "_") + "_DISPLAY_NAME"
+            display_name = ev(dn_key) or label
+            accounts.append({
+                "account_id":   label,
+                "label":        label,
+                "display_name": display_name,
+                "broker":       a.get("broker", ""),
+                "mode":         a.get("mode", ""),
+            })
+    except Exception:
+        pass
+
+    return {"accounts": accounts}
+
+
 @app.get("/api/broker/tradier/accounts")
 async def get_tradier_accounts(token: str = ""):
     """Fetch all Tradier accounts from both sandbox and production."""
@@ -6929,6 +6974,7 @@ async def ws_endpoint(websocket: WebSocket):
                 "trades":            trades,
                 "trade_mode":        trade_mode,
                 "active_directives": active_directives,
+                "app_version":       APP_VERSION,
             })
             await asyncio.sleep(4)
     except WebSocketDisconnect:
@@ -9050,6 +9096,94 @@ async def patch_option_position(position_id: str, body: dict):
     return {"ok": True}
 
 
+@app.post("/api/options/positions/{position_id}/close")
+async def manual_close_option_position(position_id: str, body: dict, token: str = ""):
+    """
+    Manually record an option position closure or roll.
+
+    Writes a 'closed' event to option_trade_log immediately (so the EOD
+    report captures it the same day), then marks option_positions as
+    closed/rolled/expired.
+
+    Body:
+        contract_price      float   closing contract price
+        close_reason        str     'closed' | 'rolled' | 'expired'
+        notes               str?    optional free-text
+        new_contract_symbol str?    optional, for roll documentation
+    """
+    if token != WEBUI_TOKEN:
+        raise HTTPException(403, "Forbidden")
+
+    pool   = await _get_db_pool()
+    pos_id = uuid.UUID(position_id)
+
+    pos = await pool.fetchrow(
+        """SELECT id, underlying, contract_symbol, entry_price, qty, status
+           FROM option_positions WHERE id=$1""",
+        pos_id,
+    )
+    if not pos:
+        raise HTTPException(404, "Position not found")
+    if pos["status"] != "active":
+        raise HTTPException(400, f"Position already {pos['status']}")
+
+    close_reason = body.get("close_reason", "closed")
+    if close_reason not in ("closed", "rolled", "expired"):
+        raise HTTPException(400, "close_reason must be closed, rolled, or expired")
+
+    contract_price = float(body.get("contract_price") or 0)
+    notes          = str(body.get("notes") or "").strip()
+    new_sym        = str(body.get("new_contract_symbol") or "").strip()
+    if new_sym:
+        notes = f"Rolled into {new_sym}. {notes}".strip(". ").strip()
+    if not notes:
+        notes = f"Manual {close_reason}"
+
+    # Short option convention: profit = premium collected − cost to close
+    entry_price  = float(pos["entry_price"]) if pos["entry_price"] else 0.0
+    qty          = abs(float(pos["qty"])) if pos["qty"] else 1.0
+    realized_pnl = round((entry_price - contract_price) * qty * 100, 2)
+
+    new_status = "rolled" if close_reason == "rolled" else close_reason
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """INSERT INTO option_trade_log
+                   (position_id, contract_symbol, underlying, event_type,
+                    contract_price, realized_pnl, notes)
+                   VALUES ($1,$2,$3,'closed',$4::NUMERIC,$5::NUMERIC,$6)""",
+                pos_id, pos["contract_symbol"], pos["underlying"],
+                contract_price, realized_pnl, notes,
+            )
+            await conn.execute(
+                """UPDATE option_positions
+                   SET status=$2, closed_at=NOW(), close_reason=$3,
+                       total_realized_pnl=$4, updated_at=NOW()
+                   WHERE id=$1""",
+                pos_id, new_status, close_reason, realized_pnl,
+            )
+
+    # Update Redis accumulator so the circuit-breaker limit check stays current
+    try:
+        from shared.risk_controls import record_trade_pnl as _rec_pnl
+        await _rec_pnl(await get_redis(), realized_pnl)
+    except Exception:
+        pass
+
+    log.info("options.manual_close",
+             contract=pos["contract_symbol"], underlying=pos["underlying"],
+             reason=close_reason, price=contract_price, pnl=realized_pnl)
+
+    return {
+        "ok":             True,
+        "position_id":    position_id,
+        "status":         new_status,
+        "contract_price": contract_price,
+        "realized_pnl":   realized_pnl,
+    }
+
+
 def _ev_label(event_type: str) -> str:
     return {
         "imported":        "Open",
@@ -10901,236 +11035,6 @@ async def _compute_trending(_redis, pool) -> list[dict]:
     return result
 
 
-# ── Feature 8: Polymarket paper trading ──────────────────────────────────────
-
-@app.get("/api/polymarket/markets")
-async def get_polymarket_markets(search: str = "", limit: int = 20):
-    """Browse active Polymarket markets via Gamma API."""
-    params: dict = {"limit": str(limit), "active": "true", "closed": "false"}
-    if search:
-        params["search"] = search
-    try:
-        import aiohttp as _aiohttp
-        async with _aiohttp.ClientSession() as s:
-            async with s.get(
-                "https://gamma-api.polymarket.com/markets",
-                params=params,
-                timeout=_aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                if resp.status != 200:
-                    raise HTTPException(502, "Polymarket API unavailable")
-                markets = await resp.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, detail=str(e))
-
-    return {
-        "markets": [
-            {
-                "condition_id":  m.get("conditionId", ""),
-                "question":      m.get("question", ""),
-                "slug":          m.get("slug", ""),
-                "end_date":      m.get("endDate"),
-                "volume":        m.get("volume"),
-                "liquidity":     m.get("liquidity"),
-                "outcomes":      m.get("outcomes", []),
-                "outcome_prices": m.get("outcomePrices", []),
-                "active":        m.get("active", True),
-            }
-            for m in (markets if isinstance(markets, list) else markets.get("data", []))
-        ][:limit]
-    }
-
-
-@app.get("/api/polymarket/orderbook")
-async def get_polymarket_orderbook(token_id: str):
-    """Get current bid/ask for a Polymarket outcome token."""
-    try:
-        import aiohttp as _aiohttp
-        async with _aiohttp.ClientSession() as s:
-            async with s.get(
-                "https://clob.polymarket.com/book",
-                params={"token_id": token_id},
-                timeout=_aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status != 200:
-                    raise HTTPException(502, "Polymarket CLOB unavailable")
-                book = await resp.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, detail=str(e))
-    bids = book.get("bids", [])
-    asks = book.get("asks", [])
-    best_bid = float(bids[0]["price"]) if bids else 0.0
-    best_ask = float(asks[0]["price"]) if asks else 1.0
-    mid      = round((best_bid + best_ask) / 2, 4)
-    return {"token_id": token_id, "best_bid": best_bid, "best_ask": best_ask, "mid": mid, "bids": bids[:5], "asks": asks[:5]}
-
-
-class PolymarketTradeRequest(BaseModel):
-    condition_id:    str
-    token_id:        str
-    market_question: str
-    outcome:         str
-    side:            str   # buy | sell
-    qty:             float
-    market_slug:     str = ""
-
-
-@app.post("/api/polymarket/trade")
-async def polymarket_paper_trade(body: PolymarketTradeRequest, token: str = ""):
-    """Open or close a Polymarket paper position."""
-    if token != WEBUI_TOKEN:
-        raise HTTPException(403, "Forbidden")
-    if body.side not in ("buy", "sell"):
-        raise HTTPException(400, "side must be buy or sell")
-    if body.qty <= 0:
-        raise HTTPException(400, "qty must be positive")
-
-    # Fetch current price from CLOB
-    import aiohttp as _aiohttp
-    try:
-        async with _aiohttp.ClientSession() as s:
-            async with s.get(
-                "https://clob.polymarket.com/book",
-                params={"token_id": body.token_id},
-                timeout=_aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                book = await resp.json() if resp.status == 200 else {}
-    except Exception:
-        book = {}
-
-    bids = book.get("bids", [])
-    asks = book.get("asks", [])
-    price = float(asks[0]["price"]) if asks and body.side == "buy" else float(bids[0]["price"]) if bids else 0.5
-
-    pool = await _get_db_pool()
-
-    # Check if closing an existing position
-    existing = await pool.fetchrow(
-        """SELECT id, qty, entry_price FROM polymarket_positions
-           WHERE condition_id = $1 AND token_id = $2 AND status = 'open'""",
-        body.condition_id, body.token_id,
-    )
-
-    if existing and body.side == "sell":
-        pnl = round((price - float(existing["entry_price"])) * float(existing["qty"]), 4)
-        await pool.execute(
-            """UPDATE polymarket_positions
-               SET status='closed', exit_price=$1, pnl=$2, current_price=$1
-               WHERE id=$3""",
-            price, pnl, existing["id"],
-        )
-        await pool.execute(
-            """INSERT INTO polymarket_trades (position_id, action, qty, price, pnl)
-               VALUES ($1, 'close', $2, $3, $4)""",
-            existing["id"], float(existing["qty"]), price, pnl,
-        )
-        return {"ok": True, "action": "closed", "pnl": pnl, "exit_price": price}
-
-    # Open a new position
-    pos_id = await pool.fetchval(
-        """INSERT INTO polymarket_positions
-           (condition_id, token_id, market_slug, market_question, outcome, side, qty, entry_price, current_price, raw)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9)
-           RETURNING id""",
-        body.condition_id, body.token_id, body.market_slug, body.market_question,
-        body.outcome, body.side, body.qty, price,
-        json.dumps({"book_snapshot": {"best_bid": bids[0]["price"] if bids else 0, "best_ask": asks[0]["price"] if asks else 1}}),
-    )
-    await pool.execute(
-        """INSERT INTO polymarket_trades (position_id, action, qty, price)
-           VALUES ($1, 'open', $2, $3)""",
-        pos_id, body.qty, price,
-    )
-    return {"ok": True, "action": "opened", "position_id": str(pos_id), "entry_price": price}
-
-
-@app.get("/api/polymarket/positions")
-async def get_polymarket_positions(status: str = "open"):
-    """Return paper Polymarket positions."""
-    pool = await _get_db_pool()
-    rows = await pool.fetch(
-        """SELECT id, ts, condition_id, token_id, market_slug, market_question,
-                  outcome, side, qty, entry_price, current_price, status, exit_price, pnl
-           FROM polymarket_positions
-           WHERE status = $1
-           ORDER BY ts DESC""",
-        status,
-    )
-    return {
-        "positions": [
-            {
-                "id":               str(r["id"]),
-                "ts":               r["ts"].isoformat(),
-                "condition_id":     r["condition_id"],
-                "token_id":         r["token_id"],
-                "market_slug":      r["market_slug"],
-                "market_question":  r["market_question"],
-                "outcome":          r["outcome"],
-                "side":             r["side"],
-                "qty":              float(r["qty"]),
-                "entry_price":      float(r["entry_price"]),
-                "current_price":    float(r["current_price"] or r["entry_price"]),
-                "status":           r["status"],
-                "exit_price":       float(r["exit_price"] or 0) if r["exit_price"] else None,
-                "pnl":              float(r["pnl"] or 0) if r["pnl"] else None,
-                "unrealized_pnl":   round((float(r["current_price"] or r["entry_price"]) - float(r["entry_price"])) * float(r["qty"]), 4),
-            }
-            for r in rows
-        ]
-    }
-
-
-@app.post("/api/polymarket/settle")
-async def settle_polymarket_positions(token: str = ""):
-    """Check open positions against Polymarket for resolution and settle."""
-    if token != WEBUI_TOKEN:
-        raise HTTPException(403, "Forbidden")
-    pool    = await _get_db_pool()
-    rows    = await pool.fetch(
-        "SELECT id, condition_id, token_id, qty, entry_price FROM polymarket_positions WHERE status = 'open'"
-    )
-    settled = 0
-    import aiohttp as _aiohttp
-    async with _aiohttp.ClientSession() as s:
-        for row in rows:
-            try:
-                async with s.get(
-                    f"https://gamma-api.polymarket.com/markets",
-                    params={"conditionId": row["condition_id"]},
-                    timeout=_aiohttp.ClientTimeout(total=10),
-                ) as resp:
-                    if resp.status != 200:
-                        continue
-                    data = await resp.json()
-                    mkt  = (data if isinstance(data, list) else data.get("data", []))
-                    if not mkt:
-                        continue
-                    mkt = mkt[0]
-                    if mkt.get("closed") or mkt.get("resolved"):
-                        outcome_prices = mkt.get("outcomePrices", [])
-                        settle_price = float(outcome_prices[0]) if outcome_prices else 1.0
-                        pnl = round((settle_price - float(row["entry_price"])) * float(row["qty"]), 4)
-                        await pool.execute(
-                            """UPDATE polymarket_positions
-                               SET status='settled', exit_price=$1, pnl=$2, settled_at=NOW(), current_price=$1
-                               WHERE id=$3""",
-                            settle_price, pnl, row["id"],
-                        )
-                        await pool.execute(
-                            """INSERT INTO polymarket_trades (position_id, action, qty, price, pnl)
-                               VALUES ($1,'settle',$2,$3,$4)""",
-                            row["id"], float(row["qty"]), settle_price, pnl,
-                        )
-                        settled += 1
-            except Exception as e:
-                log.warning("polymarket.settle_error", error=str(e))
-    return {"ok": True, "settled": settled}
-
-
 # ── Options portfolio Greeks ──────────────────────────────────────────────────
 
 @app.get("/api/options/portfolio-greeks")
@@ -11249,22 +11153,74 @@ async def get_options_expiry_calendar(mode: str = "live"):
 
 @app.get("/api/trading/daily-pnl")
 async def get_daily_pnl(token: str = ""):
-    """Return today's cumulative P&L and loss limit status."""
+    """Return today's cumulative P&L and loss limit status.
+
+    P&L is computed from the DB (option_trade_log + trades) so the number
+    reflects actual closed positions today rather than the Redis accumulator,
+    which is never written to by the traders.
+    """
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
     redis = await get_redis()
-    from shared.risk_controls import get_risk_controls, get_daily_loss, CIRCUIT_BROKEN_KEY, CIRCUIT_REASON_KEY
-    controls         = await get_risk_controls(redis)
-    current_loss     = await get_daily_loss(redis)
-    max_loss         = float(controls.get("max_daily_loss_usd") or 0)
-    circuit_broken   = await redis.get(CIRCUIT_BROKEN_KEY) in ("1", b"1")
-    circuit_reason   = await redis.get(CIRCUIT_REASON_KEY) or ""
-    loss_pct         = abs(min(current_loss, 0.0)) / max_loss * 100 if max_loss > 0 else 0.0
+    from shared.risk_controls import get_risk_controls, CIRCUIT_BROKEN_KEY, CIRCUIT_REASON_KEY
+    controls       = await get_risk_controls(redis)
+    max_loss       = float(controls.get("max_daily_loss_usd") or 0)
+    circuit_broken = await redis.get(CIRCUIT_BROKEN_KEY) in ("1", b"1")
+    circuit_reason = await redis.get(CIRCUIT_REASON_KEY) or ""
+
+    # Use Eastern time so the trading-day boundary matches US market hours
+    _et = ZoneInfo("America/New_York")
+    today = _dt.now(_et).date()
+    pool  = await _get_db_pool()
+
+    # Options P&L: genuinely closed positions today (ET).
+    # Exclude "not_in_scan" scanner closures that happen after 4:30 PM ET —
+    # these are artifacts from Webull dropping positions in post-market scans.
+    # Real closes during market hours (before 4:30 PM ET) are kept regardless.
+    opt_pnl = 0.0
+    try:
+        row = await pool.fetchrow(
+            """SELECT COALESCE(SUM(otl.realized_pnl), 0) AS total
+               FROM option_trade_log otl
+               JOIN option_positions op ON op.id = otl.position_id
+               WHERE otl.event_type = 'closed'
+                 AND otl.realized_pnl IS NOT NULL
+                 AND (otl.ts AT TIME ZONE 'America/New_York')::date = $1
+                 AND (
+                   otl.notes IS NULL
+                   OR otl.notes NOT LIKE 'Position closed%no longer in broker scan%'
+                   OR (otl.ts AT TIME ZONE 'America/New_York')::time < '16:30'
+                 )""",
+            today,
+        )
+        opt_pnl = float(row["total"]) if row else 0.0
+    except Exception:
+        pass
+
+    # Equity P&L: trades with a recorded P&L today (ET)
+    eq_pnl = 0.0
+    try:
+        row = await pool.fetchrow(
+            """SELECT COALESCE(SUM(pnl), 0) AS total
+               FROM trades
+               WHERE pnl IS NOT NULL
+                 AND (ts AT TIME ZONE 'America/New_York')::date = $1""",
+            today,
+        )
+        eq_pnl = float(row["total"]) if row else 0.0
+    except Exception:
+        pass
+
+    current_pnl = round(opt_pnl + eq_pnl, 2)
+    loss_pct    = abs(min(current_pnl, 0.0)) / max_loss * 100 if max_loss > 0 else 0.0
+
     return {
-        "current_pnl":      round(current_loss, 2),
-        "max_daily_loss":   max_loss,
-        "loss_pct_used":    round(loss_pct, 1),
-        "limit_enabled":    max_loss > 0,
-        "circuit_broken":   circuit_broken,
-        "circuit_reason":   circuit_reason,
+        "current_pnl":    current_pnl,
+        "max_daily_loss": max_loss,
+        "loss_pct_used":  round(loss_pct, 1),
+        "limit_enabled":  max_loss > 0,
+        "circuit_broken": circuit_broken,
+        "circuit_reason": circuit_reason,
     }
 
 
@@ -12249,7 +12205,7 @@ async def shadow_run(body: dict):
         raise HTTPException(500, f"Shadow analysis failed: {e}")
 
     if "error" in result:
-        raise HTTPException(404, result["error"])
+        return result  # frontend renders empty state with message
 
     try:
         run_id = await pool.fetchval(
@@ -12274,6 +12230,39 @@ async def shadow_run(body: dict):
         result["run_id"] = None
 
     return result
+
+
+@app.get("/api/shadow/accounts")
+async def shadow_accounts(token: str = ""):
+    """Return accounts that have trade data available for hindsight analysis."""
+    check_token(token)
+    pool = await _get_db_pool()
+    eq_rows = await pool.fetch("""
+        SELECT account_id AS label, COUNT(*) AS cnt
+        FROM trades
+        WHERE entry_price IS NOT NULL AND status IN ('closed', 'fill')
+        GROUP BY account_id
+    """)
+    opt_rows = await pool.fetch("""
+        SELECT op.account_label AS label, COUNT(*) AS cnt
+        FROM (
+            SELECT DISTINCT ON (op.account_label, op.underlying, op.strike, op.expiration_date, op.entry_price, op.entry_date)
+                op.account_label
+            FROM option_trade_log otl
+            JOIN option_positions op ON op.id = otl.position_id
+            WHERE otl.event_type = 'closed'
+              AND otl.ts::date != op.entry_date
+              AND op.entry_price IS NOT NULL
+            ORDER BY op.account_label, op.underlying, op.strike, op.expiration_date, op.entry_price, op.entry_date, otl.ts ASC
+        ) op
+        GROUP BY op.account_label
+    """)
+    counts: dict = {}
+    for r in eq_rows:
+        counts[r["label"]] = counts.get(r["label"], 0) + r["cnt"]
+    for r in opt_rows:
+        counts[r["label"]] = counts.get(r["label"], 0) + r["cnt"]
+    return {"accounts": [{"label": k, "trade_count": v} for k, v in sorted(counts.items())]}
 
 
 @app.get("/api/shadow/history")
