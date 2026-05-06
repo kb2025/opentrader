@@ -8850,7 +8850,49 @@ async def email_options_report(body: OptionsReportBody, token: str = ""):
     return {"ok": True, "message": f"Report sent to {recipient}"}
 
 
-def _build_options_report_html(positions: list[dict]) -> str:
+async def _get_sgov_alert() -> dict | None:
+    """
+    Fetch SGOV's next ex-dividend date via yfinance and return an alert dict if
+    action is needed today, or None.  Alert dict keys:
+      action  — "sell" (day before ex-div) or "buy" (on ex-div date)
+      ex_date — YYYY-MM-DD string
+      accounts — list of IRA account labels
+    """
+    try:
+        # Collect IRA account labels from env vars
+        ira_labels = []
+        for n in range(1, 6):
+            if os.getenv(f"WEBULL_LIVE_ACCOUNT_{n}_IRA", "false").lower() == "true":
+                ira_labels.append(f"webull-live-{n}")
+        if not ira_labels:
+            ira_labels = ["webull-live-2", "webull-live-3", "webull-live-4"]
+
+        loop = asyncio.get_event_loop()
+
+        def _fetch_ex_date():
+            import yfinance as yf
+            info = yf.Ticker("SGOV").info
+            return info.get("exDividendDate")
+
+        ex_ts = await loop.run_in_executor(None, _fetch_ex_date)
+        if not ex_ts:
+            return None
+
+        from datetime import date as _date, timedelta as _td
+        ex_date = _date.fromtimestamp(int(ex_ts))
+        today_et = now_et().date()
+
+        if ex_date == today_et + _td(days=1):
+            return {"action": "sell", "ex_date": ex_date.isoformat(), "accounts": ira_labels}
+        if ex_date == today_et:
+            return {"action": "buy", "ex_date": ex_date.isoformat(), "accounts": ira_labels}
+        return None
+    except Exception as e:
+        log.warning("sgov_alert_fetch_failed", error=str(e))
+        return None
+
+
+def _build_options_report_html(positions: list[dict], sgov_alert: dict | None = None) -> str:
     """Build the HTML options report from a list of position dicts."""
     from datetime import date as _date
     today = _date.today()
@@ -8922,6 +8964,28 @@ def _build_options_report_html(positions: list[dict]) -> str:
             f'<strong>{tickers_str}</strong>. Signals verified against OVTLYR before send.</div>'
         )
 
+    sgov_banner = ""
+    if sgov_alert:
+        accts_str = ", ".join(sgov_alert.get("accounts", []))
+        ex_date_str = sgov_alert.get("ex_date", "")
+        if sgov_alert.get("action") == "sell":
+            sgov_banner = (
+                f'<div style="background:#fff3cd;border:2px solid #e67e22;border-radius:6px;'
+                f'padding:12px 16px;margin-bottom:14px;color:#7d4e00;font-size:13px">'
+                f'<strong>&#9888; SGOV ACTION &mdash; SELL TODAY</strong><br>'
+                f'Ex-dividend date is tomorrow (<strong>{ex_date_str}</strong>). '
+                f'Sell SGOV in IRA accounts (<strong>{accts_str}</strong>) today to exit before '
+                f'ex-div. Buy back on ex-dividend date ({ex_date_str}).</div>'
+            )
+        elif sgov_alert.get("action") == "buy":
+            sgov_banner = (
+                f'<div style="background:#d4edda;border:2px solid #28a745;border-radius:6px;'
+                f'padding:12px 16px;margin-bottom:14px;color:#155724;font-size:13px">'
+                f'<strong>&#10003; SGOV ACTION &mdash; BUY TODAY</strong><br>'
+                f'Today is the ex-dividend date (<strong>{ex_date_str}</strong>). '
+                f'Buy SGOV in IRA accounts (<strong>{accts_str}</strong>) today.</div>'
+            )
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>{report_title}</title>
 <style>
@@ -8940,7 +9004,7 @@ def _build_options_report_html(positions: list[dict]) -> str:
 <div class="meta">Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")} ET &nbsp;&middot;&nbsp;
   {len(sorted_pos)} position{"s" if len(sorted_pos) != 1 else ""} &nbsp;&middot;&nbsp;
   Signals: OVTLYR (authoritative)</div>
-{conflict_banner}
+{sgov_banner}{conflict_banner}
 <table>
   <thead><tr>
     <th>Ticker</th><th>Account</th><th>Strike</th><th>Current Price</th>
@@ -9000,7 +9064,8 @@ async def email_options_report_auto(token: str = ""):
     except Exception:
         pass
 
-    html = _build_options_report_html(positions)
+    sgov_alert = await _get_sgov_alert()
+    html = _build_options_report_html(positions, sgov_alert=sgov_alert)
     body = OptionsReportBody(html=html, count=len(positions))
     return await email_options_report(body, token=token)
 

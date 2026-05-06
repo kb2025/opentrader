@@ -3,6 +3,18 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.81] - 2026-05-06
+
+### Added
+- **1pm report — SGOV ex-dividend alert** — `_get_sgov_alert()` fetches SGOV's next ex-dividend date at report time via yfinance; if tomorrow is the ex-div date, a yellow banner appears instructing to SELL SGOV today in IRA accounts (webull-live-2/3/4); if today is the ex-div date, a green banner instructs to BUY today; IRA accounts are resolved dynamically from `WEBULL_LIVE_ACCOUNT_{N}_IRA` env vars
+
+## [3.6.80] - 2026-05-05
+
+### Fixed
+- **Options scanner phantom close prevention** — added `MISS_THRESHOLD` (default 3) consecutive-miss counter per position using Redis keys `options:miss:{id}`; scanner only closes a position after 3 successive absent scans (~15 min at 5-min interval), preventing transient Webull drop-offs from creating phantom positions; counter clears immediately when position reappears
+- **NVDA option P&L correction** — corrected 7 phantom positions created by scanner loop; fixed actual position (190C→197.5C→202.5C roll chain, all 5/15 expiry) with accurate fill data; corrected realized P&L to -$1,386.57
+- **CVE option P&L correction** — corrected phantom positions in both IRA accounts (`webull-live-4` qty=2, `webull-live-2` qty=1) for 26C→27C→28C roll chain (06/18 expiry); applied actual fill data for both accounts
+
 ## [3.6.79] - 2026-05-04
 
 ### Added

@@ -41,6 +41,10 @@ TRADINGVIEW_MCP_URL  = os.getenv("TRADINGVIEW_MCP_URL", "http://ot-mcp-tradingvi
 YAHOO_MCP_URL        = os.getenv("YAHOO_MCP_URL", "http://ot-mcp-yahoo:8000/mcp")
 BROKER_GATEWAY_TIMEOUT = int(os.getenv("BROKER_GATEWAY_TIMEOUT_SEC", "20"))
 SCAN_INTERVAL_MIN    = int(os.getenv("OPTIONS_SCAN_INTERVAL_MIN", "5"))
+# How many consecutive scans a position must be absent before it is marked closed.
+# At 5-min intervals, 3 = 15 minutes — enough to survive transient Webull dropouts
+# while still catching genuine closes/rolls within one extra scan cycle.
+MISS_THRESHOLD       = int(os.getenv("OPTIONS_MISS_THRESHOLD", "3"))
 ATR_PERIOD           = 14
 # Maximum extra roll levels to pre-compute beyond roll_3
 MAX_EXTRA_ROLLS      = 7   # gives rolls at +3 … +9 ATR
@@ -807,6 +811,23 @@ class OptionsMonitor(BaseAgent):
         for row in active_rows:
             key = f"{row['contract_symbol']}:{row['account_label']}"
             if key not in seen_keys:
+                # Require MISS_THRESHOLD consecutive absent scans before closing.
+                # A single Webull API dropout must not create a phantom position.
+                miss_key   = f"options:miss:{row['id']}"
+                miss_count = await self.redis.incr(miss_key)
+                # TTL: auto-expire if the position reappears and misses reset
+                await self.redis.expire(miss_key, SCAN_INTERVAL_MIN * 60 * (MISS_THRESHOLD + 3))
+
+                if miss_count < MISS_THRESHOLD:
+                    log.info("options_monitor.position_absent",
+                             contract=row["contract_symbol"],
+                             account=row["account_label"],
+                             misses=miss_count, threshold=MISS_THRESHOLD)
+                    continue
+
+                # Threshold reached — position is genuinely gone, close it
+                await self.redis.delete(miss_key)
+
                 # Fetch last known contract price from most recent scan event
                 last_scan = await pool.fetchrow(
                     """SELECT contract_price FROM option_trade_log
@@ -871,6 +892,11 @@ class OptionsMonitor(BaseAgent):
                WHERE contract_symbol=$1 AND account_label=$2 AND status='active'""",
             contract_symbol, account_label,
         )
+
+        # Position is visible — clear any accumulated miss count so a partial
+        # dropout doesn't carry over into the next absence window.
+        if existing:
+            await self.redis.delete(f"options:miss:{existing['id']}")
 
         # ── Fetch ATR + current price (one TV MCP call, refresh if >4 h old) ───
         atr = None
