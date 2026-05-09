@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.82] - 2026-05-09
+
+### Fixed
+- **WebSocket mixed content over HTTPS** — WebSocket URL now uses `wss://` when the page is served over HTTPS (e.g. via Cloudflare tunnel), preventing the browser from blocking the `ws://` connection as mixed content; fixes live updates and library page loading through the public tunnel
+
 ## [3.6.81] - 2026-05-06
 
 ### Added

@@ -4194,7 +4194,8 @@ function navigate(pageId) {
 // WebSocket
 // ══════════════════════════════════════════════════════════════════════════════
 function connectWS() {
-  const ws = new WebSocket(`ws://${location.host}/ws`);
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   ws.onopen = () => {
     document.getElementById('ws-status').className = 'chip chip-green';
@@ -12367,9 +12368,19 @@ async function _libLoad() {
   const category = document.getElementById('lib-filter-category')?.value || '';
   try {
     const r = await fetch(`/api/library/books?status=${encodeURIComponent(status)}&category=${encodeURIComponent(category)}`);
-    _libBooks = await r.json();
-  } catch(_) { _libBooks = []; }
-  _libRender();
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    _libBooks = Array.isArray(data) ? data : [];
+  } catch(e) {
+    _libBooks = [];
+    toast('error', 'Library', `Could not load books: ${e.message}`);
+  }
+  try {
+    _libRender();
+  } catch(e) {
+    console.error('_libRender failed:', e);
+    toast('error', 'Library render error', e.message);
+  }
 }
 
 function _libSearchChange(val) {
@@ -12480,6 +12491,7 @@ function _libRender() {
   const badge = document.getElementById('lib-count-badge');
   if (badge) badge.textContent = books.length + ' book' + (books.length !== 1 ? 's' : '');
 
+  console.log('[lib] render view=' + _libView + ' books=' + books.length);
   if (_libView === 'tile') _libRenderTiles(books);
   else _libRenderTable(books);
 }
@@ -13120,15 +13132,14 @@ async function loadAssignmentPage() {
 
 async function _assignLoadStrategies() {
   try {
-    const r = await fetch('/api/strategies');
-    _assignStrategies = await r.json();
+    const d = await apiFetch('/api/strategies');
+    if (Array.isArray(d)) _assignStrategies = d;
   } catch(_) {}
 }
 
 async function _assignLoadAccounts() {
   try {
-    const r = await fetch('/api/broker/status');
-    const d = await r.json();
+    const d = await apiFetch('/api/broker/status');
     // Response: { brokers: { tradier: { accounts: [...] }, alpaca: {...}, webull: {...} } }
     _assignAccounts = [];
     for (const [broker, info] of Object.entries(d.brokers || {})) {
@@ -13141,8 +13152,7 @@ async function _assignLoadAccounts() {
 
 async function _assignLoadExclusions() {
   try {
-    const r = await fetch('/api/assignments/exclusions');
-    _assignExclusions = await r.json();
+    _assignExclusions = await apiFetch('/api/assignments/exclusions');
   } catch(_) {}
 
   // Populate exclusion textareas
@@ -13154,10 +13164,13 @@ async function _assignLoadExclusions() {
 
 async function _assignLoadAssignments() {
   try {
-    const r = await fetch('/api/assignments');
-    _assignData = await r.json();
-  } catch(_) { _assignData = []; }
-  _renderAssignments();
+    const d = await apiFetch('/api/assignments');
+    _assignData = Array.isArray(d) ? d : [];
+    _renderAssignments();
+  } catch(_) {
+    if (!Array.isArray(_assignData)) _assignData = [];
+    _renderAssignments();
+  }
 }
 
 function _toggleExclusions() {
@@ -13295,39 +13308,45 @@ async function _assignRemove(id) {
 // ── Assign Modal ──────────────────────────────────────────────────────────────
 
 async function _openAssignModal() {
-  // Ensure data is loaded — fetch fresh if needed
-  if (!_assignAccounts.length)   await _assignLoadAccounts();
-  if (!_assignStrategies.length) await _assignLoadStrategies();
+  try {
+    // Always fetch fresh data when opening the modal
+    await Promise.all([_assignLoadAccounts(), _assignLoadStrategies(), _assignLoadAssignments()]);
 
-  // Populate account dropdown
-  const acctSel = document.getElementById('modal-acct');
-  acctSel.innerHTML = '<option value="">Select account…</option>' +
-    _assignAccounts.map(a => {
-      const label = a.label || a.account_label || a.id || '';
-      const broker = a.broker || '';
-      const mode   = a.mode   || '';
-      return `<option value="${label}" data-broker="${broker}" data-mode="${mode}">${label} (${broker} · ${mode})</option>`;
-    }).join('');
+    // Populate account dropdown
+    const acctSel = document.getElementById('modal-acct');
+    if (!acctSel) { toast('error', 'Assignment', 'Modal element missing — try reloading the page'); return; }
+    acctSel.innerHTML = '<option value="">Select account…</option>' +
+      (Array.isArray(_assignAccounts) ? _assignAccounts : []).map(a => {
+        const label = a.label || a.account_label || a.id || '';
+        const broker = a.broker || '';
+        const mode   = a.mode   || '';
+        return `<option value="${label}" data-broker="${broker}" data-mode="${mode}">${label} (${broker} · ${mode})</option>`;
+      }).join('');
 
-  // Populate strategy dropdown
-  const strSel = document.getElementById('modal-strategy');
-  strSel.innerHTML = '<option value="">Select strategy…</option>' +
-    _assignStrategies.map(s =>
-      `<option value="${s.family_id}" data-version="${s.version}" data-name="${s.name}" data-asset="${s.asset}" data-conf="${s.confidence}" data-maxpos="${s.max_pos}" data-stop="${s.stop_pct}" data-tp="${s.tp_pct}">${s.name} (v${s.version} · ${s.asset})</option>`
-    ).join('');
+    // Populate strategy dropdown
+    const strSel = document.getElementById('modal-strategy');
+    if (!strSel) { toast('error', 'Assignment', 'Modal element missing — try reloading the page'); return; }
+    strSel.innerHTML = '<option value="">Select strategy…</option>' +
+      (Array.isArray(_assignStrategies) ? _assignStrategies : []).map(s =>
+        `<option value="${s.family_id}" data-version="${s.version}" data-name="${s.name}" data-asset="${s.asset}" data-conf="${s.confidence}" data-maxpos="${s.max_pos}" data-stop="${s.stop_pct}" data-tp="${s.tp_pct}">${s.name} (v${s.version} · ${s.asset})</option>`
+      ).join('');
 
-  // Show exclusions reminder
-  const exclText = document.getElementById('modal-excl-text');
-  const parts = [];
-  if (_assignExclusions.sectors?.length) parts.push(`Sectors: ${_assignExclusions.sectors.join(', ')}`);
-  if (_assignExclusions.tickers?.length) parts.push(`Tickers: ${_assignExclusions.tickers.join(', ')}`);
-  if (exclText) exclText.textContent = parts.length ? parts.join(' · ') : 'None configured';
+    // Show exclusions reminder
+    const exclText = document.getElementById('modal-excl-text');
+    const parts = [];
+    if (_assignExclusions.sectors?.length) parts.push(`Sectors: ${_assignExclusions.sectors.join(', ')}`);
+    if (_assignExclusions.tickers?.length) parts.push(`Tickers: ${_assignExclusions.tickers.join(', ')}`);
+    if (exclText) exclText.textContent = parts.length ? parts.join(' · ') : 'None configured';
 
-  document.getElementById('modal-preview').style.display    = 'none';
-  document.getElementById('modal-conflicts').style.display  = 'none';
-  document.getElementById('modal-assign-btn').disabled      = true;
-  document.getElementById('assign-modal-overlay').style.display = 'block';
-  document.getElementById('assign-modal').style.display         = 'block';
+    document.getElementById('modal-preview').style.display    = 'none';
+    document.getElementById('modal-conflicts').style.display  = 'none';
+    document.getElementById('modal-assign-btn').disabled      = true;
+    document.getElementById('assign-modal-overlay').style.display = 'block';
+    document.getElementById('assign-modal').style.display         = 'block';
+  } catch(e) {
+    const detail = `${e.message} | strats=${Array.isArray(_assignStrategies)?'array['+_assignStrategies.length+']':typeof _assignStrategies}`;
+    toast('error', 'Assignment', `Could not open modal: ${detail}`);
+  }
 }
 
 function _closeAssignModal() {
@@ -13360,9 +13379,10 @@ function _modalCheckConflicts() {
   // Conflict check
   const conflicts = document.getElementById('modal-conflicts');
   const conflBody = document.getElementById('modal-conflicts-body');
+  const data = Array.isArray(_assignData) ? _assignData : [];
   if (acctVal && famId) {
     // Check existing active assignments on same account for same strategy
-    const dup = _assignData.find(a =>
+    const dup = data.find(a =>
       a.account_label === acctVal &&
       a.strategy_family_id === famId &&
       a.status === 'active'
@@ -13374,7 +13394,7 @@ function _modalCheckConflicts() {
       return;
     }
     // Check ticker overlap with other active strategies on same account
-    const sameAcct = _assignData.filter(a =>
+    const sameAcct = data.filter(a =>
       a.account_label === acctVal &&
       a.strategy_family_id !== famId &&
       a.status === 'active'
