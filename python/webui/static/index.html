@@ -10539,7 +10539,7 @@ async function runAiBacktest() {
 
   try {
     const token = getToken();
-    const res   = await fetch('/api/backtest/quick', {
+    const res   = await fetch(`/api/backtest/quick?token=${encodeURIComponent(token)}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ ticker, token }),
@@ -10820,7 +10820,7 @@ async function runVersionBacktest(familyId, version, btnEl, ticker = 'SPY') {
   let jobId;
   try {
     const res = await fetch(
-      `/api/strategies/${familyId}/versions/${version}/backtest/run?`,
+      `/api/strategies/${familyId}/versions/${version}/backtest/run?token=${encodeURIComponent(token)}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker: ticker.trim().toUpperCase(), token }) }
     );
@@ -10923,7 +10923,7 @@ function _downloadBtPdf() {
   } else if (_lastAiBacktest && _lastAiBacktest.results) {
     // AI quick backtest — POST results to quick PDF endpoint
     const token = getToken();
-    fetch('/api/backtest/quick/trades.pdf', {
+    fetch(`/api/backtest/quick/trades.pdf?token=${encodeURIComponent(token)}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ results: _lastAiBacktest.results, token }),
@@ -11593,7 +11593,7 @@ async function runPageBacktest() {
 
   try {
     const token = getToken();
-    const res = await fetch('/api/backtest/quick', {
+    const res = await fetch(`/api/backtest/quick?token=${encodeURIComponent(token)}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ ticker, period, direction: dir, token }),
@@ -11626,7 +11626,7 @@ async function _runBtValidation(vtId, vtParamsEncoded) {
 
   try {
     const token = getToken();
-    const res = await fetch('/api/backtest/validate', {
+    const res = await fetch(`/api/backtest/validate?token=${encodeURIComponent(token)}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ ticker, period, ...stratParams, token }),

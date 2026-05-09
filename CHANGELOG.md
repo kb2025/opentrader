@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.84] - 2026-05-09
+
+### Fixed
+- **Backtest 401 through Cloudflare tunnel** — auth middleware validates via session cookie or `?token=` query param only; backtest POST calls were sending the token only in the request body where the middleware can't see it; added `?token=` to the URL for `/api/backtest/quick`, `/api/backtest/quick/trades.pdf`, `/api/backtest/validate`, and `/api/strategies/.../backtest/run`
+
 ## [3.6.83] - 2026-05-09
 
 ### Fixed
