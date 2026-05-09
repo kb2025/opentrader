@@ -615,11 +615,11 @@ KNOWN_AGENTS = [
     "scraper-yahoo-sentiment", "scraper-etf-flows", "scraper-macro-regime", "scraper-news",
     "aggregator", "review-agent", "broker-gateway", "directive-agent",
     # MCP servers & chat agent — health derived from Podman (no heartbeat)
-    "mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-webull", "chat-agent",
+    "mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "chat-agent",
 ]
 
 # Containers that don't publish heartbeats — health is read from Podman status
-PODMAN_HEALTH_ONLY = {"mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-webull", "chat-agent"}
+PODMAN_HEALTH_ONLY = {"mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "chat-agent"}
 
 CONTAINER_MAP = {
     "orchestrator":    "ot-orchestrator",
@@ -645,7 +645,6 @@ CONTAINER_MAP = {
     "mcp-tradingview":    "ot-mcp-tradingview",
     "mcp-massive":        "ot-mcp-massive",
     "mcp-unusualwhales":  "ot-mcp-unusualwhales",
-    "mcp-webull":         "ot-mcp-webull",
     "chat-agent":         "ot-chat-agent",
     "redis":           "ot-redis",
     "timescaledb":     "ot-timescaledb",
@@ -1154,6 +1153,28 @@ async def on_startup():
                     name       TEXT        NOT NULL UNIQUE,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
+            """)
+            # Add review column if missing (added after initial table creation)
+            await pool.execute("""
+                ALTER TABLE library_books ADD COLUMN IF NOT EXISTS review TEXT
+            """)
+            # Add 'read' to status check constraint if not already present
+            await pool.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint c
+                        JOIN pg_class t ON t.oid = c.conrelid
+                        WHERE t.relname = 'library_books'
+                          AND pg_get_constraintdef(c.oid) LIKE '%''read''%'
+                    ) THEN
+                        ALTER TABLE library_books
+                            DROP CONSTRAINT IF EXISTS library_books_status_check;
+                        ALTER TABLE library_books
+                            ADD CONSTRAINT library_books_status_check
+                            CHECK (status IN ('reading','read','purchased','reference'));
+                    END IF;
+                END $$
             """)
             # Migrate any categories already stored in books
             await pool.execute("""

@@ -651,7 +651,6 @@ select option{background:var(--surface2)}
               <option value="mcp-tradingview">mcp-tradingview</option>
               <option value="mcp-massive">mcp-massive</option>
               <option value="mcp-unusualwhales">mcp-unusualwhales</option>
-              <option value="mcp-webull">mcp-webull</option>
               <option value="chat-agent">chat-agent</option>
             </select>
             <select class="select-input" id="logs-lines-select">
@@ -4536,7 +4535,6 @@ const TOPO_NODES = [
   { id: 'mcp-tradingview',         label: 'MCP TradingView',    x: 555, y: 230, group: 'mcp'      },
   { id: 'mcp-massive',             label: 'MCP Massive',        x: 280, y: 450, group: 'mcp'      },
   { id: 'mcp-unusualwhales',       label: 'MCP Unusual Whales', x: 90,  y: 515, group: 'mcp'      },
-  { id: 'mcp-webull',              label: 'MCP Webull',         x: 450, y: 515, group: 'mcp'      },
   // ── Interface ─────────────────────────────────────────────────────────────
   { id: 'chat-agent',              label: 'Chat Agent',         x: 930, y: 140, group: 'interface'},
 ];
@@ -4587,12 +4585,10 @@ const TOPO_EDGES = [
   { from: 'broker-gateway',         to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'mcp-massive',            to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'mcp-unusualwhales',      to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'mcp-webull',             to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'orchestrator',           to: 'scheduler',               label: 'system.commands',  color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   // ── MCP tool connections ──────────────────────────────────────────────────
   { from: 'mcp-yahoo',              to: 'scraper-yahoo',           label: 'mcp/tools',        color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-alpaca',             to: 'broker-gateway',          label: 'mcp/tools',        color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
-  { from: 'mcp-webull',             to: 'broker-gateway',          label: 'mcp/tools',        color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-tradingview',        to: 'trader-equity',           label: 'tv confirm',       color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-tradingview',        to: 'trader-options',          label: 'tv confirm',       color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-massive',            to: 'predictor',               label: 'market data',      color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
@@ -4604,7 +4600,6 @@ const TOPO_EDGES = [
   { from: 'chat-agent',             to: 'mcp-tradingview',         label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
   { from: 'chat-agent',             to: 'mcp-massive',             label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
   { from: 'chat-agent',             to: 'mcp-unusualwhales',       label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
-  { from: 'chat-agent',             to: 'mcp-webull',              label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
 ];
 
 function healthColor(health) {

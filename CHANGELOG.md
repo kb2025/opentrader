@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.83] - 2026-05-09
+
+### Fixed
+- **Remove mcp-webull phantom agent** — removed `mcp-webull` from `KNOWN_AGENTS`, `PODMAN_HEALTH_ONLY`, and `CONTAINER_MAP` in the WebUI backend; removed its node, edges, and log-viewer dropdown entry from the platform dashboard topology — no container exists for it so it was permanently showing as failed
+
 ## [3.6.82] - 2026-05-09
 
 ### Fixed
