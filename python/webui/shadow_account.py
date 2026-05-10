@@ -32,25 +32,63 @@ _LLM_MODEL        = os.getenv("LLM_PREDICTOR_MODEL", "anthropic/claude-sonnet-4-
 async def _fetch_trades(pool, date_from: date, date_to: date,
                         account_label: Optional[str]) -> list[dict]:
     """
-    Fetch closed trades (status='closed') first. If none exist, fall back to
-    filled trades (status='fill') with entry_price, treating the current price
-    (latest OHLCV close) as the exit for unrealized P&L analysis.
+    Combine equity trades (trades table) and closed option positions
+    (option_trade_log JOIN option_positions) so all broker accounts have data.
     """
-    q = """
+    eq_q = """
         SELECT id, ts, account_id, broker, ticker, direction, qty,
-               entry_price, exit_price, pnl, strategy, status
+               entry_price, exit_price, pnl, strategy, status,
+               FALSE AS _is_option
         FROM trades
         WHERE ts::date BETWEEN $1 AND $2
           AND entry_price IS NOT NULL
           AND status IN ('closed', 'fill')
     """
-    args: list = [date_from, date_to]
+    eq_args: list = [date_from, date_to]
     if account_label:
-        q += " AND account_id = $3"
-        args.append(account_label)
-    q += " ORDER BY ts"
-    rows = await pool.fetch(q, *args)
-    return [dict(r) for r in rows]
+        eq_q += " AND account_id = $3"
+        eq_args.append(account_label)
+    eq_q += " ORDER BY ts"
+
+    opt_q = """
+        SELECT DISTINCT ON (op.account_label, op.underlying, op.strike, op.expiration_date, op.entry_price, op.entry_date)
+            otl.id,
+            otl.ts,
+            op.account_label               AS account_id,
+            op.broker,
+            op.underlying                  AS ticker,
+            'long'                         AS direction,
+            COALESCE(otl.qty, op.qty)      AS qty,
+            op.entry_price,
+            otl.contract_price             AS exit_price,
+            otl.realized_pnl               AS pnl,
+            NULL::text                     AS strategy,
+            'closed'                       AS status,
+            TRUE                           AS _is_option,
+            op.option_type                 AS _opt_type,
+            op.strike                      AS _opt_strike,
+            op.expiration_date             AS _opt_expiry
+        FROM option_trade_log otl
+        JOIN option_positions op ON op.id = otl.position_id
+        WHERE otl.event_type = 'closed'
+          AND otl.ts::date != op.entry_date
+          AND otl.ts::date BETWEEN $1 AND $2
+          AND op.entry_price IS NOT NULL
+    """
+    opt_args: list = [date_from, date_to]
+    if account_label:
+        opt_q += " AND op.account_label = $3"
+        opt_args.append(account_label)
+    opt_q += " ORDER BY op.account_label, op.underlying, op.strike, op.expiration_date, op.entry_price, op.entry_date, otl.ts ASC"
+
+    eq_rows, opt_rows = await asyncio.gather(
+        pool.fetch(eq_q, *eq_args),
+        pool.fetch(opt_q, *opt_args),
+    )
+
+    combined = [dict(r) for r in eq_rows] + [dict(r) for r in opt_rows]
+    combined.sort(key=lambda x: x["ts"])
+    return combined
 
 
 async def _fetch_signals(pool, date_from: date, date_to: date) -> dict:
@@ -105,6 +143,7 @@ def _entry_date(trade: dict) -> date:
 
 
 def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
+    is_option   = bool(trade.get("_is_option", False))
     entry_price = float(trade.get("entry_price") or 0)
     qty         = float(trade.get("qty") or 0)
     direction   = trade.get("direction", "long")
@@ -115,7 +154,7 @@ def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
     # Compute actual P&L: use DB value if closed, else estimate from latest OHLCV close
     exit_price  = float(trade.get("exit_price") or 0)
     actual_pnl  = float(trade.get("pnl") or 0)
-    if is_open and ohlcv is not None and not ohlcv.empty and entry_price > 0 and qty > 0:
+    if is_open and not is_option and ohlcv is not None and not ohlcv.empty and entry_price > 0 and qty > 0:
         if "Close" in ohlcv.columns and len(ohlcv) > 0:
             last_close = ohlcv["Close"].iloc[-1]
             exit_price = float(last_close) if not hasattr(last_close, '__len__') else float(last_close.iloc[0])
@@ -130,7 +169,9 @@ def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
     ideal_price       = exit_price
     had_profit_window = False
 
-    if ohlcv is not None and not ohlcv.empty and entry_price > 0 and qty > 0:
+    # For options, don't compute OHLCV-based ideal: option premium ≠ underlying price.
+    # early_exit/late_exit categories are skipped; noise_trade and overtrading still apply.
+    if not is_option and ohlcv is not None and not ohlcv.empty and entry_price > 0 and qty > 0:
         window = ohlcv[ohlcv.index >= entry_dt].head(_HOLD_WINDOW_DAYS)
 
         if not window.empty and "High" in window.columns and "Low" in window.columns:
@@ -181,6 +222,10 @@ def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
         "discipline_cost":   round(discipline_cost, 2),
         "strategy":          trade.get("strategy", ""),
         "account_id":        trade.get("account_id", ""),
+        "trade_type":        "option" if is_option else "equity",
+        "opt_type":          str(trade.get("_opt_type") or ""),
+        "opt_strike":        float(trade.get("_opt_strike") or 0) if trade.get("_opt_strike") else None,
+        "opt_expiry":        str(trade.get("_opt_expiry") or "")[:10] if trade.get("_opt_expiry") else None,
     }
 
 

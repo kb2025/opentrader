@@ -232,6 +232,75 @@ def bootstrap_sharpe_ci(
     }
 
 
+# ── Probability of Loss by Holding Period ─────────────────────────────────────
+
+_PERIOD_LABELS: dict[int, str] = {1: "1d", 5: "1w", 10: "2w", 21: "1mo", 63: "1q"}
+
+
+def probability_of_loss_by_holding_period(
+    trade_log: list[dict],
+    holding_periods: list[int] | None = None,
+) -> dict[str, Any]:
+    """Compute probability of loss for each holding-period bucket.
+
+    For each threshold in `holding_periods`, selects trades whose calendar-day
+    hold duration meets or exceeds that threshold and computes the fraction that
+    ended as a loss. Mirrors the S&P 500 research insight that longer holding
+    periods reduce the probability of loss.
+
+    Args:
+        trade_log:       Trade dicts from backtest_runner (entry_date, exit_date,
+                         pnl_pct, …).
+        holding_periods: Calendar-day thresholds. Defaults to [1, 5, 10, 21, 63].
+
+    Returns:
+        {"results": [{holding_days, label, eligible_trades, loss_trades,
+                      probability_of_loss, avg_pnl_pct, median_pnl_pct}, …]}
+    """
+    if holding_periods is None:
+        holding_periods = [1, 5, 10, 21, 63]
+
+    durations: list[int] = []
+    for t in trade_log:
+        try:
+            delta = (pd.Timestamp(t["exit_date"]) - pd.Timestamp(t["entry_date"])).days
+            durations.append(max(0, int(delta)))
+        except Exception:
+            durations.append(0)
+
+    results: list[dict] = []
+    for period in holding_periods:
+        eligible = [t for t, d in zip(trade_log, durations) if d >= period]
+        label    = _PERIOD_LABELS.get(period, f"{period}d")
+
+        if not eligible:
+            results.append({
+                "holding_days":        period,
+                "label":               label,
+                "eligible_trades":     0,
+                "loss_trades":         0,
+                "probability_of_loss": None,
+                "avg_pnl_pct":         None,
+                "median_pnl_pct":      None,
+            })
+            continue
+
+        pnl_pcts = [float(t.get("pnl_pct", 0.0)) for t in eligible]
+        losses   = [p for p in pnl_pcts if p < 0]
+
+        results.append({
+            "holding_days":        period,
+            "label":               label,
+            "eligible_trades":     len(eligible),
+            "loss_trades":         len(losses),
+            "probability_of_loss": round(len(losses) / len(eligible), 4),
+            "avg_pnl_pct":         round(float(np.mean(pnl_pcts)),   2),
+            "median_pnl_pct":      round(float(np.median(pnl_pcts)), 2),
+        })
+
+    return {"results": results}
+
+
 # ── Main Entry Point ───────────────────────────────────────────────────────────
 
 def run_validation(params: dict) -> dict[str, Any]:
@@ -256,9 +325,10 @@ def run_validation(params: dict) -> dict[str, Any]:
 
     equity_curve = base.get("equity_curve", [])
 
-    wf = walk_forward(params, n_splits=params.get("n_splits", 0))
-    mc = monte_carlo_permutation(equity_curve, n_perms=params.get("n_perms", 1000))
-    bs = bootstrap_sharpe_ci(equity_curve,     n_samples=params.get("n_bootstrap", 1000))
+    wf  = walk_forward(params, n_splits=params.get("n_splits", 0))
+    mc  = monte_carlo_permutation(equity_curve, n_perms=params.get("n_perms", 1000))
+    bs  = bootstrap_sharpe_ci(equity_curve,     n_samples=params.get("n_bootstrap", 1000))
+    pol = probability_of_loss_by_holding_period(base.get("trade_log", []))
 
     # Strip large binary fields from the base summary
     _omit = {"chart_png_b64", "trade_log", "equity_curve", "monthly_returns"}
@@ -266,9 +336,10 @@ def run_validation(params: dict) -> dict[str, Any]:
     base_summary["trade_count"] = len(base.get("trade_log", []))
 
     return {
-        "base":            base_summary,
-        "walk_forward":    wf,
-        "monte_carlo":     mc,
-        "bootstrap":       bs,
-        "elapsed_seconds": round(time.perf_counter() - t0, 1),
+        "base":                base_summary,
+        "walk_forward":        wf,
+        "monte_carlo":         mc,
+        "bootstrap":           bs,
+        "probability_of_loss": pol,
+        "elapsed_seconds":     round(time.perf_counter() - t0, 1),
     }

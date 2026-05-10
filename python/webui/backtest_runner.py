@@ -472,3 +472,84 @@ def _build_monthly_returns(df: pd.DataFrame) -> list[float]:
         return []
 
 
+# ── Distribution Backtest ──────────────────────────────────────────────────────
+
+def run_distribution_backtest(params: dict, step_days: int = 21) -> dict:
+    """Run the strategy from every sampled start date and return a return distribution.
+
+    Samples entry points every `step_days` trading days across the full history.
+    Each run starts at that date and runs to the end of the data window. This
+    answers: across all historical entry points, what distribution of outcomes
+    does this strategy produce?
+
+    Args:
+        params:    Same dict as run_backtest (ticker, period, stop_pct, …).
+        step_days: Trading days between sampled start dates. Default 21 (~monthly).
+
+    Returns:
+        {
+            ticker, period, n_runs, step_days,
+            runs:    [{start_date, end_date, bars, total_return, sharpe,
+                       max_drawdown, win_rate, total_trades}, …],
+            summary: {mean_return, std_return, p10, p25, median, p75, p90,
+                      min_return, max_return, pct_positive, mean_sharpe,
+                      mean_drawdown}
+        }
+    """
+    ticker = params.get("ticker", "").upper().strip()
+    df     = _fetch_ohlcv(ticker, params.get("period", "2y"))
+
+    min_bars = 42  # EMA-21 warmup + room for at least a few trades
+
+    runs: list[dict] = []
+    for start_idx in range(0, len(df) - min_bars, step_days):
+        slice_df = df.iloc[start_idx:].copy()
+        if len(slice_df) < min_bars:
+            break
+        try:
+            r = _run_on_df(slice_df, params)
+            runs.append({
+                "start_date":   slice_df.index[0].strftime("%Y-%m-%d"),
+                "end_date":     slice_df.index[-1].strftime("%Y-%m-%d"),
+                "bars":         len(slice_df),
+                "total_return": r["total_return"],
+                "sharpe":       r["sharpe"],
+                "max_drawdown": r["max_drawdown"],
+                "win_rate":     r["win_rate"],
+                "total_trades": r["total_trades"],
+            })
+        except Exception:
+            pass
+
+    if not runs:
+        return {"error": "No valid runs — check ticker or period.", "ticker": ticker}
+
+    returns   = np.asarray([r["total_return"] for r in runs], dtype=float)
+    sharpes   = np.asarray([r["sharpe"]       for r in runs], dtype=float)
+    drawdowns = np.asarray([r["max_drawdown"] for r in runs], dtype=float)
+
+    summary = {
+        "mean_return":   round(float(np.mean(returns)),                  2),
+        "std_return":    round(float(np.std(returns,  ddof=1)),          2),
+        "p10":           round(float(np.percentile(returns, 10)),        2),
+        "p25":           round(float(np.percentile(returns, 25)),        2),
+        "median":        round(float(np.median(returns)),                2),
+        "p75":           round(float(np.percentile(returns, 75)),        2),
+        "p90":           round(float(np.percentile(returns, 90)),        2),
+        "min_return":    round(float(np.min(returns)),                   2),
+        "max_return":    round(float(np.max(returns)),                   2),
+        "pct_positive":  round(float(np.mean(returns > 0)) * 100,       1),
+        "mean_sharpe":   round(float(np.mean(sharpes)),                  3),
+        "mean_drawdown": round(float(np.mean(drawdowns)),                2),
+    }
+
+    return {
+        "ticker":    ticker,
+        "period":    params.get("period", "2y"),
+        "n_runs":    len(runs),
+        "step_days": step_days,
+        "runs":      runs,
+        "summary":   summary,
+    }
+
+
