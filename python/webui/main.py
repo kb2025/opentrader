@@ -44,9 +44,20 @@ TZ  = ZoneInfo(os.getenv("TIMEZONE", "America/New_York"))
 app = FastAPI(title="OpenTrader Command Center", version="2.0.0")
 app.mount("/static", StaticFiles(directory="/app/webui/static"), name="static")
 
-WEBUI_TOKEN    = os.getenv("WEBUI_TOKEN", "opentrader")
-SECRET_KEY     = os.getenv("SECRET_KEY", "change-me-please-set-SECRET_KEY-in-env")
-YAHOO_MCP_URL  = os.getenv("YAHOO_MCP_URL", "http://ot-mcp-yahoo:8000/mcp")
+WEBUI_TOKEN = os.getenv("WEBUI_TOKEN", "")
+SECRET_KEY  = os.getenv("SECRET_KEY", "")
+YAHOO_MCP_URL = os.getenv("YAHOO_MCP_URL", "http://ot-mcp-yahoo:8000/mcp")
+
+if not WEBUI_TOKEN:
+    import secrets as _secrets
+    WEBUI_TOKEN = _secrets.token_hex(32)
+    log.warning("webui.WEBUI_TOKEN_not_set_using_random",
+                note="Set WEBUI_TOKEN in .env for a stable token across restarts")
+if not SECRET_KEY:
+    import secrets as _secrets
+    SECRET_KEY = _secrets.token_hex(32)
+    log.warning("webui.SECRET_KEY_not_set_using_random",
+                note="Set SECRET_KEY in .env — random key invalidates all sessions on restart")
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -945,7 +956,8 @@ async def restart_agent(agent: str, token: str = ""):
         log.info("agent.restart", agent=agent, container=cname)
         return {"restarting": agent, "container": cname}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("agent.restart_failed", agent=agent, container=cname, error=str(e))
+        raise HTTPException(status_code=500, detail="Container restart failed")
 
 
 @app.get("/api/agents/{agent}/logs")
@@ -4010,7 +4022,8 @@ async def update_broker_env(body: EnvUpdate):
     except PermissionError:
         raise HTTPException(status_code=500, detail=".env file is not writable — check volume mount")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("broker_env.update_failed", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update configuration")
 
 
 class CfgTestBody(BaseModel):
@@ -4165,7 +4178,8 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("config.test_connector_failed", service=getattr(body, "service", ""), error=str(e))
+        raise HTTPException(status_code=500, detail="Connection test failed — check logs")
 
 
 @app.post("/api/config/agentmail/provision")
@@ -4253,7 +4267,8 @@ async def provision_agentmail_inboxes(body: CfgTestBody = CfgTestBody()):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("agentmail.provision_failed", error=str(e))
+        raise HTTPException(status_code=500, detail="AgentMail provisioning failed")
 
     errors = [r for r in results if r["status"] == "error"]
     return {
@@ -5094,7 +5109,8 @@ async def get_webull_subscriptions(token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("broker.accounts_fetch_failed", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch broker accounts")
 
 
 # ── Strategy Engineer — AI chat ──────────────────────────────────────────────
@@ -6243,7 +6259,8 @@ async def quick_backtest(body: BacktestRunBody):
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Backtest timed out")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("backtest.error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)[:200])
 
 
 class BacktestValidateBody(BaseModel):
@@ -6310,7 +6327,8 @@ async def distribution_backtest(body: DistributionBacktestBody):
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Distribution backtest timed out (300 s limit)")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("backtest.error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)[:200])
 
 
 @app.post("/api/backtest/validate")
@@ -6353,7 +6371,8 @@ async def validate_backtest(body: BacktestValidateBody):
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Validation timed out (300 s limit)")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error("backtest.error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)[:200])
 
 
 class QuickBacktestPdfBody(BaseModel):
@@ -6964,6 +6983,12 @@ async def update_directive(directive_id: str, body: dict, token: str = ""):
 
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
+    # Authenticate before accepting — check JWT session cookie or ?token= param
+    session = websocket.cookies.get("ot_session", "")
+    token   = websocket.query_params.get("token", "")
+    if not (_verify_jwt(session) or token == WEBUI_TOKEN):
+        await websocket.close(code=1008)  # 1008 = Policy Violation
+        return
     await websocket.accept()
     try:
         while True:
@@ -12401,10 +12426,10 @@ async def shadow_run_detail(run_id: str, token: str = ""):
 async def serve_ui():
     with open("/app/webui/static/index.html") as f:
         html = f.read()
-    # Inject token and version meta tags
+    # Inject version meta tag only — token is NOT exposed in HTML source
     html = html.replace(
         "<head>",
-        f'<head>\n<meta name="ot-token" content="{WEBUI_TOKEN}">\n<meta name="ot-version" content="{APP_VERSION}">',
+        f'<head>\n<meta name="ot-version" content="{APP_VERSION}">',
         1,
     )
     return HTMLResponse(

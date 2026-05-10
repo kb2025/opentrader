@@ -4102,12 +4102,6 @@ function statusChip(evtType) {
 function getToken() {
   let t = sessionStorage.getItem('ot_token');
   if (!t) {
-    // Seed from meta tag injected by the server
-    const meta = document.querySelector('meta[name="ot-token"]');
-    t = meta ? meta.getAttribute('content') : '';
-    if (t) sessionStorage.setItem('ot_token', t);
-  }
-  if (!t) {
     t = prompt('Enter WebUI token:');
     if (t) sessionStorage.setItem('ot_token', t);
   }
