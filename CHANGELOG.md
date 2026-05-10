@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.97] - 2026-05-10
+
+### Fixed
+- **Options chain headers invisible** — `var(--card-header)` is a CSS class not a variable so it resolved to transparent; replaced with `var(--surface)` (#13161f) giving headers a solid opaque background
+
 ## [3.6.96] - 2026-05-10
 
 ### Fixed
