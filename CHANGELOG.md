@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.93] - 2026-05-10
+
+### Changed
+- **Webull market-data endpoints** — migrated three unofficial internal API paths to the official Webull OpenAPI v2 paths in `python/brokers/webull/connector.py`:
+  - Option expiration dates: `/quotes/option/queryExpireDates` → `/openapi/market-data/v1/options/expiration-dates` (`ticker` param)
+  - Real-time quote: `/quotes/ticker/getTickerRealTime` → `/openapi/market-data/v1/snapshot/quotes` (`tickers` param, handles list response unwrapping)
+  - Option chain by expiry: `/quotes/option/queryOptionByExpireDate` → `/openapi/market-data/v1/options/chain` (`ticker` + `expiration_date` params)
+  - All three calls now use `get_v2()` (APP_KEY/APP_SECRET + `x-version: v2` header) instead of the unsigned `get()` method
+  - Field extraction updated for official API field names (`strike_price`, `option_type`, `bid_price`, `ask_price`, `last_price`, `open_interest`, `implied_volatility`, nested `greeks` object) with fallbacks for legacy field names
+
 ## [3.6.92] - 2026-05-10
 
 ### Removed
