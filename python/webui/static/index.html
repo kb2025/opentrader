@@ -363,6 +363,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#34d399"></span>
         Polymarket
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-macro-hub')" data-page="page-macro-hub">
+        <span class="nav-dot" style="background:#f59e0b"></span>
+        Macro Hub
+      </div>
       <div class="nav-parent" id="nav-parent-sectorinsight" onclick="_siNavToggle()">
         <span class="nav-dot" style="background:#a78bfa"></span>
         Sector Insight
@@ -1375,7 +1379,10 @@ select option{background:var(--surface2)}
         <div class="card" style="margin-bottom:0">
           <div class="card-header" style="padding:10px 16px">
             <span class="card-title">Macro Regime</span>
-            <button class="btn btn-ghost btn-xs" onclick="loadMacroRegime()">&#8635;</button>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="btn btn-ghost btn-xs" onclick="loadMacroRegime()">&#8635;</button>
+              <span onclick="navigate('page-macro-hub')" style="font-size:10px;color:var(--blue);cursor:pointer">Full View →</span>
+            </div>
           </div>
           <div class="card-body" style="padding:12px 16px">
             <div id="macro-regime-widget"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
@@ -3871,6 +3878,70 @@ select option{background:var(--surface2)}
 
     </div><!-- /page-polymarket -->
 
+    <!-- ═══════════════════════════════════════
+         PAGE: Macro Hub
+    ════════════════════════════════════════ -->
+    <div class="page" id="page-macro-hub">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--fg)">Macro Regime Hub</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">Regime · Breadth · VIX · DXY · TLT · 30-day trend</div>
+        </div>
+        <button onclick="loadMacroHubPage()" style="padding:6px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:12px;cursor:pointer">↻ Refresh</button>
+      </div>
+
+      <!-- Regime header -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-body" style="padding:20px">
+          <div id="macro-hub-regime-header"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
+        </div>
+      </div>
+
+      <!-- Signal grid: SPY / VIX / DXY / TLT / Breadth -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px" id="macro-hub-signal-grid">
+        <div class="stat-card"><div class="stat-label">SPY Trend</div><div class="stat-value" id="macro-spy-trend">—</div></div>
+        <div class="stat-card"><div class="stat-label">VIX</div><div class="stat-value" id="macro-vix">—</div></div>
+        <div class="stat-card"><div class="stat-label">DXY Trend</div><div class="stat-value" id="macro-dxy">—</div></div>
+        <div class="stat-card"><div class="stat-label">TLT Trend</div><div class="stat-value" id="macro-tlt">—</div></div>
+        <div class="stat-card"><div class="stat-label">OVTLYR Breadth</div><div class="stat-value" id="macro-breadth">—</div></div>
+      </div>
+
+      <!-- 30-day regime history -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="padding:10px 16px">
+          <span class="card-title">30-Day Regime History</span>
+        </div>
+        <div class="card-body" style="padding:16px">
+          <div id="macro-hub-history-chart" style="min-height:80px"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
+        </div>
+      </div>
+
+      <!-- Regime score history table -->
+      <div class="card">
+        <div class="card-header" style="padding:10px 16px">
+          <span class="card-title">Recent Snapshots</span>
+        </div>
+        <div class="card-body" style="padding:0;overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
+              <th style="padding:8px 12px;text-align:left;color:var(--muted)">Date</th>
+              <th style="padding:8px 8px;text-align:center;color:var(--muted)">Regime</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Score</th>
+              <th style="padding:8px 8px;text-align:center;color:var(--muted)">SPY</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">VIX</th>
+              <th style="padding:8px 8px;text-align:center;color:var(--muted)">DXY</th>
+              <th style="padding:8px 8px;text-align:center;color:var(--muted)">TLT</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Breadth</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Bull/Bear</th>
+            </tr></thead>
+            <tbody id="macro-hub-history-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /page-macro-hub -->
+
     <!-- ── page-resources-groups ── -->
     <div class="page" id="page-resources-groups">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -4191,6 +4262,7 @@ const PAGE_TITLES = {
   'page-resources-backtester': 'Backtester',
   'page-resources-groups':     'Market Groups',
   'page-polymarket':           'Polymarket',
+  'page-macro-hub':            'Macro Hub',
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4305,7 +4377,7 @@ function navigate(pageId) {
     case 'page-platform-ssl':       loadSslPage();       break;
     case 'page-platform-profile':   loadProfilePage();   break;
     case 'page-platform-config':    loadConfigPage();    break;
-    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); loadPredictorSignals(); loadTrendingSymbols(); loadETFFlows(); loadMacroRegime(); loadUnifiedNews(); break;
+    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); loadPredictorSignals(); loadTrendingSymbols(); loadETFFlows(); loadMacroRegime(); loadUnifiedNews(); _startPnlAutoRefresh(); break;
     case 'page-trading-unified':    loadUnifiedPositions(); break;
 
     case 'page-trading-trades':     loadTradesPage();    break;
@@ -4329,6 +4401,7 @@ function navigate(pageId) {
     case 'page-resources-backtester': loadBacktesterPage();      break;
     case 'page-resources-groups':     loadMarketGroupsPage();    break;
     case 'page-polymarket':           loadPolymarketPage();      break;
+    case 'page-macro-hub':            loadMacroHubPage();        break;
   }
 }
 
@@ -20010,8 +20083,9 @@ async function loadQuickIntel() {
         </div>
         <div id="qi-past-outcomes" style="display:none"></div>
       </div>`;
-    // Load past outcomes asynchronously
+    // Load past outcomes and sentiment breakdown asynchronously
     _loadPastOutcomes(ticker);
+    _attachSentimentBreakdown(ticker);
   } catch(e) {
     el.innerHTML = `<div style="font-size:12px;color:var(--coral)">Analysis unavailable: ${e.message || e}</div>`;
   }
@@ -20333,6 +20407,209 @@ async function loadReviewRecommendations() {
 // ══════════════════════════════════════════════════════════════════════════════
 // Polymarket
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Macro Regime Hub
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadMacroHubPage() {
+  const headerEl = document.getElementById('macro-hub-regime-header');
+  const histEl   = document.getElementById('macro-hub-history-chart');
+  const tbody    = document.getElementById('macro-hub-history-tbody');
+
+  try {
+    const [current, hist, breadth] = await Promise.all([
+      apiFetch('/api/market/macro-regime'),
+      apiFetch('/api/market/macro-regime?history=true'),
+      apiFetch('/api/ovtlyr/breadth').catch(() => null),
+    ]);
+
+    const r = current.regime;
+    if (r) {
+      const regimeColor = r.regime === 'risk_on' ? 'var(--green)' : r.regime === 'risk_off' ? 'var(--red)' : 'var(--amber)';
+      const regimeLabel = r.regime === 'risk_on' ? 'RISK ON' : r.regime === 'risk_off' ? 'RISK OFF' : 'NEUTRAL';
+      const score = r.regime_score || 0;
+      const barW  = Math.round(((score + 1) / 2) * 100);
+      headerEl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+          <div style="font-size:32px;font-weight:900;color:${regimeColor}">${regimeLabel}</div>
+          <div>
+            <div style="font-size:13px;color:var(--muted)">Regime Score</div>
+            <div style="height:8px;width:180px;background:var(--surface2);border-radius:4px;margin-top:4px">
+              <div style="height:100%;width:${barW}%;background:${regimeColor};border-radius:4px;transition:width .5s"></div>
+            </div>
+            <div style="font-size:12px;color:var(--fg);margin-top:4px">${score > 0 ? '+' : ''}${score.toFixed(3)}</div>
+          </div>
+          <div style="font-size:12px;color:var(--muted)">
+            <span style="color:var(--green);font-weight:700">${r.bull_signals}</span> bull ·
+            <span style="color:var(--red);font-weight:700">${r.bear_signals}</span> bear of ${r.total_signals || '?'} signals
+          </div>
+          <div style="font-size:11px;color:var(--dim);margin-left:auto">${r.ts ? new Date(r.ts).toLocaleString() : ''}</div>
+        </div>`;
+
+      // Signal cards
+      const vixClr = (r.vix_level||0) > 25 ? 'var(--red)' : (r.vix_level||0) > 18 ? 'var(--amber)' : 'var(--green)';
+      const trendClr = t => t === 'uptrend' ? 'var(--green)' : t === 'downtrend' ? 'var(--red)' : 'var(--amber)';
+      document.getElementById('macro-spy-trend').textContent = r.spy_trend || '—';
+      document.getElementById('macro-spy-trend').style.color = trendClr(r.spy_trend);
+      document.getElementById('macro-vix').textContent = r.vix_level ? r.vix_level.toFixed(1) : '—';
+      document.getElementById('macro-vix').style.color = vixClr;
+      document.getElementById('macro-dxy').textContent = r.dxy_trend || '—';
+      document.getElementById('macro-dxy').style.color = trendClr(r.dxy_trend);
+      document.getElementById('macro-tlt').textContent = r.tlt_trend || '—';
+      document.getElementById('macro-tlt').style.color = trendClr(r.tlt_trend);
+    } else {
+      headerEl.innerHTML = '<div style="font-size:12px;color:var(--muted)">No macro data yet — runs daily after market close</div>';
+    }
+
+    // Breadth
+    if (breadth?.current) {
+      const bp = breadth.current.breadth_pct || 0;
+      const bpC = bp > 60 ? 'var(--green)' : bp < 40 ? 'var(--red)' : 'var(--amber)';
+      document.getElementById('macro-breadth').textContent = bp.toFixed(1) + '%';
+      document.getElementById('macro-breadth').style.color = bpC;
+    }
+
+    // History chart (regime score sparkline)
+    const history = hist.history || [];
+    if (history.length > 1 && histEl) {
+      const scores = history.map(h => h.regime_score || 0);
+      const minS   = Math.min(...scores);
+      const maxS   = Math.max(...scores);
+      const range  = (maxS - minS) || 0.1;
+      const W = 800, H = 60;
+      const n = scores.length;
+      const pts = scores.map((s, i) => {
+        const x = (i / (n-1)) * W;
+        const y = H - ((s - minS) / range) * (H - 4) - 2;
+        return `${x},${y}`;
+      }).join(' ');
+      const zeroY = H - ((0 - minS) / range) * (H - 4) - 2;
+      histEl.innerHTML = `
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between">
+          <span>${history[0]?.ts ? new Date(history[0].ts).toLocaleDateString() : ''}</span>
+          <span>${history[history.length-1]?.ts ? new Date(history[history.length-1].ts).toLocaleDateString() : ''}</span>
+        </div>
+        <svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:60px">
+          <line x1="0" y1="${zeroY}" x2="${W}" y2="${zeroY}" stroke="var(--border)" stroke-width="1" stroke-dasharray="4,4"/>
+          <polyline points="${pts}" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linejoin="round"/>
+          ${scores.map((s, i) => {
+            const x = (i / (n-1)) * W;
+            const y = H - ((s - minS) / range) * (H - 4) - 2;
+            const c = s > 0 ? '#4ade80' : '#f87171';
+            return `<circle cx="${x}" cy="${y}" r="3" fill="${c}"/>`;
+          }).join('')}
+        </svg>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--dim);margin-top:4px">
+          <span>Min ${minS.toFixed(2)}</span><span>Zero</span><span>Max ${maxS.toFixed(2)}</span>
+        </div>`;
+    } else if (histEl) {
+      histEl.innerHTML = '<div style="font-size:12px;color:var(--muted)">History builds over time</div>';
+    }
+
+    // History table
+    if (tbody && history.length) {
+      const recent = [...history].reverse().slice(0, 30);
+      tbody.innerHTML = recent.map(h => {
+        const rc = h.regime === 'risk_on' ? 'var(--green)' : h.regime === 'risk_off' ? 'var(--red)' : 'var(--amber)';
+        const sc = (h.regime_score||0) > 0 ? 'var(--green)' : 'var(--red)';
+        const tc = t => t === 'uptrend' ? 'var(--green)' : t === 'downtrend' ? 'var(--red)' : 'var(--muted)';
+        return `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:7px 12px;font-size:11px;color:var(--muted)">${new Date(h.ts).toLocaleDateString()}</td>
+          <td style="padding:7px 8px;text-align:center;font-weight:700;font-size:11px;color:${rc}">${h.regime||'—'}</td>
+          <td style="padding:7px 8px;text-align:right;font-weight:600;color:${sc}">${(h.regime_score||0)>0?'+':''}${(h.regime_score||0).toFixed(3)}</td>
+          <td style="padding:7px 8px;text-align:center;font-size:11px;color:${tc(h.spy_trend)}">${h.spy_trend||'—'}</td>
+          <td style="padding:7px 8px;text-align:right;font-size:11px">${h.vix_level ? h.vix_level.toFixed(1) : '—'}</td>
+          <td style="padding:7px 8px;text-align:center;font-size:11px;color:${tc(h.dxy_trend)}">${h.dxy_trend||'—'}</td>
+          <td style="padding:7px 8px;text-align:center;font-size:11px;color:${tc(h.tlt_trend)}">${h.tlt_trend||'—'}</td>
+          <td style="padding:7px 8px;text-align:right;font-size:11px">${h.breadth_pct ? h.breadth_pct.toFixed(1)+'%' : '—'}</td>
+          <td style="padding:7px 8px;text-align:right;font-size:11px;color:var(--muted)">${h.bull_signals||0}/${h.bear_signals||0}</td>
+        </tr>`;
+      }).join('');
+    }
+  } catch(e) {
+    if (headerEl) headerEl.innerHTML = `<div style="font-size:12px;color:var(--red)">Error: ${_escHtml(e.message)}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Sentiment Component Breakdown (5-component display)
+// ══════════════════════════════════════════════════════════════════════════════
+
+function _renderSentimentBreakdown(el, ticker, sentData) {
+  if (!sentData) { el.innerHTML = '<div style="font-size:11px;color:var(--muted)">No sentiment data</div>'; return; }
+  const components = [
+    { key: 'score',     label: 'Composite' },
+    { key: 'rsi',       label: 'RSI Score' },
+    { key: 'ma_score',  label: 'MA Cross'  },
+    { key: 'momentum',  label: 'Momentum'  },
+    { key: 'vol_score', label: 'Vol Score' },
+  ];
+  const bars = components.map(c => {
+    const val = sentData[c.key] != null ? parseFloat(sentData[c.key]) : null;
+    if (val == null) return '';
+    const pct  = Math.min(100, Math.max(0, val));
+    const clr  = pct >= 60 ? '#4ade80' : pct >= 40 ? '#f59e0b' : '#f87171';
+    return `<div style="margin-bottom:5px">
+      <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px">
+        <span style="color:var(--muted)">${c.label}</span>
+        <span style="color:${clr};font-weight:600">${val.toFixed(0)}</span>
+      </div>
+      <div style="height:4px;background:var(--surface2);border-radius:2px">
+        <div style="height:100%;width:${pct}%;background:${clr};border-radius:2px;transition:width .4s"></div>
+      </div>
+    </div>`;
+  }).join('');
+  const label = sentData.label || (sentData.score >= 60 ? 'Greed' : sentData.score <= 40 ? 'Fear' : 'Neutral');
+  el.innerHTML = `
+    <div style="font-size:10px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between">
+      <span style="font-weight:600;color:var(--fg)">${ticker} Sentiment</span>
+      <span style="color:${sentData.score >= 60 ? 'var(--green)' : sentData.score <= 40 ? 'var(--red)' : 'var(--amber)'}">${label}</span>
+    </div>
+    ${bars}`;
+}
+
+// Extend Quick Intel to attach sentiment breakdown
+const _origLoadQuickIntel = typeof loadQuickIntel !== 'undefined' ? loadQuickIntel : null;
+
+async function _attachSentimentBreakdown(ticker) {
+  try {
+    const d = await apiFetch('/api/sentiment');
+    const sentData = d[ticker.toUpperCase()];
+    const container = document.getElementById('quick-intel-result');
+    if (!container || !sentData) return;
+    let sentEl = document.getElementById('qi-sentiment-breakdown');
+    if (!sentEl) {
+      sentEl = document.createElement('div');
+      sentEl.id = 'qi-sentiment-breakdown';
+      sentEl.style.cssText = 'margin-top:12px;padding-top:12px;border-top:1px solid var(--border)';
+      container.appendChild(sentEl);
+    }
+    _renderSentimentBreakdown(sentEl, ticker, sentData);
+  } catch(_) {}
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Real-time P&L auto-refresh (30s polling when on Trading Dashboard)
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _pnlRefreshTimer = null;
+
+function _startPnlAutoRefresh() {
+  _stopPnlAutoRefresh();
+  _pnlRefreshTimer = setInterval(() => {
+    const page = document.querySelector('.page.active');
+    if (page?.id === 'page-trading-dashboard') {
+      loadDailyLossWidget();
+    } else {
+      _stopPnlAutoRefresh();
+    }
+  }, 30000);
+}
+
+function _stopPnlAutoRefresh() {
+  if (_pnlRefreshTimer) { clearInterval(_pnlRefreshTimer); _pnlRefreshTimer = null; }
+}
 
 async function loadPolymarketPage() {
   const tbody  = document.getElementById('poly-positions-tbody');

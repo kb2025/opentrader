@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.89] - 2026-05-10
+
+### Added
+- **Dashboard enhancements (Wave 2)** — Macro Hub page, sentiment breakdown, real-time P&L polling:
+  - **Macro Regime Hub page** (`page-macro-hub`) — dedicated full-page view consolidating regime state, 5 signal tiles (SPY/VIX/DXY/TLT/OVTLYR Breadth), 30-day regime score sparkline SVG, and sortable history table; "Full View →" link on Trading Dashboard widget
+  - **Sentiment 5-component breakdown** in Quick Intel panel — automatically appended after analysis loads; shows Composite, RSI Score, MA Cross, Momentum, and Vol Score as horizontal bar chart with fear/neutral/greed color coding
+  - **Real-time P&L auto-refresh** — 30-second polling timer starts when Trading Dashboard is active, stops when navigating away; updates Daily P&L widget including the 10-day sparkline
+  - **Review Log** now loads on Equities Hindsight page navigation alongside shadow account run history
+
 ## [3.6.88] - 2026-05-10
 
 ### Added
