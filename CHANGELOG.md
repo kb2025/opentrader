@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.94] - 2026-05-10
+
+### Fixed
+- **Equities Hindsight (shadow account) broken** — `shadow_account.py` was not mounted into the `ot-webui` container; every `/api/shadow/run` POST returned HTTP 500 with `ModuleNotFoundError: No module named 'webui.shadow_account'`
+- **`portfolio_optimizer.py` not mounted** — same gap; would fail when portfolio optimization endpoint was called
+- **`shared/crypto.py` and `shared/db_retry.py` missing from container** — added bind-mount of entire `python/shared/` directory so all shared modules are live-reloaded without a container rebuild
+- Fixed in `compose.yml`: added three volume entries; container restarted with correct mounts
+
 ## [3.6.93] - 2026-05-10
 
 ### Changed
