@@ -549,6 +549,13 @@ select option{background:var(--surface2)}
           <div class="stat-label">Today's P&amp;L</div>
           <div class="stat-value" id="stat-plat-pnl" style="color:var(--muted)">—</div>
         </div>
+        <div class="stat-card" id="stat-loss-limit-card" style="cursor:pointer" onclick="navigate('page-trading-dashboard')" title="Daily loss limit proximity — click to view Trading Dashboard">
+          <div class="stat-label">Loss Limit</div>
+          <div class="stat-value" id="stat-loss-limit" style="color:var(--muted)">—</div>
+          <div style="height:4px;background:var(--surface2);border-radius:2px;margin-top:6px;overflow:hidden">
+            <div id="stat-loss-limit-bar" style="height:100%;width:0%;background:var(--green);border-radius:2px;transition:width .4s"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Topology -->
@@ -4598,6 +4605,20 @@ async function loadPlatformDailyPnl() {
     el.textContent   = fmt;
     el.style.color   = pnl >= 0 ? 'var(--green)' : 'var(--red)';
     if (card) card.style.borderColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+    // Loss limit proximity gauge
+    const limEl  = document.getElementById('stat-loss-limit');
+    const limBar = document.getElementById('stat-loss-limit-bar');
+    const limCard = document.getElementById('stat-loss-limit-card');
+    if (limEl) {
+      const pct    = d.loss_pct_used || 0;
+      const broken = d.circuit_broken;
+      const barC   = broken || pct >= 100 ? '#ef4444' : pct >= 75 ? '#f97316' : pct >= 50 ? '#eab308' : '#22c55e';
+      limEl.textContent  = d.limit_enabled ? `${pct.toFixed(0)}% used` : 'No limit';
+      limEl.style.color  = barC;
+      if (limBar) { limBar.style.width = Math.min(pct, 100).toFixed(0) + '%'; limBar.style.background = barC; }
+      if (limCard && broken) limCard.style.borderColor = '#ef4444';
+    }
   } catch(_) {
     el.textContent = '—';
   }

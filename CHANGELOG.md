@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.91] - 2026-05-10
+
+### Added
+- **Dashboard enhancements (Wave 4)** — Platform Dashboard circuit breaker gauge:
+  - **Loss Limit gauge** — new stat card on Platform Dashboard showing daily loss limit proximity (% used) with color-coded mini progress bar (green→amber→orange→red); turns red if circuit breaker tripped; clicking navigates to Trading Dashboard
+  - `loadPlatformDailyPnl` now also updates the loss limit gauge from the same `/api/trading/daily-pnl` response
+
 ## [3.6.90] - 2026-05-10
 
 ### Added
