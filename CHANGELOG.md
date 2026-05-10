@@ -3,6 +3,34 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.86] - 2026-05-10
+
+### Fixed
+- **options_trader: hardcoded "fill" event type** — broker reply status is now checked and mapped to `fill`/`reject` matching equity_trader logic; rejected orders emit a `reject` stream event instead of silently emitting a false `fill`
+- **equity_trader / options_trader: race in positions_today** — ticker is only added to `_positions_today` after a confirmed fill event in the gateway reply, not before iterating results; prevents a rejected order from blocking future signals for the same ticker that day
+- **equity_trader: _size_position returns 0 for price ≤ 0** — previously returned 1 share, which would submit an order at zero price; caller already guards `qty < 1`
+- **options_monitor: close + audit log not atomic** — wrapped `UPDATE option_positions SET status='closed'` and `INSERT INTO option_trade_log` in a single asyncpg transaction; prevents orphaned closed positions with no audit trail on mid-operation failures
+- **options_monitor: untracked fire-and-forget chart task** — added `done_callback` to chart `create_task()` to surface exceptions instead of silently swallowing them
+
+### Security
+- **WEBUI_TOKEN / SECRET_KEY no longer have insecure defaults** — if not set in env, a cryptographically random value is generated at startup with a warning; eliminates the `"opentrader"` / `"change-me-please"` predictable defaults
+- **WebSocket /ws endpoint now authenticated** — validates JWT session cookie or `?token=` param before accepting; previously any client could stream live trade signals, account positions, and agent health
+- **WEBUI_TOKEN removed from HTML meta tag** — token was visible in page source and extractable via DevTools; frontend no longer seeds from meta, uses sessionStorage + prompt fallback
+- **HTTPException detail strings sanitized** — infrastructure endpoints (agent restart, broker env, agentmail provision, accounts fetch) now log the full error server-side and return generic messages; backtest errors are truncated to 200 chars
+
+### Refactored
+- **shared/redis_client: `ensure_consumer_group()` added** — single implementation replaces identical 6-line xgroup_create/BUSYGROUP blocks duplicated across 11 agents and scrapers (zero remaining duplications)
+- **shared/redis_client: `get_redis()` accepts `socket_timeout`** — removes inconsistent inline `aioredis.from_url()` calls with varying timeouts (15–100 s) scattered across traders and monitor
+- **shared/crypto.py added** — `encrypt_secret()`/`decrypt_secret()` extracted from webui and alphavantage scraper into a shared module; removes duplicated Fernet+SHA256 key derivation
+
+## [3.6.85] - 2026-05-10
+
+### Added
+- **Distribution backtest** — `run_distribution_backtest()` samples entry points every 21 trading days across full history; returns per-run metrics and a percentile summary (p10–p90) answering "what distribution of outcomes does this strategy produce across all entry points?"
+- **Probability-of-loss by holding period** — `probability_of_loss_by_holding_period()` computes fraction of trades ending as a loss for each holding-period bucket (1d, 1w, 2w, 1mo, 1q); mirrors S&P 500 research that longer holds reduce loss probability
+- **Options in Shadow Account** — shadow account now includes closed option positions from `option_trade_log` alongside equity trades; option trades skip OHLCV-based ideal-exit analysis (option premium ≠ underlying price); `trade_type`, `opt_type`, `opt_strike`, `opt_expiry` added to analysis output
+- **Library book status "read"** — added `read` to the `library_books.status` check constraint alongside `reading`, `purchased`, `reference`
+
 ## [3.6.84] - 2026-05-09
 
 ### Fixed
