@@ -8,7 +8,7 @@ import os
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 
 
 class BaseScraper(BaseAgent):
@@ -48,13 +48,7 @@ class BaseScraper(BaseAgent):
         pass
 
     async def _ensure_group(self):
-        try:
-            await self.redis.xgroup_create(
-                self.CMD_STREAM, GROUPS[self.GROUP_KEY], id="$", mkstream=True
-            )
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                self.log.warning(f"{self.SOURCE}.group_create_error", error=str(e))
+        await ensure_consumer_group(self.redis, self.CMD_STREAM, GROUPS[self.GROUP_KEY])
 
     async def _command_loop(self):
         consumer = os.getenv("HOSTNAME", f"{self.SOURCE}-0")

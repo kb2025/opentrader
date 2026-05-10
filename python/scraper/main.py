@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 from notifier.agentmail import Notifier
 
 from .ovtlyr import OvtlyrScraper
@@ -68,13 +68,7 @@ class ScraperAgent(BaseAgent):
             log.error("scraper.ovtlyr_init_failed", error=str(e))
 
     async def _ensure_consumer_group(self):
-        try:
-            await self.redis.xgroup_create(
-                CMD_STREAM, CONSUMER_GROUP, id="$", mkstream=True
-            )
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                log.warning("scraper.group_create", error=str(e))
+        await ensure_consumer_group(self.redis, CMD_STREAM, CONSUMER_GROUP)
 
     async def _command_loop(self):
         """Consume system.commands, handle scrape triggers."""

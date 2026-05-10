@@ -30,7 +30,7 @@ import asyncpg
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, REDIS_URL, get_redis
+from shared.redis_client import STREAMS, get_redis
 from shared.mcp_client import call_mcp_tool, get_tv_indicators
 from scheduler.calendar import is_trading_day, now_et
 

@@ -48,30 +48,39 @@ GROUPS = {
 }
 
 
-async def get_redis() -> aioredis.Redis:
+async def get_redis(socket_timeout: int = 30) -> aioredis.Redis:
+    """Return a Redis client.  socket_timeout must exceed any xreadgroup block= value."""
     client = await aioredis.from_url(
         REDIS_URL,
         encoding="utf-8",
         decode_responses=True,
         socket_connect_timeout=5,
-        socket_timeout=30,       # must exceed xreadgroup block= value (5 s)
+        socket_timeout=socket_timeout,
         retry_on_timeout=True,
         health_check_interval=30,
     )
     return client
 
 
+async def ensure_consumer_group(
+    redis: aioredis.Redis,
+    stream: str,
+    group: str,
+) -> None:
+    """Create a consumer group on a stream if it doesn't already exist."""
+    try:
+        await redis.xgroup_create(stream, group, id="$", mkstream=True)
+    except Exception as e:
+        if "BUSYGROUP" not in str(e):
+            log.warning("redis.xgroup_create_failed", stream=stream, group=group, error=str(e))
+
+
 async def ensure_streams(redis: aioredis.Redis):
-    """Create streams and consumer groups if they don't exist."""
-    for name, stream in STREAMS.items():
-        for group_name, group in GROUPS.items():
+    """Create all known streams and consumer groups if they don't exist."""
+    for stream in STREAMS.values():
+        for group in GROUPS.values():
             try:
-                await redis.xgroup_create(
-                    stream, group, id="0", mkstream=True
-                )
-                log.debug(f"Created group '{group}' on stream '{stream}'")
+                await redis.xgroup_create(stream, group, id="0", mkstream=True)
             except Exception as e:
-                if "BUSYGROUP" in str(e):
-                    pass  # already exists — fine
-                else:
-                    log.warning(f"Stream setup: {stream}/{group}: {e}")
+                if "BUSYGROUP" not in str(e):
+                    log.warning("redis.stream_setup_failed", stream=stream, group=group, error=str(e))

@@ -17,7 +17,7 @@ import os
 import structlog
 
 from shared.base_agent   import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, get_redis
+from shared.redis_client import STREAMS, GROUPS, get_redis, ensure_consumer_group
 from .registry           import BrokerRegistry
 from .router             import BrokerRouter
 
@@ -54,13 +54,9 @@ class BrokerGatewayAgent(BaseAgent):
         )
 
     async def _ensure_consumer_group(self):
-        stream = STREAMS["broker_commands"]
-        group  = GROUPS["broker_gateway"]
-        try:
-            await self.redis.xgroup_create(stream, group, id="$", mkstream=True)
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                log.warning("broker-gateway.group_create", error=str(e))
+        await ensure_consumer_group(
+            self.redis, STREAMS["broker_commands"], GROUPS["broker_gateway"]
+        )
 
     async def _command_loop(self):
         stream = STREAMS["broker_commands"]

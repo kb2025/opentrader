@@ -22,7 +22,7 @@ from typing import Optional
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL, get_redis
+from shared.redis_client import STREAMS, GROUPS, get_redis, ensure_consumer_group
 from shared.envelope import OrderEventPayload
 from shared.mcp_client import get_tv_indicators, tv_confirms_direction, get_avg_volume
 from shared.assignments import load_active_assignments
@@ -74,13 +74,7 @@ class OptionsTrader(BaseAgent):
         )
 
     async def _ensure_consumer_group(self):
-        try:
-            await self.redis.xgroup_create(
-                SIG_STREAM, CONSUMER_GROUP, id="$", mkstream=True
-            )
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                log.warning("trader-options.group_create", error=str(e))
+        await ensure_consumer_group(self.redis, SIG_STREAM, CONSUMER_GROUP)
 
     async def _signal_loop(self):
         log.info("trader-options.signal_loop_start")

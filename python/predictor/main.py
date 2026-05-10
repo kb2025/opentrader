@@ -15,7 +15,7 @@ import structlog
 from urllib.parse import urlparse, urlunparse, quote
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 from shared.envelope import SignalPayload
 from notifier.agentmail import Notifier
 
@@ -154,13 +154,7 @@ class PredictorAgent(BaseAgent):
         log.error("predictor.db_connect_failed")
 
     async def _ensure_consumer_group(self):
-        try:
-            await self.redis.xgroup_create(
-                CMD_STREAM, CONSUMER_GROUP, id="$", mkstream=True
-            )
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                log.warning("predictor.group_create", error=str(e))
+        await ensure_consumer_group(self.redis, CMD_STREAM, CONSUMER_GROUP)
 
     async def _command_loop(self):
         log.info("predictor.command_loop_start")

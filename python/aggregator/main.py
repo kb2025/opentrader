@@ -13,7 +13,7 @@ import os
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 from shared.mcp_client import get_uw_ticker_flow, get_uw_darkpool
 from .combiner import build_intelligence, fetch_yfinance
 from .models import TickerIntelligence
@@ -54,13 +54,7 @@ class AggregatorAgent(BaseAgent):
 
     async def _ensure_groups(self):
         for stream in (TICKS_STREAM, SCANNER_STREAM):
-            try:
-                await self.redis.xgroup_create(
-                    stream, AGG_GROUP, id="$", mkstream=True
-                )
-            except Exception as e:
-                if "BUSYGROUP" not in str(e):
-                    log.warning("aggregator.group_error", stream=stream, error=str(e))
+            await ensure_consumer_group(self.redis, stream, AGG_GROUP)
 
     # ── Loop 1: Consume market.ticks → cache sentiment per ticker ─────────────
 

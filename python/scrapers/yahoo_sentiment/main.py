@@ -15,7 +15,7 @@ import asyncpg
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 from .scorer import score_ticker, score_label
 
 log = structlog.get_logger("scraper-yahoo-sentiment")
@@ -62,11 +62,7 @@ class YahooSentimentAgent(BaseAgent):
         )
 
     async def _ensure_group(self):
-        try:
-            await self.redis.xgroup_create(CMD_STREAM, CONSUMER_GROUP, id="$", mkstream=True)
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                log.warning("yahoo-sentiment.group_error", error=str(e))
+        await ensure_consumer_group(self.redis, CMD_STREAM, CONSUMER_GROUP)
 
     async def _command_loop(self):
         log.info("yahoo-sentiment.command_loop_start")

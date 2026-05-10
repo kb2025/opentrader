@@ -16,7 +16,7 @@ import asyncpg
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 from notifier.agentmail import Notifier
 from broker_gateway.registry import BrokerRegistry
 from scheduler.calendar import now_et
@@ -112,16 +112,8 @@ class ReviewAgent(BaseAgent):
     # ── Consumer groups ───────────────────────────────────────────────────────
 
     async def _ensure_groups(self):
-        for stream, group in [
-            (ORD_STREAM, ORD_GROUP),
-            (CMD_STREAM, CMD_GROUP),
-        ]:
-            try:
-                # id="0" so a fresh group replays all unprocessed messages from the start
-                await self.redis.xgroup_create(stream, group, id="0", mkstream=True)
-            except Exception as e:
-                if "BUSYGROUP" not in str(e):
-                    log.warning("review-agent.group_create", stream=stream, error=str(e))
+        for stream, group in [(ORD_STREAM, ORD_GROUP), (CMD_STREAM, CMD_GROUP)]:
+            await ensure_consumer_group(self.redis, stream, group)
 
     # ── Orders loop — records trades to DB ───────────────────────────────────
 

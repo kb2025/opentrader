@@ -13,7 +13,7 @@ from typing import Optional
 import asyncpg
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 from .scraper import OvtlyrScraper
 
 log = structlog.get_logger("scraper-ovtlyr")
@@ -78,13 +78,7 @@ class OvtlyrScraperAgent(BaseAgent):
             log.error("scraper-ovtlyr.init_failed", error=str(e))
 
     async def _ensure_group(self):
-        try:
-            await self.redis.xgroup_create(
-                CMD_STREAM, CONSUMER_GROUP, id="$", mkstream=True
-            )
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                log.warning("scraper-ovtlyr.group_error", error=str(e))
+        await ensure_consumer_group(self.redis, CMD_STREAM, CONSUMER_GROUP)
 
     async def _command_loop(self):
         log.info("scraper-ovtlyr.command_loop_start")

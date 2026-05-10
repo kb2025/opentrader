@@ -1,7 +1,5 @@
 """Alpha Vantage News Sentiment Scraper Agent"""
 import asyncio
-import base64
-import hashlib
 import json
 import os
 from urllib.parse import urlparse, unquote
@@ -10,20 +8,14 @@ import asyncpg
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
+from shared.crypto import decrypt_secret
 from .scraper import fetch_news_sentiment
 
 log = structlog.get_logger("scraper-news")
 
-DB_URL     = os.getenv("DB_URL", "")
-_ENV_KEY   = os.getenv("ALPHA_VANTAGE_API_KEY", "")
-_SECRET_KEY = os.getenv("SECRET_KEY", "change-me-please-set-SECRET_KEY-in-env")
-
-
-def _decrypt(token: str) -> str:
-    from cryptography.fernet import Fernet
-    raw = hashlib.sha256(_SECRET_KEY.encode()).digest()
-    return Fernet(base64.urlsafe_b64encode(raw)).decrypt(token.encode()).decode()
+DB_URL   = os.getenv("DB_URL", "")
+_ENV_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 
 
 class NewsSentimentAgent(BaseAgent):
@@ -42,7 +34,7 @@ class NewsSentimentAgent(BaseAgent):
                 "SELECT encrypted_value FROM user_secrets WHERE key='ALPHA_VANTAGE_API_KEY' LIMIT 1"
             )
             if row:
-                return _decrypt(row["encrypted_value"])
+                return decrypt_secret(row["encrypted_value"])
         except Exception as e:
             log.warning("news_sentiment.key_load_error", error=str(e))
         return ""
@@ -64,13 +56,7 @@ class NewsSentimentAgent(BaseAgent):
                 password=unquote(p.password) if p.password else None,
                 database=p.path.lstrip("/"),
             )
-        try:
-            await self.redis.xgroup_create(
-                STREAMS["commands"], GROUPS["scraper-news"], id="$", mkstream=True
-            )
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                log.warning("news_sentiment.group_error", error=str(e))
+        await ensure_consumer_group(self.redis, STREAMS["commands"], GROUPS["scraper-news"])
         await asyncio.gather(self.heartbeat_loop(), self._command_loop())
 
     async def _command_loop(self):

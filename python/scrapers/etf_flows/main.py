@@ -8,7 +8,7 @@ import asyncpg
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 from .scraper import fetch_etf_flows
 
 log = structlog.get_logger("scraper-etf-flows")
@@ -47,13 +47,7 @@ class ETFFlowsAgent(BaseAgent):
         await asyncio.gather(self.heartbeat_loop(), self._command_loop())
 
     async def _ensure_group(self):
-        try:
-            await self.redis.xgroup_create(
-                STREAMS["commands"], GROUPS["scraper-etf-flows"], id="$", mkstream=True
-            )
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                log.warning("etf_flows.group_create_error", error=str(e))
+        await ensure_consumer_group(self.redis, STREAMS["commands"], GROUPS["scraper-etf-flows"])
 
     async def _command_loop(self):
         consumer = os.getenv("HOSTNAME", "scraper-etf-flows-0")

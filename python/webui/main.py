@@ -110,17 +110,13 @@ def _verify_jwt(token: str) -> dict | None:
     except Exception:
         return None
 
-def _fernet():
-    """Return a Fernet instance keyed from SECRET_KEY (URL-safe base64, 32 bytes)."""
-    from cryptography.fernet import Fernet
-    raw = hashlib.sha256(SECRET_KEY.encode()).digest()
-    return Fernet(base64.urlsafe_b64encode(raw))
+from shared.crypto import encrypt_secret as _encrypt_secret_fn, decrypt_secret as _decrypt_secret_fn
 
 def _encrypt_secret(value: str) -> str:
-    return _fernet().encrypt(value.encode()).decode()
+    return _encrypt_secret_fn(value, SECRET_KEY)
 
 def _decrypt_secret(token: str) -> str:
-    return _fernet().decrypt(token.encode()).decode()
+    return _decrypt_secret_fn(token, SECRET_KEY)
 
 # ── Auth DB helpers ───────────────────────────────────────────────────────────
 

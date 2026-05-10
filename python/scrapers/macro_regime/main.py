@@ -8,7 +8,7 @@ import asyncpg
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 from .scraper import compute_macro_regime
 
 log = structlog.get_logger("scraper-macro-regime")
@@ -40,13 +40,7 @@ class MacroRegimeAgent(BaseAgent):
                 password=unquote(p.password) if p.password else None,
                 database=p.path.lstrip("/"),
             )
-        try:
-            await self.redis.xgroup_create(
-                STREAMS["commands"], GROUPS["scraper-macro-regime"], id="$", mkstream=True
-            )
-        except Exception as e:
-            if "BUSYGROUP" not in str(e):
-                log.warning("macro_regime.group_error", error=str(e))
+        await ensure_consumer_group(self.redis, STREAMS["commands"], GROUPS["scraper-macro-regime"])
         await asyncio.gather(self.heartbeat_loop(), self._command_loop())
 
     async def _command_loop(self):
