@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.87] - 2026-05-10
+
+### Fixed
+- **mcp-yahoo missing Dockerfile.http and run_http.py** — `podman-compose up` was failing with "Dockerfile not found in ./mcp/yahoo-finance-mcp" and "image not known" on fresh installs; added `Dockerfile.http` (uv-based build, exposes port 8000) and `run_http.py` (starts FastMCP with `transport="streamable-http"` on `FASTMCP_HOST`/`FASTMCP_PORT`) so the service builds and serves correctly at `http://ot-mcp-yahoo:8000/mcp`
+
 ## [3.6.86] - 2026-05-10
 
 ### Fixed
