@@ -310,10 +310,6 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:var(--green)"></span>
         Equity Dividend Income
       </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-shadow-account')" data-page="page-shadow-account">
-        <span class="nav-dot" style="background:#a78bfa"></span>
-        Equities Hindsight
-      </div>
     </div>
     <div class="nav-group" data-group="options">
       <div class="nav-label">Options</div>
@@ -362,6 +358,10 @@ select option{background:var(--surface2)}
       <div class="nav-item" draggable="true" onclick="navigate('page-macro-hub')" data-page="page-macro-hub">
         <span class="nav-dot" style="background:#f59e0b"></span>
         Macro Hub
+      </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-shadow-account')" data-page="page-shadow-account">
+        <span class="nav-dot" style="background:#a78bfa"></span>
+        Trading Hindsights
       </div>
       <div class="nav-parent" id="nav-parent-sectorinsight" onclick="_siNavToggle()">
         <span class="nav-dot" style="background:#a78bfa"></span>
@@ -3489,13 +3489,13 @@ select option{background:var(--surface2)}
     </div><!-- /page-plan-optimizer -->
 
     <!-- ════════════════════════════════════════
-         PAGE: Equities Hindsight
+         PAGE: Trading Hindsights
     ════════════════════════════════════════ -->
     <div class="page" id="page-shadow-account">
 
       <!-- Controls -->
       <div class="card" style="padding:18px 20px;margin-bottom:16px">
-        <div style="font-size:14px;font-weight:600;color:var(--fg);margin-bottom:4px">Equities Hindsight</div>
+        <div style="font-size:14px;font-weight:600;color:var(--fg);margin-bottom:4px">Trading Hindsights</div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:14px">What did discipline lapses cost? Noise trades · Early exits · Late exits · Overtrading</div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
           <div>
@@ -4186,7 +4186,7 @@ const PAGE_TITLES = {
   'page-plan-assignment':    'Strategy Assignment',
   'page-plan-optimizer':    'Portfolio Optimizer',
   'page-equities-sector-leaders': 'Sector Leaders',
-  'page-shadow-account':    'Equities Hindsight',
+  'page-shadow-account':    'Trading Hindsights',
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
   'page-resources-groups':     'Market Groups',
