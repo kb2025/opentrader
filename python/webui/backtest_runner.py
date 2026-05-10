@@ -412,7 +412,7 @@ BLU  = "#60a5fa"
 YEL  = "#fbbf24"
 
 
-def _build_chart(df: pd.DataFrame, trade_log: list, equity_curve: list, ticker: str) -> str:
+def _build_chart(df: pd.DataFrame, trade_log: list, equity_curve: list, ticker: str, strategy_label: str = "EMA 10/21 Crossover") -> str:
     """Build a custom chart from OHLCV + trade log + equity curve. Returns base64 PNG."""
     try:
         import matplotlib.gridspec as gridspec
@@ -449,7 +449,7 @@ def _build_chart(df: pd.DataFrame, trade_log: list, equity_curve: list, ticker: 
 
         ax1.set_ylabel("Price", color=MUT, fontsize=9)
         ax1.tick_params(colors=MUT, labelsize=8)
-        ax1.set_title(f"{ticker} — Backtest (EMA 10/21 Crossover)", color=FG,
+        ax1.set_title(f"{ticker} — Backtest ({strategy_label})", color=FG,
                       fontsize=11, pad=8)
         for spine in ax1.spines.values():
             spine.set_edgecolor(MUT)
@@ -712,7 +712,8 @@ def run_backtest(params: dict) -> dict:
     # Chart and monthly returns require the full dataframe — add here, not in _run_on_df
     result["monthly_returns"] = _build_monthly_returns(df)
     result["chart_png_b64"]   = _build_chart(
-        df, result["trade_log"], result["equity_curve"], ticker
+        df, result["trade_log"], result["equity_curve"], ticker,
+        strategy_label=result.get("strategy_label", "Backtest"),
     )
     return result
 

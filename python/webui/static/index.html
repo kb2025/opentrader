@@ -11355,7 +11355,7 @@ function _renderBtResults(r) {
   const summaryTab = `
     <div data-bt-tab="summary">
       <div style="display:flex;align-items:center;margin-bottom:12px">
-        <span style="font-size:12px;color:var(--muted)">Strategy Performance${engineBadge}</span>
+        <span style="font-size:12px;color:var(--muted)">${r.strategy_label || 'Strategy'} Performance${engineBadge}</span>
         ${r.ticker ? `<span style="font-size:11px;color:var(--dim);margin-left:8px">· ${r.ticker}</span>` : ''}
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
@@ -12360,6 +12360,19 @@ async function loadOvtlyrMarketSignals() {
 // ══════════════════════════════════════════════════════════════════════════════
 let _ovtlyrCurrentList = 'bull';
 
+// ── Shared OVTLYR signal row renderer (used by Trading Dashboard + Options Trader) ──
+function _ovtlyrSignalRow(e) {
+  const isBuy  = (e.signal || '').toLowerCase() === 'buy';
+  const sigChip = e.signal
+    ? `<span class="chip ${isBuy ? 'chip-green' : 'chip-red'}" style="font-size:10px">${e.signal}</span>`
+    : '—';
+  const vol      = e.avg_vol_30d ? Number(e.avg_vol_30d).toLocaleString() : '—';
+  const price    = e.last_price  ? `$${parseFloat(e.last_price).toFixed(2)}`  : '—';
+  const sigDate  = e.signal_date ? e.signal_date.toString().slice(0,10) : '—';
+  const name     = (e.name || '—').substring(0, 30) + ((e.name||'').length > 30 ? '…' : '');
+  return { isBuy, sigChip, vol, price, sigDate, name };
+}
+
 function ovtlyrSelectList(listType) {
   _ovtlyrCurrentList = listType;
   // Update tab styles
@@ -12387,14 +12400,7 @@ async function loadOvtlyrListSignals(listType) {
     }
     const ovtOrder = _colOrder('td_ovt_col', _TD_OVT_DEFAULTS);
     tbody.innerHTML = entries.map(e => {
-      const isBuy = (e.signal || '').toLowerCase() === 'buy';
-      const sigChip = e.signal
-        ? `<span class="chip ${isBuy ? 'chip-green' : 'chip-red'}" style="font-size:10px">${e.signal}</span>`
-        : '—';
-      const vol     = e.avg_vol_30d ? Number(e.avg_vol_30d).toLocaleString() : '—';
-      const price   = e.last_price ? `$${parseFloat(e.last_price).toFixed(2)}` : '—';
-      const sigDate = e.signal_date ? e.signal_date.toString().slice(0,10) : '—';
-      const name    = (e.name || '—').substring(0, 30) + ((e.name||'').length > 30 ? '…' : '');
+      const { sigChip, vol, price, sigDate, name } = _ovtlyrSignalRow(e);
       const cells = {
         ticker:      `<td><strong>${e.ticker || '—'}</strong></td>`,
         name:        `<td style="font-size:11px;color:var(--muted)">${name}</td>`,

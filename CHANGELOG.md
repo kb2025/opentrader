@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.90] - 2026-05-10
+
+### Added
+- **Dashboard enhancements (Wave 3)** — backtest strategy label, OVTLYR consolidation:
+  - **Backtest chart and results** now show the correct strategy name (`EMA 10/21 Crossover`, `RSI Mean Reversion`, `Volatility Breakout (ATR)`) in both the PNG chart title and the results panel header; `_build_chart` accepts `strategy_label` param
+  - **`_ovtlyrSignalRow()` shared helper** — extracted duplicated cell-building logic from `loadOvtlyrListSignals` into a reusable function, reducing duplication between Trading Dashboard and Options Trader OVTLYR signal panels
+
 ## [3.6.89] - 2026-05-10
 
 ### Added
