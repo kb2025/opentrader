@@ -19,7 +19,7 @@ from typing import Optional
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, get_redis
 from shared.envelope import OrderEventPayload
 from shared.mcp_client import get_tv_indicators, tv_confirms_direction, get_avg_volume
 from shared.exclusions import is_excluded
@@ -125,18 +125,7 @@ class EquityTrader(BaseAgent):
 
     async def run(self):
         await self.setup()
-
-        import redis.asyncio as aioredis
-        self.redis = await aioredis.from_url(
-            REDIS_URL,
-            encoding="utf-8",
-            decode_responses=True,
-            socket_connect_timeout=10,
-            socket_timeout=15,
-            retry_on_timeout=True,
-            health_check_interval=30,
-        )
-
+        self.redis = await get_redis()
         await self._ensure_consumer_group()
         log.info("trader-equity.starting", mode=TRADE_MODE_DEFAULT)
 
@@ -405,9 +394,7 @@ class EquityTrader(BaseAgent):
                         ticker=ticker, account=account_label)
             return
 
-        self._positions_today.add(ticker)
-
-        # ── 5. Publish order events ───────────────────────────���───────────────
+        # ── 5. Publish order events ───────────────────────────────────────────
         for r in results:
             acct   = r.get("account_label", account_label)
             broker = r.get("broker", assignment["broker"])
@@ -444,6 +431,9 @@ class EquityTrader(BaseAgent):
             reject_reason = "" if event_type == "fill" else _friendly_error(
                 data.get("reject_reason") or data.get("reason") or status or ""
             )
+
+            if event_type == "fill":
+                self._positions_today.add(ticker)
 
             payload = OrderEventPayload(
                 event_type  = event_type,
@@ -533,7 +523,7 @@ class EquityTrader(BaseAgent):
         Higher confidence → larger position (up to max).
         """
         if price <= 0:
-            return 1
+            return 0  # caller checks qty < 1 and skips order
         dollars = max_pos_usd * confidence
         qty = math.floor(dollars / price)
         return max(qty, 1)

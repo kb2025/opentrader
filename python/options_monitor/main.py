@@ -30,7 +30,7 @@ import asyncpg
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, REDIS_URL
+from shared.redis_client import STREAMS, REDIS_URL, get_redis
 from shared.mcp_client import call_mcp_tool, get_tv_indicators
 from scheduler.calendar import is_trading_day, now_et
 
@@ -754,12 +754,7 @@ class OptionsMonitor(BaseAgent):
 
     async def run(self):
         await self.setup()
-        import redis.asyncio as aioredis
-        self.redis = await aioredis.from_url(
-            REDIS_URL, encoding="utf-8", decode_responses=True,
-            socket_connect_timeout=10, socket_timeout=20,
-            retry_on_timeout=True, health_check_interval=30,
-        )
+        self.redis = await get_redis()
         self._account_names = _load_account_names()
         log.info("options_monitor.starting")
         await asyncio.gather(
@@ -848,25 +843,25 @@ class OptionsMonitor(BaseAgent):
                 if last_cp is not None and ep is not None and qty is not None:
                     pnl = round((last_cp - ep) * abs(qty) * 100, 2)
 
-                await pool.execute(
-                    """UPDATE option_positions
-                       SET status='closed', closed_at=NOW(), close_reason='not_in_scan',
-                           total_realized_pnl=$2, updated_at=NOW()
-                       WHERE id=$1""",
-                    row["id"], pnl,
-                )
-
-                # Write a closed event so the trading log has a price + P&L record
-                await pool.execute(
-                    """INSERT INTO option_trade_log
-                       (position_id, contract_symbol, underlying, event_type,
-                        contract_price, realized_pnl, notes)
-                       VALUES ($1,$2,$3,'closed',$4::NUMERIC,$5::NUMERIC,$6)""",
-                    row["id"], row["contract_symbol"], row["underlying"],
-                    last_cp, pnl,
-                    f"Position closed — no longer in broker scan (last price: "
-                    f"{'${:.2f}'.format(last_cp) if last_cp else 'unknown'})",
-                )
+                async with pool.acquire() as conn:
+                    async with conn.transaction():
+                        await conn.execute(
+                            """UPDATE option_positions
+                               SET status='closed', closed_at=NOW(), close_reason='not_in_scan',
+                                   total_realized_pnl=$2, updated_at=NOW()
+                               WHERE id=$1""",
+                            row["id"], pnl,
+                        )
+                        await conn.execute(
+                            """INSERT INTO option_trade_log
+                               (position_id, contract_symbol, underlying, event_type,
+                                contract_price, realized_pnl, notes)
+                               VALUES ($1,$2,$3,'closed',$4::NUMERIC,$5::NUMERIC,$6)""",
+                            row["id"], row["contract_symbol"], row["underlying"],
+                            last_cp, pnl,
+                            f"Position closed — no longer in broker scan (last price: "
+                            f"{'${:.2f}'.format(last_cp) if last_cp else 'unknown'})",
+                        )
 
                 log.info("options_monitor.position_closed_not_seen",
                          contract=row["contract_symbol"], account=row["account_label"],
@@ -1150,9 +1145,14 @@ class OptionsMonitor(BaseAgent):
                                      current_underlying, levels, existing)
 
         # ── Generate/refresh chart (async, don't block scan) ─────────────────
-        asyncio.create_task(
+        task = asyncio.create_task(
             self._refresh_chart(pool, pos_id, contract_symbol, underlying,
                                 underlying_entry, atr, expiration_date, entry_date)
+        )
+        task.add_done_callback(
+            lambda t: log.warning("options_monitor.chart_task_error",
+                                  contract=contract_symbol,
+                                  error=str(t.exception())) if not t.cancelled() and t.exception() else None
         )
 
     async def _check_alerts(

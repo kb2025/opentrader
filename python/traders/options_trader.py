@@ -22,7 +22,7 @@ from typing import Optional
 import structlog
 
 from shared.base_agent import BaseAgent
-from shared.redis_client import STREAMS, GROUPS, REDIS_URL
+from shared.redis_client import STREAMS, GROUPS, REDIS_URL, get_redis
 from shared.envelope import OrderEventPayload
 from shared.mcp_client import get_tv_indicators, tv_confirms_direction, get_avg_volume
 from shared.assignments import load_active_assignments
@@ -63,18 +63,7 @@ class OptionsTrader(BaseAgent):
 
     async def run(self):
         await self.setup()
-
-        import redis.asyncio as aioredis
-        self.redis = await aioredis.from_url(
-            REDIS_URL,
-            encoding="utf-8",
-            decode_responses=True,
-            socket_connect_timeout=10,
-            socket_timeout=15,
-            retry_on_timeout=True,
-            health_check_interval=30,
-        )
-
+        self.redis = await get_redis()
         await self._ensure_consumer_group()
         log.info("trader-options.starting", mode=TRADE_MODE_DEFAULT)
 
@@ -299,23 +288,49 @@ class OptionsTrader(BaseAgent):
                         ticker=ticker, account=account_label)
             return
 
-        self._positions_today.add(ticker)
-
         # ── Publish order events ───────────────────────────────────────────────
         for r in results:
+            acct   = r.get("account_label", account_label)
+            broker = r.get("broker", assignment["broker"])
+            mode   = r.get("mode", trade_mode)
+
             if r.get("status") == "error":
+                reject_reason = r.get("error") or "broker rejected"
                 log.warning("trader-options.order_rejected",
-                            ticker=ticker, error=r.get("error"))
+                            ticker=ticker, error=reject_reason)
+                await self.redis.xadd(
+                    ORD_STREAM,
+                    {
+                        "event_type":    "reject",
+                        "account_id":    acct,
+                        "broker":        broker,
+                        "mode":          mode,
+                        "ticker":        contract_symbol,
+                        "asset_class":   "options",
+                        "direction":     direction,
+                        "qty":           str(MAX_CONTRACTS),
+                        "price":         str(price or ""),
+                        "order_id":      "",
+                        "strategy":      strategy_name,
+                        "reject_reason": reject_reason[:80],
+                    },
+                    maxlen=10_000,
+                )
                 continue
 
-            acct     = r.get("account_label", account_label)
-            broker   = r.get("broker", assignment["broker"])
-            mode     = r.get("mode", trade_mode)
-            rdata    = r.get("data", {})
-            order_id = str(rdata.get("id", rdata.get("orderId", request_id)))
+            rdata      = r.get("data", {})
+            order_id   = str(rdata.get("id", rdata.get("orderId", request_id)))
+            status     = rdata.get("status", "ok")
+            event_type = (
+                "fill" if status in ("ok", "filled", "open", "accepted", "pending_new", "new")
+                else "reject"
+            )
+
+            if event_type == "fill":
+                self._positions_today.add(ticker)
 
             payload = OrderEventPayload(
-                event_type  = "fill",
+                event_type  = event_type,
                 account_id  = acct,
                 broker      = broker,
                 mode        = mode,
@@ -346,7 +361,8 @@ class OptionsTrader(BaseAgent):
             )
             log.info("trader-options.order_submitted",
                      ticker=ticker, contract=contract_symbol,
-                     account=acct, strategy=strategy_name, order_id=order_id)
+                     account=acct, strategy=strategy_name,
+                     order_id=order_id, event_type=event_type)
 
     async def _get_quote(self, ticker: str, trade_mode: str) -> dict:
         """Fetch full quote (last, bid, ask) via broker gateway. Returns {} on failure."""
