@@ -5985,6 +5985,21 @@ class BacktestRunBody(BaseModel):
     ticker:          str
     period:          str   = "2y"
     initial_capital: float = 10_000.0
+    strategy:        str   = "ema_crossover"
+    direction:       str   = "long"
+    stop_pct:        float = 1.5
+    tp_pct:          float = 3.0
+    confidence:      float = 0.70
+    max_pos:         float = 500.0
+    # RSI strategy params
+    rsi_period:  int   = 14
+    oversold:    float = 30.0
+    overbought:  float = 70.0
+    # Volatility breakout params
+    lookback:  int   = 20
+    atr_period: int  = 14
+    atr_mult:  float = 1.5
+    stop_atr:  float = 2.0
     token:           str   = ""
 
 
@@ -6232,17 +6247,25 @@ def _build_trades_pdf(trade_log: list, results: dict, family_id: str,
 
 @app.post("/api/backtest/quick")
 async def quick_backtest(body: BacktestRunBody):
-    """Run a backtest without a saved strategy version (used by AI Engineer panel)."""
+    """Run a backtest without a saved strategy version (used by AI Engineer + Backtester page)."""
     check_token(body.token)
     params = {
         "ticker":          body.ticker,
         "period":          body.period,
-        "stop_pct":        1.5,
-        "tp_pct":          3.0,
-        "confidence":      0.70,
-        "direction":       "long",
-        "max_pos":         500,
+        "strategy":        body.strategy,
+        "stop_pct":        body.stop_pct,
+        "tp_pct":          body.tp_pct,
+        "confidence":      body.confidence,
+        "direction":       body.direction,
+        "max_pos":         body.max_pos,
         "initial_capital": body.initial_capital,
+        "rsi_period":      body.rsi_period,
+        "oversold":        body.oversold,
+        "overbought":      body.overbought,
+        "lookback":        body.lookback,
+        "atr_period":      body.atr_period,
+        "atr_mult":        body.atr_mult,
+        "stop_atr":        body.stop_atr,
     }
     loop = asyncio.get_event_loop()
     try:
@@ -11328,6 +11351,196 @@ async def get_daily_pnl(token: str = ""):
         "limit_enabled":  max_loss > 0,
         "circuit_broken": circuit_broken,
         "circuit_reason": circuit_reason,
+    }
+
+
+@app.get("/api/trading/daily-loss-history")
+async def get_daily_loss_history(days: int = 14, token: str = ""):
+    """Return per-day P&L history from daily_loss_log for sparkline + trend."""
+    check_token(token)
+    pool  = await _get_db_pool()
+    rows  = await pool.fetch(
+        """SELECT log_date, SUM(realized_pnl) AS pnl, SUM(trade_count) AS trades
+           FROM daily_loss_log
+           WHERE log_date >= CURRENT_DATE - ($1 || ' days')::INTERVAL
+           GROUP BY log_date
+           ORDER BY log_date ASC""",
+        str(days),
+    )
+    return {
+        "days": [
+            {
+                "date":   r["log_date"].isoformat(),
+                "pnl":    float(r["pnl"] or 0),
+                "trades": int(r["trades"] or 0),
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/review/recommendations")
+async def get_review_recommendations(limit: int = 5, token: str = ""):
+    """Return latest discipline review recommendations from review_log."""
+    check_token(token)
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT id, ts, trade_count, findings, recommendations, applied
+           FROM review_log
+           ORDER BY ts DESC LIMIT $1""",
+        limit,
+    )
+    return {
+        "reviews": [
+            {
+                "id":              str(r["id"]),
+                "ts":              r["ts"].isoformat(),
+                "trade_count":     r["trade_count"],
+                "findings":        r["findings"],
+                "recommendations": r["recommendations"] or [],
+                "applied":         r["applied"],
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/polymarket/summary")
+async def get_polymarket_summary(token: str = ""):
+    """Return Polymarket portfolio summary: open positions, total exposure, unrealized P&L."""
+    check_token(token)
+    pool = await _get_db_pool()
+    open_rows = await pool.fetch(
+        """SELECT id, market_question, outcome, side, qty, entry_price,
+                  current_price, status, ts
+           FROM polymarket_positions
+           WHERE status = 'open'
+           ORDER BY ts DESC"""
+    )
+    closed_rows = await pool.fetch(
+        """SELECT COALESCE(SUM(pnl), 0) AS total_pnl, COUNT(*) AS count
+           FROM polymarket_positions
+           WHERE status IN ('closed','settled') AND pnl IS NOT NULL"""
+    )
+    positions = []
+    total_exposure  = 0.0
+    unrealized_pnl  = 0.0
+    for r in open_rows:
+        entry   = float(r["entry_price"] or 0)
+        current = float(r["current_price"] or entry)
+        qty     = float(r["qty"] or 0)
+        upnl    = (current - entry) * qty if r["side"] == "buy" else (entry - current) * qty
+        exposure = entry * qty
+        total_exposure  += exposure
+        unrealized_pnl  += upnl
+        positions.append({
+            "id":              str(r["id"]),
+            "market_question": r["market_question"],
+            "outcome":         r["outcome"],
+            "side":            r["side"],
+            "qty":             float(qty),
+            "entry_price":     entry,
+            "current_price":   current,
+            "unrealized_pnl":  round(upnl, 4),
+            "exposure":        round(exposure, 4),
+            "ts":              r["ts"].isoformat(),
+        })
+    closed = dict(closed_rows[0]) if closed_rows else {"total_pnl": 0, "count": 0}
+    return {
+        "open_count":      len(positions),
+        "total_exposure":  round(total_exposure, 4),
+        "unrealized_pnl":  round(unrealized_pnl, 4),
+        "realized_pnl":    round(float(closed["total_pnl"] or 0), 4),
+        "closed_count":    int(closed["count"] or 0),
+        "positions":       positions,
+    }
+
+
+@app.get("/api/polymarket/trades")
+async def get_polymarket_trades(limit: int = 50, token: str = ""):
+    """Return recent Polymarket trade history."""
+    check_token(token)
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT pt.id, pt.ts, pt.action, pt.qty, pt.price, pt.pnl,
+                  pp.market_question, pp.outcome, pp.side
+           FROM polymarket_trades pt
+           LEFT JOIN polymarket_positions pp ON pp.id = pt.position_id
+           ORDER BY pt.ts DESC LIMIT $1""",
+        limit,
+    )
+    return {
+        "trades": [
+            {
+                "id":              str(r["id"]),
+                "ts":              r["ts"].isoformat(),
+                "action":          r["action"],
+                "market_question": r["market_question"],
+                "outcome":         r["outcome"],
+                "side":            r["side"],
+                "qty":             float(r["qty"] or 0),
+                "price":           float(r["price"] or 0),
+                "pnl":             float(r["pnl"]) if r["pnl"] is not None else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/market/etf-flows/anomalies")
+async def get_etf_flow_anomalies(threshold: float = 2.0, token: str = ""):
+    """
+    Return ETFs with flow_ratio z-score above threshold (anomalous inflows/outflows).
+    Uses 30-day rolling mean + stddev per ticker. threshold=2.0 means >2 sigma.
+    """
+    check_token(token)
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """WITH stats AS (
+               SELECT ticker, name, category,
+                      AVG(flow_ratio) AS mean_ratio,
+                      STDDEV(flow_ratio) AS std_ratio
+               FROM etf_flow_snapshots
+               WHERE ts >= NOW() - INTERVAL '30 days'
+               GROUP BY ticker, name, category
+               HAVING STDDEV(flow_ratio) > 0
+           ),
+           latest AS (
+               SELECT DISTINCT ON (ticker)
+                   ticker, flow_ratio, change_pct, price, ts
+               FROM etf_flow_snapshots
+               ORDER BY ticker, ts DESC
+           )
+           SELECT l.ticker, s.name, s.category,
+                  l.flow_ratio, l.change_pct, l.price,
+                  s.mean_ratio, s.std_ratio,
+                  (l.flow_ratio - s.mean_ratio) / s.std_ratio AS z_score,
+                  l.ts
+           FROM latest l
+           JOIN stats s USING (ticker)
+           WHERE ABS((l.flow_ratio - s.mean_ratio) / s.std_ratio) >= $1
+           ORDER BY ABS((l.flow_ratio - s.mean_ratio) / s.std_ratio) DESC
+           LIMIT 20""",
+        threshold,
+    )
+    return {
+        "anomalies": [
+            {
+                "ticker":      r["ticker"],
+                "name":        r["name"],
+                "category":    r["category"],
+                "flow_ratio":  float(r["flow_ratio"] or 1),
+                "change_pct":  float(r["change_pct"] or 0),
+                "price":       float(r["price"] or 0),
+                "mean_ratio":  round(float(r["mean_ratio"] or 1), 3),
+                "std_ratio":   round(float(r["std_ratio"] or 0), 3),
+                "z_score":     round(float(r["z_score"] or 0), 2),
+                "ts":          r["ts"].isoformat(),
+                "direction":   "inflow" if float(r["flow_ratio"] or 1) > float(r["mean_ratio"] or 1) else "outflow",
+            }
+            for r in rows
+        ],
+        "threshold": threshold,
     }
 
 

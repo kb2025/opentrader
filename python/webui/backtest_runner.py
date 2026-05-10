@@ -159,6 +159,220 @@ class OpenTraderStrategy(bt.Strategy):
                 self.sell(size=size); self._pending = True
 
 
+# ── RSI Mean-Reversion Strategy ───────────────────────────────────────────────
+
+class RSIMeanReversionStrategy(bt.Strategy):
+    """
+    RSI mean-reversion: buy oversold (RSI < oversold_level), sell when RSI recovers
+    above exit_level. Short when RSI > overbought_level.
+    """
+    params = dict(
+        rsi_period=14,
+        oversold=30,
+        overbought=70,
+        exit_level=50,
+        stop_pct=2.0,
+        tp_pct=4.0,
+        confidence=0.70,
+        max_pos=500.0,
+        direction="long",
+    )
+
+    def __init__(self):
+        self.rsi        = bt.ind.RSI(period=self.p.rsi_period)
+        self.trade_log: list[dict] = []
+        self._pending   = False
+        self._entry_px  = None
+        self._entry_dt  = None
+        self._entry_dir = None
+        self._entry_qty = 0
+
+    def notify_order(self, order):
+        if order.status in (order.Submitted, order.Accepted):
+            return
+        if order.status in (order.Canceled, order.Margin, order.Rejected):
+            self._pending = False
+            return
+        if order.status == order.Completed:
+            self._pending = False
+            if self.position.size != 0 and self._entry_px is None:
+                self._entry_px  = order.executed.price
+                self._entry_dt  = self.data.datetime.date(0).isoformat()
+                self._entry_dir = "long" if order.isbuy() else "short"
+                self._entry_qty = int(abs(order.executed.size))
+
+    def notify_trade(self, trade):
+        if not trade.isclosed:
+            return
+        qty      = self._entry_qty or 1
+        entry_px = self._entry_px or trade.price
+        pnl_pct  = trade.pnl / max(abs(entry_px * qty), 1e-8) * 100
+        self.trade_log.append({
+            "entry_date":  self._entry_dt or "",
+            "exit_date":   self.data.datetime.date(0).isoformat(),
+            "ticker":      self.data._name,
+            "direction":   self._entry_dir or "long",
+            "entry_price": round(entry_px, 4),
+            "exit_price":  round(self.data.close[0], 4),
+            "qty":         qty,
+            "pnl":         round(trade.pnl, 2),
+            "pnl_pct":     round(pnl_pct, 2),
+            "exit_reason": getattr(self, "_last_exit_reason", "signal"),
+        })
+        self._entry_px  = None
+        self._entry_dt  = None
+        self._entry_dir = None
+        self._entry_qty = 0
+
+    def _size_for(self, price: float) -> int:
+        return max(1, int(self.p.max_pos * self.p.confidence / price))
+
+    def next(self):
+        if self._pending:
+            return
+        price    = self.data.close[0]
+        pos      = self.position.size
+        rsi      = self.rsi[0]
+        stop     = self.p.stop_pct / 100
+        tp       = self.p.tp_pct   / 100
+        direction = self.p.direction
+
+        if pos > 0 and self._entry_px is not None:
+            if price <= self._entry_px * (1 - stop):
+                self._last_exit_reason = "stop_loss"
+                self.close(); self._pending = True; return
+            if price >= self._entry_px * (1 + tp):
+                self._last_exit_reason = "take_profit"
+                self.close(); self._pending = True; return
+            if rsi >= self.p.exit_level:
+                self._last_exit_reason = "signal_exit"
+                self.close(); self._pending = True; return
+        elif pos < 0 and self._entry_px is not None:
+            if price >= self._entry_px * (1 + stop):
+                self._last_exit_reason = "stop_loss"
+                self.close(); self._pending = True; return
+            if price <= self._entry_px * (1 - tp):
+                self._last_exit_reason = "take_profit"
+                self.close(); self._pending = True; return
+            if rsi <= self.p.exit_level:
+                self._last_exit_reason = "signal_exit"
+                self.close(); self._pending = True; return
+
+        if pos == 0:
+            size = self._size_for(price)
+            if direction in ("long", "both") and rsi < self.p.oversold:
+                self._last_exit_reason = "signal"
+                self.buy(size=size); self._pending = True
+            elif direction in ("short", "both") and rsi > self.p.overbought:
+                self._last_exit_reason = "signal"
+                self.sell(size=size); self._pending = True
+
+
+# ── Volatility Breakout Strategy ───────────────────────────────────────────────
+
+class VolatilityBreakoutStrategy(bt.Strategy):
+    """
+    ATR-based volatility breakout: enter when price breaks above/below
+    the N-day high/low by an ATR multiplier. Exit on reversal or stop.
+    """
+    params = dict(
+        lookback=20,
+        atr_period=14,
+        atr_mult=1.5,
+        stop_atr=2.0,
+        confidence=0.70,
+        max_pos=500.0,
+        direction="long",
+    )
+
+    def __init__(self):
+        self.atr    = bt.ind.ATR(period=self.p.atr_period)
+        self.highest = bt.ind.Highest(self.data.high, period=self.p.lookback)
+        self.lowest  = bt.ind.Lowest(self.data.low,  period=self.p.lookback)
+        self.trade_log: list[dict] = []
+        self._pending   = False
+        self._entry_px  = None
+        self._entry_dt  = None
+        self._entry_dir = None
+        self._entry_qty = 0
+
+    def notify_order(self, order):
+        if order.status in (order.Submitted, order.Accepted):
+            return
+        if order.status in (order.Canceled, order.Margin, order.Rejected):
+            self._pending = False
+            return
+        if order.status == order.Completed:
+            self._pending = False
+            if self.position.size != 0 and self._entry_px is None:
+                self._entry_px  = order.executed.price
+                self._entry_dt  = self.data.datetime.date(0).isoformat()
+                self._entry_dir = "long" if order.isbuy() else "short"
+                self._entry_qty = int(abs(order.executed.size))
+
+    def notify_trade(self, trade):
+        if not trade.isclosed:
+            return
+        qty      = self._entry_qty or 1
+        entry_px = self._entry_px or trade.price
+        pnl_pct  = trade.pnl / max(abs(entry_px * qty), 1e-8) * 100
+        self.trade_log.append({
+            "entry_date":  self._entry_dt or "",
+            "exit_date":   self.data.datetime.date(0).isoformat(),
+            "ticker":      self.data._name,
+            "direction":   self._entry_dir or "long",
+            "entry_price": round(entry_px, 4),
+            "exit_price":  round(self.data.close[0], 4),
+            "qty":         qty,
+            "pnl":         round(trade.pnl, 2),
+            "pnl_pct":     round(pnl_pct, 2),
+            "exit_reason": getattr(self, "_last_exit_reason", "signal"),
+        })
+        self._entry_px  = None
+        self._entry_dt  = None
+        self._entry_dir = None
+        self._entry_qty = 0
+
+    def _size_for(self, price: float) -> int:
+        return max(1, int(self.p.max_pos * self.p.confidence / price))
+
+    def next(self):
+        if self._pending:
+            return
+        price    = self.data.close[0]
+        pos      = self.position.size
+        atr      = self.atr[0]
+        highest  = self.highest[-1]  # previous bar's high to avoid look-ahead
+        lowest   = self.lowest[-1]
+        stop_dist = self.p.stop_atr * atr
+        direction = self.p.direction
+
+        if pos > 0 and self._entry_px is not None:
+            if price <= self._entry_px - stop_dist:
+                self._last_exit_reason = "stop_loss"
+                self.close(); self._pending = True; return
+            if price < self.lowest[0]:
+                self._last_exit_reason = "signal_exit"
+                self.close(); self._pending = True; return
+        elif pos < 0 and self._entry_px is not None:
+            if price >= self._entry_px + stop_dist:
+                self._last_exit_reason = "stop_loss"
+                self.close(); self._pending = True; return
+            if price > self.highest[0]:
+                self._last_exit_reason = "signal_exit"
+                self.close(); self._pending = True; return
+
+        if pos == 0:
+            size      = self._size_for(price)
+            breakout  = self.p.atr_mult * atr
+            if direction in ("long", "both") and price > highest + breakout:
+                self._last_exit_reason = "signal"
+                self.buy(size=size); self._pending = True
+            elif direction in ("short", "both") and price < lowest - breakout:
+                self._last_exit_reason = "signal"
+                self.sell(size=size); self._pending = True
+
+
 # ── Portfolio value analyzer ───────────────────────────────────────────────────
 
 class _PortfolioValue(bt.Analyzer):
@@ -351,12 +565,28 @@ def _expanded_metrics(
 
 # ── Core Backtrader runner (operates on a pre-fetched dataframe) ───────────────
 
+_STRATEGY_MAP = {
+    "ema_crossover":      OpenTraderStrategy,
+    "rsi_mean_reversion": RSIMeanReversionStrategy,
+    "volatility_breakout": VolatilityBreakoutStrategy,
+}
+
+_STRATEGY_LABELS = {
+    "ema_crossover":       "EMA 10/21 Crossover",
+    "rsi_mean_reversion":  "RSI Mean Reversion",
+    "volatility_breakout": "Volatility Breakout (ATR)",
+}
+
+
 def _run_on_df(df: pd.DataFrame, params: dict) -> dict:
-    """Run the EMA crossover strategy on a pre-fetched OHLCV dataframe.
+    """Run a strategy on a pre-fetched OHLCV dataframe.
 
     Separated from _fetch_ohlcv so that walk-forward validation can slice the
     dataframe and re-use it across windows without re-downloading.
+    Supports strategy=ema_crossover|rsi_mean_reversion|volatility_breakout.
     """
+    strategy_key    = params.get("strategy", "ema_crossover")
+    strategy_cls    = _STRATEGY_MAP.get(strategy_key, OpenTraderStrategy)
     ticker          = params.get("ticker", "TICKER").upper().strip()
     stop_pct        = float(params.get("stop_pct",    1.5))
     tp_pct          = float(params.get("tp_pct",      3.0))
@@ -374,11 +604,32 @@ def _run_on_df(df: pd.DataFrame, params: dict) -> dict:
     cerebro.broker.set_slippage_perc(0.001)
 
     cerebro.adddata(bt.feeds.PandasData(dataname=df.copy(), name=ticker))
-    cerebro.addstrategy(
-        OpenTraderStrategy,
-        stop_pct=stop_pct, tp_pct=tp_pct,
-        confidence=confidence, max_pos=max_pos, direction=direction,
-    )
+
+    if strategy_key == "rsi_mean_reversion":
+        cerebro.addstrategy(
+            strategy_cls,
+            rsi_period=int(params.get("rsi_period", 14)),
+            oversold=float(params.get("oversold", 30)),
+            overbought=float(params.get("overbought", 70)),
+            exit_level=float(params.get("exit_level", 50)),
+            stop_pct=stop_pct, tp_pct=tp_pct,
+            confidence=confidence, max_pos=max_pos, direction=direction,
+        )
+    elif strategy_key == "volatility_breakout":
+        cerebro.addstrategy(
+            strategy_cls,
+            lookback=int(params.get("lookback", 20)),
+            atr_period=int(params.get("atr_period", 14)),
+            atr_mult=float(params.get("atr_mult", 1.5)),
+            stop_atr=float(params.get("stop_atr", 2.0)),
+            confidence=confidence, max_pos=max_pos, direction=direction,
+        )
+    else:
+        cerebro.addstrategy(
+            strategy_cls,
+            stop_pct=stop_pct, tp_pct=tp_pct,
+            confidence=confidence, max_pos=max_pos, direction=direction,
+        )
     cerebro.addanalyzer(bt.analyzers.SharpeRatio,  _name="sharpe",
                         riskfreerate=0.05, annualize=True,
                         timeframe=bt.TimeFrame.Days)
@@ -426,6 +677,8 @@ def _run_on_df(df: pd.DataFrame, params: dict) -> dict:
 
     result = {
         "engine":            "backtrader",
+        "strategy":          strategy_key,
+        "strategy_label":    _STRATEGY_LABELS.get(strategy_key, strategy_key),
         "ticker":            ticker,
         "period":            f"{start_date} to {end_date}",
         "initial_cap":       initial_capital,

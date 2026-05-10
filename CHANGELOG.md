@@ -3,6 +3,25 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.88] - 2026-05-10
+
+### Added
+- **Dashboard enhancements (Wave 1)** — backend API additions and backtester strategy engine expansion:
+  - `/api/trading/daily-loss-history` — 10-day P&L history from `daily_loss_log` table for sparkline chart in Daily P&L widget
+  - `/api/review/recommendations` — surfaces discipline review data from `review_log` table (findings + recommendations + applied status)
+  - `/api/polymarket/summary` — Polymarket open positions with unrealized P&L, total exposure, realized P&L summary
+  - `/api/polymarket/trades` — Polymarket trade history with market context
+  - `/api/market/etf-flows/anomalies` — ETF flow z-score anomaly detection (configurable σ threshold, default 2.0, uses 30-day rolling mean/stddev)
+  - `BacktestRunBody` extended with `strategy`, `direction`, RSI params, and volatility breakout params; `quick_backtest` now forwards all strategy params
+  - **RSI Mean Reversion strategy** — `RSIMeanReversionStrategy` in `backtest_runner.py`; buys oversold (RSI < 30), exits above 50, shorts overbought with stop/TP
+  - **Volatility Breakout strategy** — `VolatilityBreakoutStrategy`; enters on ATR-multiple breakout above N-day high/low, ATR-based stop-loss
+  - `_run_on_df` now accepts `strategy` parameter; `result` includes `strategy_label` field
+- **Backtester page UI** — strategy selector (EMA / RSI / Volatility Breakout), strategy-specific param panels (RSI: period/oversold/overbought; VB: lookback/atr_mult/stop_atr), "Compare All" button runs all 3 strategies in parallel and renders comparison table ranked by Sharpe
+- **ETF Capital Flows** — "⚡ Anomalies" toggle button opens inline anomaly panel showing ETFs with >2σ flow deviation from 30-day mean; displays z-score, direction (inflow/outflow), and day %
+- **Daily P&L widget** — enhanced with 10-day mini sparkline bar chart from `daily_loss_log`; green/red bars per day with tooltip showing date and P&L
+- **Equities Hindsight** — "Discipline Review Log" panel loads latest 5 entries from `review_log`; shows findings excerpt, recommendation list, applied/pending badge
+- **Polymarket page** — new nav item + full page with summary stat cards (open count, exposure, unrealized/realized P&L), open positions table, and trade history table
+
 ## [3.6.87] - 2026-05-10
 
 ### Fixed

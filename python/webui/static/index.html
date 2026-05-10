@@ -359,6 +359,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#60a5fa"></span>
         Backtester
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-polymarket')" data-page="page-polymarket">
+        <span class="nav-dot" style="background:#34d399"></span>
+        Polymarket
+      </div>
       <div class="nav-parent" id="nav-parent-sectorinsight" onclick="_siNavToggle()">
         <span class="nav-dot" style="background:#a78bfa"></span>
         Sector Insight
@@ -1511,15 +1515,23 @@ select option{background:var(--surface2)}
         <div class="card" style="margin-bottom:0">
           <div class="card-header" style="padding:10px 16px">
             <span class="card-title">ETF Capital Flows</span>
-            <select id="etf-flows-category" onchange="loadETFFlows()" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
-              <option value="">All</option>
-              <option value="equity">Broad Equity</option>
-              <option value="sector">Sectors</option>
-              <option value="bond">Bonds</option>
-              <option value="commodity">Commodities</option>
-              <option value="volatility">Volatility</option>
-              <option value="crypto">Crypto ETFs</option>
-            </select>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button id="etf-anomaly-btn" onclick="_toggleEtfAnomalies()" style="font-size:10px;padding:2px 8px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.35);color:#fbbf24;border-radius:5px;cursor:pointer" title="Show anomalous flow spikes (>2σ)">⚡ Anomalies</button>
+              <select id="etf-flows-category" onchange="loadETFFlows()" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
+                <option value="">All</option>
+                <option value="equity">Broad Equity</option>
+                <option value="sector">Sectors</option>
+                <option value="bond">Bonds</option>
+                <option value="commodity">Commodities</option>
+                <option value="volatility">Volatility</option>
+                <option value="crypto">Crypto ETFs</option>
+              </select>
+            </div>
+          </div>
+          <!-- Anomaly panel (hidden by default) -->
+          <div id="etf-anomaly-panel" style="display:none;border-bottom:1px solid var(--border);padding:8px 12px;background:rgba(251,191,36,.04)">
+            <div style="font-size:10px;font-weight:600;color:#fbbf24;margin-bottom:6px">Flow Anomalies (&gt;2σ from 30-day mean)</div>
+            <div id="etf-anomaly-list"><div style="font-size:11px;color:var(--muted)">Loading…</div></div>
           </div>
           <div class="card-body" style="padding:0;max-height:260px;overflow-y:auto">
             <table style="width:100%;border-collapse:collapse" id="etf-flows-table">
@@ -3529,6 +3541,15 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- Review Log Recommendations -->
+      <div class="card" style="margin-top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:600;color:var(--fg)">Discipline Review Log</div>
+          <button onclick="loadReviewRecommendations()" style="font-size:11px;padding:3px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--fg);cursor:pointer">↻ Refresh</button>
+        </div>
+        <div id="review-recommendations-list"><div style="font-size:12px;color:var(--muted)">Loading recommendations…</div></div>
+      </div>
+
       <!-- Run history -->
       <div class="card" style="margin-top:16px">
         <div style="font-size:13px;font-weight:600;color:var(--fg);margin-bottom:14px">Run History</div>
@@ -3691,17 +3712,22 @@ select option{background:var(--surface2)}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div>
           <div style="font-size:15px;font-weight:700;color:var(--fg)">Strategy Backtester</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">EMA 10/21 crossover · Backtrader · 0.1% commission + slippage · includes Sortino, Calmar, Recovery Factor and statistical validation</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">Backtrader · 0.1% commission + slippage · Sortino, Calmar, Recovery Factor · Walk-Forward · Monte Carlo</div>
         </div>
       </div>
 
       <!-- Controls row -->
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
         <input id="bt-page-ticker" class="select-input"
           style="width:110px;font-size:13px;text-transform:uppercase"
           placeholder="Ticker…"
           oninput="this.value=this.value.toUpperCase()"
           onkeydown="if(event.key==='Enter')runPageBacktest()">
+        <select id="bt-page-strategy" class="select-input" style="width:180px;font-size:13px" onchange="_btStrategyChanged()">
+          <option value="ema_crossover">EMA 10/21 Crossover</option>
+          <option value="rsi_mean_reversion">RSI Mean Reversion</option>
+          <option value="volatility_breakout">Volatility Breakout</option>
+        </select>
         <select id="bt-page-period" class="select-input" style="width:96px;font-size:13px">
           <option value="1y">1 Year</option>
           <option value="2y" selected>2 Years</option>
@@ -3714,7 +3740,34 @@ select option{background:var(--surface2)}
           <option value="both">Both</option>
         </select>
         <button id="bt-page-btn" class="btn btn-primary btn-sm" onclick="runPageBacktest()">Run Backtest</button>
+        <button id="bt-compare-btn" class="btn btn-sm" onclick="runPageBacktestCompare()" title="Compare all 3 strategies side-by-side" style="font-size:11px">Compare All</button>
         <div id="bt-page-status" style="font-size:12px;color:var(--muted)"></div>
+      </div>
+
+      <!-- Strategy-specific params -->
+      <div id="bt-rsi-params" style="display:none;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px">
+        <span style="color:var(--muted);font-weight:600">RSI Params:</span>
+        <label style="display:flex;align-items:center;gap:5px;color:var(--muted)">Period
+          <input id="bt-rsi-period" type="number" value="14" min="5" max="50" class="select-input" style="width:60px;font-size:12px;padding:3px 6px">
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;color:var(--muted)">Oversold
+          <input id="bt-rsi-oversold" type="number" value="30" min="10" max="45" class="select-input" style="width:60px;font-size:12px;padding:3px 6px">
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;color:var(--muted)">Overbought
+          <input id="bt-rsi-overbought" type="number" value="70" min="55" max="90" class="select-input" style="width:60px;font-size:12px;padding:3px 6px">
+        </label>
+      </div>
+      <div id="bt-vb-params" style="display:none;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px">
+        <span style="color:var(--muted);font-weight:600">Breakout Params:</span>
+        <label style="display:flex;align-items:center;gap:5px;color:var(--muted)">Lookback
+          <input id="bt-vb-lookback" type="number" value="20" min="5" max="60" class="select-input" style="width:60px;font-size:12px;padding:3px 6px">
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;color:var(--muted)">ATR Mult
+          <input id="bt-vb-atr-mult" type="number" value="1.5" min="0.5" max="5" step="0.25" class="select-input" style="width:65px;font-size:12px;padding:3px 6px">
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;color:var(--muted)">Stop ATR
+          <input id="bt-vb-stop-atr" type="number" value="2.0" min="0.5" max="5" step="0.25" class="select-input" style="width:65px;font-size:12px;padding:3px 6px">
+        </label>
       </div>
 
       <!-- Results -->
@@ -3722,7 +3775,101 @@ select option{background:var(--surface2)}
         <div style="color:var(--muted);font-size:12px">Enter a ticker above and click Run Backtest.</div>
       </div>
 
+      <!-- Comparison table (hidden until compare run) -->
+      <div id="bt-compare-results" style="display:none;margin-top:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:10px">Strategy Comparison</div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px" id="bt-compare-table">
+            <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
+              <th style="padding:8px 10px;text-align:left;color:var(--muted)">Strategy</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Return</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Ann. Return</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Sharpe</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Max DD</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Win Rate</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Trades</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Sortino</th>
+            </tr></thead>
+            <tbody id="bt-compare-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
     </div><!-- /page-resources-backtester -->
+
+    <!-- ═══════════════════════════════════════
+         PAGE: Polymarket
+    ════════════════════════════════════════ -->
+    <div class="page" id="page-polymarket">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--fg)">Polymarket</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">Prediction market positions · Open exposure · Realized P&amp;L</div>
+        </div>
+        <button onclick="loadPolymarketPage()" style="padding:6px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:12px;cursor:pointer">↻ Refresh</button>
+      </div>
+
+      <!-- Summary row -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px" id="poly-summary-row">
+        <div class="stat-card"><div class="stat-label">Open Positions</div><div class="stat-value" id="poly-open-count">—</div></div>
+        <div class="stat-card"><div class="stat-label">Total Exposure</div><div class="stat-value" id="poly-exposure">—</div></div>
+        <div class="stat-card"><div class="stat-label">Unrealized P&amp;L</div><div class="stat-value" id="poly-upnl">—</div></div>
+        <div class="stat-card"><div class="stat-label">Realized P&amp;L</div><div class="stat-value" id="poly-rpnl">—</div></div>
+      </div>
+
+      <!-- Open Positions -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="padding:10px 16px">
+          <span class="card-title">Open Positions</span>
+          <span id="poly-positions-ts" style="font-size:10px;color:var(--dim)"></span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
+                <th style="padding:8px 12px;text-align:left;color:var(--muted)">Market</th>
+                <th style="padding:8px 8px;text-align:left;color:var(--muted)">Outcome</th>
+                <th style="padding:8px 8px;text-align:center;color:var(--muted)">Side</th>
+                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Qty</th>
+                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Entry</th>
+                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Current</th>
+                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Unr. P&amp;L</th>
+                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Exposure</th>
+              </tr></thead>
+              <tbody id="poly-positions-tbody">
+                <tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trade History -->
+      <div class="card">
+        <div class="card-header" style="padding:10px 16px">
+          <span class="card-title">Trade History</span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
+                <th style="padding:8px 12px;text-align:left;color:var(--muted)">Date</th>
+                <th style="padding:8px 8px;text-align:left;color:var(--muted)">Market</th>
+                <th style="padding:8px 8px;text-align:center;color:var(--muted)">Action</th>
+                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Qty</th>
+                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Price</th>
+                <th style="padding:8px 8px;text-align:right;color:var(--muted)">P&amp;L</th>
+              </tr></thead>
+              <tbody id="poly-trades-tbody">
+                <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--muted)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /page-polymarket -->
 
     <!-- ── page-resources-groups ── -->
     <div class="page" id="page-resources-groups">
@@ -4043,6 +4190,7 @@ const PAGE_TITLES = {
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
   'page-resources-groups':     'Market Groups',
+  'page-polymarket':           'Polymarket',
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4176,10 +4324,11 @@ function navigate(pageId) {
     case 'page-plan-assignment':    loadAssignmentPage();   break;
     case 'page-plan-optimizer':    loadOptimizerPage();    break;
     case 'page-equities-sector-leaders': loadSectorLeadersPage(); break;
-    case 'page-shadow-account':    loadShadowPage();       break;
+    case 'page-shadow-account':    loadShadowPage(); loadReviewRecommendations(); break;
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
     case 'page-resources-groups':     loadMarketGroupsPage();    break;
+    case 'page-polymarket':           loadPolymarketPage();      break;
   }
 }
 
@@ -19911,6 +20060,348 @@ async function _reflectQuickIntel(ticker, btn) {
   } catch(e) {
     btn.textContent = 'Error';
     btn.disabled = false;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Backtester: multi-strategy support
+// ══════════════════════════════════════════════════════════════════════════════
+
+function _btStrategyChanged() {
+  const s = document.getElementById('bt-page-strategy')?.value;
+  document.getElementById('bt-rsi-params').style.display = s === 'rsi_mean_reversion'  ? 'flex' : 'none';
+  document.getElementById('bt-vb-params').style.display  = s === 'volatility_breakout' ? 'flex' : 'none';
+}
+
+async function runPageBacktest() {
+  const ticker   = (document.getElementById('bt-page-ticker')?.value || '').trim().toUpperCase();
+  const period   = document.getElementById('bt-page-period')?.value  || '2y';
+  const dir      = document.getElementById('bt-page-direction')?.value || 'long';
+  const strategy = document.getElementById('bt-page-strategy')?.value || 'ema_crossover';
+  const btn      = document.getElementById('bt-page-btn');
+  const status   = document.getElementById('bt-page-status');
+  const results  = document.getElementById('bt-page-results');
+
+  if (!ticker) { toast('warn', 'No Ticker', 'Enter a ticker symbol first'); return; }
+
+  const extraParams = {};
+  if (strategy === 'rsi_mean_reversion') {
+    extraParams.rsi_period  = parseInt(document.getElementById('bt-rsi-period')?.value  || '14');
+    extraParams.oversold    = parseFloat(document.getElementById('bt-rsi-oversold')?.value || '30');
+    extraParams.overbought  = parseFloat(document.getElementById('bt-rsi-overbought')?.value || '70');
+  } else if (strategy === 'volatility_breakout') {
+    extraParams.lookback  = parseInt(document.getElementById('bt-vb-lookback')?.value   || '20');
+    extraParams.atr_mult  = parseFloat(document.getElementById('bt-vb-atr-mult')?.value || '1.5');
+    extraParams.stop_atr  = parseFloat(document.getElementById('bt-vb-stop-atr')?.value || '2.0');
+  }
+
+  btn.disabled       = true;
+  btn.textContent    = 'Running…';
+  status.textContent = `Fetching ${ticker} ${period} data…`;
+  results.innerHTML  = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Running backtest — this may take 15–30 seconds…</div>';
+  document.getElementById('bt-compare-results').style.display = 'none';
+
+  try {
+    const token = getToken();
+    const res = await fetch(`/api/backtest/quick?token=${encodeURIComponent(token)}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ticker, period, direction: dir, strategy, ...extraParams, token }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`); }
+    const r = await res.json();
+    results.innerHTML  = _renderBtResults(r);
+    status.textContent = `Done · ${r.total_trades} trade${r.total_trades !== 1 ? 's' : ''} · ${r.strategy_label || strategy}`;
+    _btCtx = null;
+    _lastAiBacktest = { results: r, stratName: ticker };
+  } catch (e) {
+    results.innerHTML  = `<div style="color:var(--red);font-size:12px;padding:8px">${e.message}</div>`;
+    status.textContent = '';
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Run Backtest';
+  }
+}
+
+async function runPageBacktestCompare() {
+  const ticker  = (document.getElementById('bt-page-ticker')?.value || '').trim().toUpperCase();
+  const period  = document.getElementById('bt-page-period')?.value  || '2y';
+  const dir     = document.getElementById('bt-page-direction')?.value || 'long';
+  const btn     = document.getElementById('bt-compare-btn');
+  const status  = document.getElementById('bt-page-status');
+
+  if (!ticker) { toast('warn', 'No Ticker', 'Enter a ticker symbol first'); return; }
+
+  btn.disabled    = true;
+  btn.textContent = 'Comparing…';
+  status.textContent = 'Running all 3 strategies…';
+  document.getElementById('bt-compare-results').style.display = 'none';
+
+  const strategies = ['ema_crossover','rsi_mean_reversion','volatility_breakout'];
+  const token = getToken();
+
+  try {
+    const runs = await Promise.all(strategies.map(async strategy => {
+      const res = await fetch(`/api/backtest/quick?token=${encodeURIComponent(token)}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ ticker, period, direction: dir, strategy, token }),
+      });
+      if (!res.ok) throw new Error(`${strategy} failed`);
+      return res.json();
+    }));
+
+    const best = runs.reduce((b,r) => (r.sharpe||0) > (b.sharpe||0) ? r : b, runs[0]);
+    const tbody = document.getElementById('bt-compare-tbody');
+    tbody.innerHTML = runs.map(r => {
+      const isBest  = r.strategy === best.strategy;
+      const retC    = (r.total_return||0) >= 0 ? 'var(--green)' : 'var(--red)';
+      const annC    = (r.annualized_return||0) >= 0 ? 'var(--green)' : 'var(--red)';
+      const bg      = isBest ? 'background:rgba(74,222,128,.04)' : '';
+      return `<tr style="border-bottom:1px solid var(--border);${bg}">
+        <td style="padding:8px 10px;font-weight:${isBest?'700':'500'};color:${isBest?'var(--green)':'var(--fg)'}">
+          ${r.strategy_label || r.strategy}${isBest ? ' ★' : ''}
+        </td>
+        <td style="padding:8px 8px;text-align:right;color:${retC}">${(r.total_return||0) >= 0 ? '+' : ''}${(r.total_return||0).toFixed(2)}%</td>
+        <td style="padding:8px 8px;text-align:right;color:${annC}">${(r.annualized_return||0) >= 0 ? '+' : ''}${(r.annualized_return||0).toFixed(2)}%</td>
+        <td style="padding:8px 8px;text-align:right;font-weight:600;color:${(r.sharpe||0)>0?'var(--green)':'var(--red)'}">${(r.sharpe||0).toFixed(3)}</td>
+        <td style="padding:8px 8px;text-align:right;color:var(--red)">-${(r.max_drawdown||0).toFixed(2)}%</td>
+        <td style="padding:8px 8px;text-align:right">${(r.win_rate||0).toFixed(1)}%</td>
+        <td style="padding:8px 8px;text-align:right;color:var(--muted)">${r.total_trades||0}</td>
+        <td style="padding:8px 8px;text-align:right;font-weight:600;color:${(r.sortino||0)>0?'var(--green)':'var(--red)'}">${(r.sortino||0).toFixed(3)}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('bt-compare-results').style.display = 'block';
+    status.textContent = `Best by Sharpe: ${best.strategy_label || best.strategy}`;
+  } catch(e) {
+    status.textContent = 'Compare failed: ' + e.message;
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Compare All';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ETF Flow Anomalies
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _etfAnomalyOpen = false;
+
+function _toggleEtfAnomalies() {
+  const panel = document.getElementById('etf-anomaly-panel');
+  if (!panel) return;
+  _etfAnomalyOpen = !_etfAnomalyOpen;
+  panel.style.display = _etfAnomalyOpen ? 'block' : 'none';
+  if (_etfAnomalyOpen) _loadEtfAnomalies();
+}
+
+async function _loadEtfAnomalies() {
+  const el = document.getElementById('etf-anomaly-list');
+  if (!el) return;
+  try {
+    const d = await apiFetch('/api/market/etf-flows/anomalies');
+    if (!d.anomalies?.length) {
+      el.innerHTML = '<div style="font-size:11px;color:var(--muted)">No anomalies detected above 2σ threshold.</div>';
+      return;
+    }
+    el.innerHTML = d.anomalies.map(a => {
+      const isIn  = a.direction === 'inflow';
+      const zAbs  = Math.abs(a.z_score);
+      const clr   = isIn ? '#4ade80' : '#f87171';
+      const arrow = isIn ? '↑' : '↓';
+      const pctC  = (a.change_pct||0) >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:11px;font-weight:700;color:var(--fg);width:44px">${a.ticker}</span>
+        <span style="font-size:10px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.name||''}</span>
+        <span style="font-size:10px;color:${clr};font-weight:700">${arrow} ${isIn?'Inflow':'Outflow'}</span>
+        <span style="font-size:10px;color:${clr};font-weight:700" title="Z-score vs 30d mean">${zAbs.toFixed(1)}σ</span>
+        <span style="font-size:10px;color:${pctC}">${(a.change_pct||0) >= 0 ? '+' : ''}${(a.change_pct||0).toFixed(2)}%</span>
+        <span style="font-size:10px;color:var(--muted)">FR: ${(a.flow_ratio||1).toFixed(2)}</span>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    if (el) el.innerHTML = '<div style="font-size:11px;color:var(--muted)">Unavailable</div>';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Daily P&L History Sparkline
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadDailyLossWidget() {
+  const el = document.getElementById('daily-loss-widget');
+  if (!el) return;
+  try {
+    const [d, hist] = await Promise.all([
+      apiFetch('/api/trading/daily-pnl'),
+      apiFetch('/api/trading/daily-loss-history?days=10').catch(() => ({ days: [] })),
+    ]);
+    _renderDailyLossWidget(el, d, hist.days || []);
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px">Daily P&L unavailable</div>`;
+  }
+}
+
+function _renderDailyLossWidget(el, d, history = []) {
+  const pnl    = d.current_pnl || 0;
+  const max    = d.max_daily_loss || 0;
+  const pct    = d.loss_pct_used || 0;
+  const broken = d.circuit_broken;
+  const pnlColor = pnl >= 0 ? '#22c55e' : '#ef4444';
+  const barColor = pct >= 100 ? '#ef4444' : pct >= 75 ? '#f97316' : pct >= 50 ? '#eab308' : '#22c55e';
+  const pnlFmt   = (pnl >= 0 ? '+' : '-') + '$' + Math.abs(pnl).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const limitBar = d.limit_enabled ? `
+    <div style="margin-top:8px">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:3px">
+        <span>Daily Loss Used</span>
+        <span style="color:${barColor}">${pct.toFixed(0)}% of $${max.toLocaleString()}</span>
+      </div>
+      <div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${Math.min(pct,100).toFixed(0)}%;background:${barColor};border-radius:3px;transition:width .4s"></div>
+      </div>
+    </div>` : `<div style="font-size:10px;color:var(--dim);margin-top:6px">No daily loss limit configured</div>`;
+
+  let sparkHtml = '';
+  if (history.length > 1) {
+    const vals   = history.map(h => h.pnl);
+    const maxAbs = Math.max(...vals.map(Math.abs), 0.01);
+    const w      = 8;
+    const gap    = 3;
+    const h      = 32;
+    const svgW   = vals.length * (w + gap);
+    const bars   = vals.map((v, i) => {
+      const barH  = Math.max(2, Math.abs(v) / maxAbs * h);
+      const y     = v >= 0 ? h - barH : h;
+      const clr   = v >= 0 ? '#22c55e' : '#ef4444';
+      const x     = i * (w + gap);
+      const tip   = `${history[i].date}: ${v >= 0 ? '+' : ''}$${Math.abs(v).toFixed(0)}`;
+      return `<rect x="${x}" y="${y}" width="${w}" height="${barH}" fill="${clr}" opacity="0.8" rx="1"><title>${tip}</title></rect>`;
+    }).join('');
+    sparkHtml = `<div style="margin-top:8px">
+      <div style="font-size:9px;color:var(--dim);margin-bottom:3px">10-Day P&amp;L History</div>
+      <svg width="${svgW}" height="${h}" style="display:block">${bars}</svg>
+    </div>`;
+  }
+
+  el.innerHTML = `
+    ${broken ? `<div style="background:#ef4444;color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:6px;margin-bottom:8px">CIRCUIT BREAKER TRIPPED${d.circuit_reason ? ': ' + _escHtml(d.circuit_reason) : ''}</div>` : ''}
+    <div style="font-size:22px;font-weight:800;color:${pnlColor}">${pnlFmt}</div>
+    <div style="font-size:11px;color:var(--muted)">Today's P&L</div>
+    ${limitBar}${sparkHtml}`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Review Recommendations
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadReviewRecommendations() {
+  const el = document.getElementById('review-recommendations-list');
+  if (!el) return;
+  try {
+    const d = await apiFetch('/api/review/recommendations?limit=5');
+    if (!d.reviews?.length) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No review logs recorded yet. Run the shadow account analysis to generate discipline recommendations.</div>';
+      return;
+    }
+    el.innerHTML = d.reviews.map(r => {
+      const ts   = new Date(r.ts).toLocaleDateString();
+      const recs = Array.isArray(r.recommendations) ? r.recommendations : [];
+      const recsHtml = recs.length
+        ? recs.map(rec => {
+            const text = typeof rec === 'string' ? rec : (rec.text || rec.description || JSON.stringify(rec));
+            return `<li style="margin-bottom:4px;font-size:12px;color:var(--fg)">${_escHtml(text)}</li>`;
+          }).join('')
+        : '<li style="font-size:12px;color:var(--muted)">No specific recommendations</li>';
+      const appliedBadge = r.applied
+        ? `<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.3)">Applied</span>`
+        : `<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:rgba(248,113,113,.1);color:#f87171;border:1px solid rgba(248,113,113,.3)">Pending</span>`;
+      return `<div style="border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--fg)">${ts}</span>
+          <span style="font-size:11px;color:var(--muted)">${r.trade_count} trade${r.trade_count !== 1 ? 's' : ''} reviewed</span>
+          ${appliedBadge}
+        </div>
+        ${r.findings ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-style:italic">"${_escHtml(r.findings.slice(0,200))}${r.findings.length>200?'…':''}"</div>` : ''}
+        <ul style="margin:0;padding-left:16px">${recsHtml}</ul>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    if (el) el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Review log unavailable.</div>';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Polymarket
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadPolymarketPage() {
+  const tbody  = document.getElementById('poly-positions-tbody');
+  const ttbody = document.getElementById('poly-trades-tbody');
+  if (!tbody) return;
+
+  try {
+    const [summary, trades] = await Promise.all([
+      apiFetch('/api/polymarket/summary'),
+      apiFetch('/api/polymarket/trades?limit=50'),
+    ]);
+
+    // Summary cards
+    document.getElementById('poly-open-count').textContent = summary.open_count ?? '—';
+    const exp  = summary.total_exposure || 0;
+    const upnl = summary.unrealized_pnl || 0;
+    const rpnl = summary.realized_pnl || 0;
+    const fmt  = v => (v >= 0 ? '+' : '') + v.toFixed(4);
+    const fmtEl = (id, v) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = fmt(v);
+      el.style.color = v >= 0 ? '#22c55e' : '#ef4444';
+    };
+    document.getElementById('poly-exposure').textContent = exp.toFixed(4);
+    fmtEl('poly-upnl', upnl);
+    fmtEl('poly-rpnl', rpnl);
+
+    // Positions table
+    if (!summary.positions?.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted)">No open positions</td></tr>';
+    } else {
+      tbody.innerHTML = summary.positions.map(p => {
+        const pnlC = (p.unrealized_pnl || 0) >= 0 ? '#22c55e' : '#ef4444';
+        const sideC = p.side === 'buy' ? '#22c55e' : '#f87171';
+        return `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:8px 12px;font-size:11px;color:var(--fg);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escHtml(p.market_question||'')}">${_escHtml((p.market_question||'').slice(0,60))}${(p.market_question||'').length>60?'…':''}</td>
+          <td style="padding:8px 8px;font-size:11px;color:var(--muted)">${_escHtml(p.outcome||'')}</td>
+          <td style="padding:8px 8px;text-align:center"><span style="font-size:10px;font-weight:700;color:${sideC}">${(p.side||'').toUpperCase()}</span></td>
+          <td style="padding:8px 8px;text-align:right;font-size:12px">${p.qty?.toFixed(2)}</td>
+          <td style="padding:8px 8px;text-align:right;font-size:12px">${p.entry_price?.toFixed(3)}</td>
+          <td style="padding:8px 8px;text-align:right;font-size:12px">${p.current_price?.toFixed(3) ?? '—'}</td>
+          <td style="padding:8px 8px;text-align:right;font-weight:600;color:${pnlC}">${fmt(p.unrealized_pnl||0)}</td>
+          <td style="padding:8px 8px;text-align:right;font-size:11px;color:var(--muted)">${p.exposure?.toFixed(4)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Trades table
+    if (!trades.trades?.length) {
+      ttbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--muted)">No trade history</td></tr>';
+    } else {
+      ttbody.innerHTML = trades.trades.map(t => {
+        const pnlC = t.pnl == null ? 'var(--muted)' : (t.pnl >= 0 ? '#22c55e' : '#ef4444');
+        const pnlTxt = t.pnl == null ? '—' : fmt(t.pnl);
+        const actC  = t.action === 'open' ? 'var(--green)' : t.action === 'close' ? '#f87171' : 'var(--muted)';
+        return `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:8px 12px;font-size:11px;color:var(--muted)">${new Date(t.ts).toLocaleDateString()}</td>
+          <td style="padding:8px 8px;font-size:11px;color:var(--fg);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml((t.market_question||'').slice(0,50))}${(t.market_question||'').length>50?'…':''}</td>
+          <td style="padding:8px 8px;text-align:center"><span style="font-size:10px;font-weight:700;color:${actC}">${(t.action||'').toUpperCase()}</span></td>
+          <td style="padding:8px 8px;text-align:right;font-size:12px">${t.qty?.toFixed(2)}</td>
+          <td style="padding:8px 8px;text-align:right;font-size:12px">${t.price?.toFixed(4)}</td>
+          <td style="padding:8px 8px;text-align:right;font-weight:600;color:${pnlC}">${pnlTxt}</td>
+        </tr>`;
+      }).join('');
+    }
+  } catch(e) {
+    if (tbody)  tbody.innerHTML  = `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--red)">Error: ${_escHtml(e.message)}</td></tr>`;
+    if (ttbody) ttbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--red)">Error loading trades</td></tr>`;
   }
 }
 
