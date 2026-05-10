@@ -13066,6 +13066,16 @@ async function _loadNavOrder() {
       _saveNavOrder();
     }
   }
+
+  // Guaranteed: Trading Hindsights must always be in the Resources group.
+  const hindsightEl    = document.querySelector('#main-nav .nav-item[data-page="page-shadow-account"]');
+  const resourcesGroup = document.querySelector('#main-nav .nav-group[data-group="resources"]');
+  if (hindsightEl && resourcesGroup && hindsightEl.closest('.nav-group') !== resourcesGroup) {
+    const macroEl = resourcesGroup.querySelector('.nav-item[data-page="page-macro-hub"]');
+    if (macroEl) resourcesGroup.insertBefore(hindsightEl, macroEl.nextSibling);
+    else resourcesGroup.appendChild(hindsightEl);
+    _saveNavOrder();
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -18423,21 +18433,22 @@ function _otFilterChain() {
   const fmt2 = v => v != null ? v.toFixed(2) : '—';
   const fmtPct = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
 
-  const callHdr = `<th style="padding:5px 7px;text-align:right;white-space:nowrap">Bid</th>
-    <th style="padding:5px 7px;text-align:right">Ask</th>
-    <th style="padding:5px 7px;text-align:right">Mid</th>
-    <th style="padding:5px 7px;text-align:right;color:#a5d6ff">Extrinsic</th>
-    <th style="padding:5px 7px;text-align:right">Delta</th>
-    <th style="padding:5px 7px;text-align:right">IV</th>
-    <th style="padding:5px 7px;text-align:right">OI</th>`;
+  const _sth = `position:sticky;top:0;z-index:2;background:var(--card-header)`;
+  const callHdr = `<th style="padding:5px 7px;text-align:right;white-space:nowrap;${_sth}">Bid</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">Ask</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">Mid</th>
+    <th style="padding:5px 7px;text-align:right;color:#a5d6ff;${_sth}">Extrinsic</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">Delta</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">IV</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">OI</th>`;
 
-  const putHdr = `<th style="padding:5px 7px;text-align:right">Bid</th>
-    <th style="padding:5px 7px;text-align:right">Ask</th>
-    <th style="padding:5px 7px;text-align:right">Mid</th>
-    <th style="padding:5px 7px;text-align:right;color:#a5d6ff">Extrinsic</th>
-    <th style="padding:5px 7px;text-align:right">Delta</th>
-    <th style="padding:5px 7px;text-align:right">IV</th>
-    <th style="padding:5px 7px;text-align:right">OI</th>`;
+  const putHdr = `<th style="padding:5px 7px;text-align:right;${_sth}">Bid</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">Ask</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">Mid</th>
+    <th style="padding:5px 7px;text-align:right;color:#a5d6ff;${_sth}">Extrinsic</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">Delta</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">IV</th>
+    <th style="padding:5px 7px;text-align:right;${_sth}">OI</th>`;
 
   function cellsFor(c, isCall, leg) {
     if (!c) return `<td colspan="7" style="background:rgba(0,0,0,.2)"></td>`;
@@ -18516,9 +18527,9 @@ function _otFilterChain() {
 
   wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px">
     <thead>
-      <tr style="background:var(--card-header);color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;z-index:2">
+      <tr style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em">
         ${callHdr}
-        <th style="padding:5px 10px;text-align:center;font-size:12px;background:var(--card-header)">Strike</th>
+        <th style="padding:5px 10px;text-align:center;font-size:12px;${_sth}">Strike</th>
         ${showPuts ? putHdr : ''}
       </tr>
     </thead>

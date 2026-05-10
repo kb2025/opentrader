@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.96] - 2026-05-10
+
+### Fixed
+- **Options chain sticky headers** — column headings now stay visible while scrolling; moved `position:sticky;top:0` from `<tr>` (not cross-browser) to each `<th>` individually, and added solid `background:var(--card-header)` so rows below don't show through
+
 ## [3.6.95] - 2026-05-10
 
 ### Changed
