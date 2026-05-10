@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.92] - 2026-05-10
+
+### Removed
+- **Polymarket** — removed all Polymarket code: `/api/polymarket/summary` and `/api/polymarket/trades` endpoints deleted from `main.py`; `page-polymarket` HTML, nav item, `PAGE_TITLES` entry, `navigate` case, and `loadPolymarketPage()` JS function all removed from `index.html`
+
 ## [3.6.91] - 2026-05-10
 
 ### Added

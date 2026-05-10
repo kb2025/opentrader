@@ -359,10 +359,6 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#60a5fa"></span>
         Backtester
       </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-polymarket')" data-page="page-polymarket">
-        <span class="nav-dot" style="background:#34d399"></span>
-        Polymarket
-      </div>
       <div class="nav-item" draggable="true" onclick="navigate('page-macro-hub')" data-page="page-macro-hub">
         <span class="nav-dot" style="background:#f59e0b"></span>
         Macro Hub
@@ -3812,80 +3808,6 @@ select option{background:var(--surface2)}
     </div><!-- /page-resources-backtester -->
 
     <!-- ═══════════════════════════════════════
-         PAGE: Polymarket
-    ════════════════════════════════════════ -->
-    <div class="page" id="page-polymarket">
-
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div>
-          <div style="font-size:15px;font-weight:700;color:var(--fg)">Polymarket</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">Prediction market positions · Open exposure · Realized P&amp;L</div>
-        </div>
-        <button onclick="loadPolymarketPage()" style="padding:6px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:12px;cursor:pointer">↻ Refresh</button>
-      </div>
-
-      <!-- Summary row -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px" id="poly-summary-row">
-        <div class="stat-card"><div class="stat-label">Open Positions</div><div class="stat-value" id="poly-open-count">—</div></div>
-        <div class="stat-card"><div class="stat-label">Total Exposure</div><div class="stat-value" id="poly-exposure">—</div></div>
-        <div class="stat-card"><div class="stat-label">Unrealized P&amp;L</div><div class="stat-value" id="poly-upnl">—</div></div>
-        <div class="stat-card"><div class="stat-label">Realized P&amp;L</div><div class="stat-value" id="poly-rpnl">—</div></div>
-      </div>
-
-      <!-- Open Positions -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-header" style="padding:10px 16px">
-          <span class="card-title">Open Positions</span>
-          <span id="poly-positions-ts" style="font-size:10px;color:var(--dim)"></span>
-        </div>
-        <div class="card-body" style="padding:0">
-          <div style="overflow-x:auto">
-            <table style="width:100%;border-collapse:collapse;font-size:12px">
-              <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
-                <th style="padding:8px 12px;text-align:left;color:var(--muted)">Market</th>
-                <th style="padding:8px 8px;text-align:left;color:var(--muted)">Outcome</th>
-                <th style="padding:8px 8px;text-align:center;color:var(--muted)">Side</th>
-                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Qty</th>
-                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Entry</th>
-                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Current</th>
-                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Unr. P&amp;L</th>
-                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Exposure</th>
-              </tr></thead>
-              <tbody id="poly-positions-tbody">
-                <tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted)">Loading…</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Trade History -->
-      <div class="card">
-        <div class="card-header" style="padding:10px 16px">
-          <span class="card-title">Trade History</span>
-        </div>
-        <div class="card-body" style="padding:0">
-          <div style="overflow-x:auto">
-            <table style="width:100%;border-collapse:collapse;font-size:12px">
-              <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
-                <th style="padding:8px 12px;text-align:left;color:var(--muted)">Date</th>
-                <th style="padding:8px 8px;text-align:left;color:var(--muted)">Market</th>
-                <th style="padding:8px 8px;text-align:center;color:var(--muted)">Action</th>
-                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Qty</th>
-                <th style="padding:8px 8px;text-align:right;color:var(--muted)">Price</th>
-                <th style="padding:8px 8px;text-align:right;color:var(--muted)">P&amp;L</th>
-              </tr></thead>
-              <tbody id="poly-trades-tbody">
-                <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--muted)">Loading…</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-    </div><!-- /page-polymarket -->
-
-    <!-- ═══════════════════════════════════════
          PAGE: Macro Hub
     ════════════════════════════════════════ -->
     <div class="page" id="page-macro-hub">
@@ -4268,7 +4190,6 @@ const PAGE_TITLES = {
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
   'page-resources-groups':     'Market Groups',
-  'page-polymarket':           'Polymarket',
   'page-macro-hub':            'Macro Hub',
 };
 
@@ -4407,7 +4328,6 @@ function navigate(pageId) {
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
     case 'page-resources-groups':     loadMarketGroupsPage();    break;
-    case 'page-polymarket':           loadPolymarketPage();      break;
     case 'page-macro-hub':            loadMacroHubPage();        break;
   }
 }
@@ -20432,10 +20352,6 @@ async function loadReviewRecommendations() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Polymarket
-// ══════════════════════════════════════════════════════════════════════════════
-
-// ══════════════════════════════════════════════════════════════════════════════
 // Macro Regime Hub
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -20638,76 +20554,6 @@ function _stopPnlAutoRefresh() {
   if (_pnlRefreshTimer) { clearInterval(_pnlRefreshTimer); _pnlRefreshTimer = null; }
 }
 
-async function loadPolymarketPage() {
-  const tbody  = document.getElementById('poly-positions-tbody');
-  const ttbody = document.getElementById('poly-trades-tbody');
-  if (!tbody) return;
-
-  try {
-    const [summary, trades] = await Promise.all([
-      apiFetch('/api/polymarket/summary'),
-      apiFetch('/api/polymarket/trades?limit=50'),
-    ]);
-
-    // Summary cards
-    document.getElementById('poly-open-count').textContent = summary.open_count ?? '—';
-    const exp  = summary.total_exposure || 0;
-    const upnl = summary.unrealized_pnl || 0;
-    const rpnl = summary.realized_pnl || 0;
-    const fmt  = v => (v >= 0 ? '+' : '') + v.toFixed(4);
-    const fmtEl = (id, v) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.textContent = fmt(v);
-      el.style.color = v >= 0 ? '#22c55e' : '#ef4444';
-    };
-    document.getElementById('poly-exposure').textContent = exp.toFixed(4);
-    fmtEl('poly-upnl', upnl);
-    fmtEl('poly-rpnl', rpnl);
-
-    // Positions table
-    if (!summary.positions?.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--muted)">No open positions</td></tr>';
-    } else {
-      tbody.innerHTML = summary.positions.map(p => {
-        const pnlC = (p.unrealized_pnl || 0) >= 0 ? '#22c55e' : '#ef4444';
-        const sideC = p.side === 'buy' ? '#22c55e' : '#f87171';
-        return `<tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:8px 12px;font-size:11px;color:var(--fg);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escHtml(p.market_question||'')}">${_escHtml((p.market_question||'').slice(0,60))}${(p.market_question||'').length>60?'…':''}</td>
-          <td style="padding:8px 8px;font-size:11px;color:var(--muted)">${_escHtml(p.outcome||'')}</td>
-          <td style="padding:8px 8px;text-align:center"><span style="font-size:10px;font-weight:700;color:${sideC}">${(p.side||'').toUpperCase()}</span></td>
-          <td style="padding:8px 8px;text-align:right;font-size:12px">${p.qty?.toFixed(2)}</td>
-          <td style="padding:8px 8px;text-align:right;font-size:12px">${p.entry_price?.toFixed(3)}</td>
-          <td style="padding:8px 8px;text-align:right;font-size:12px">${p.current_price?.toFixed(3) ?? '—'}</td>
-          <td style="padding:8px 8px;text-align:right;font-weight:600;color:${pnlC}">${fmt(p.unrealized_pnl||0)}</td>
-          <td style="padding:8px 8px;text-align:right;font-size:11px;color:var(--muted)">${p.exposure?.toFixed(4)}</td>
-        </tr>`;
-      }).join('');
-    }
-
-    // Trades table
-    if (!trades.trades?.length) {
-      ttbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--muted)">No trade history</td></tr>';
-    } else {
-      ttbody.innerHTML = trades.trades.map(t => {
-        const pnlC = t.pnl == null ? 'var(--muted)' : (t.pnl >= 0 ? '#22c55e' : '#ef4444');
-        const pnlTxt = t.pnl == null ? '—' : fmt(t.pnl);
-        const actC  = t.action === 'open' ? 'var(--green)' : t.action === 'close' ? '#f87171' : 'var(--muted)';
-        return `<tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:8px 12px;font-size:11px;color:var(--muted)">${new Date(t.ts).toLocaleDateString()}</td>
-          <td style="padding:8px 8px;font-size:11px;color:var(--fg);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml((t.market_question||'').slice(0,50))}${(t.market_question||'').length>50?'…':''}</td>
-          <td style="padding:8px 8px;text-align:center"><span style="font-size:10px;font-weight:700;color:${actC}">${(t.action||'').toUpperCase()}</span></td>
-          <td style="padding:8px 8px;text-align:right;font-size:12px">${t.qty?.toFixed(2)}</td>
-          <td style="padding:8px 8px;text-align:right;font-size:12px">${t.price?.toFixed(4)}</td>
-          <td style="padding:8px 8px;text-align:right;font-weight:600;color:${pnlC}">${pnlTxt}</td>
-        </tr>`;
-      }).join('');
-    }
-  } catch(e) {
-    if (tbody)  tbody.innerHTML  = `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--red)">Error: ${_escHtml(e.message)}</td></tr>`;
-    if (ttbody) ttbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--red)">Error loading trades</td></tr>`;
-  }
-}
 
 </script>
 
