@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.4] - 2026-05-11
+
+### Fixed
+- **Trade Directives "invalid token"** — stale `ot_token` in localStorage (from the old token-based auth) was being injected into every `apiFetch` call; `check_token` rejected it because it no longer matches the current `WEBUI_TOKEN`; `getToken()` now clears the key and always returns empty string — all auth goes through the session cookie
+- **Charts — OVTLYR signal** — added live OVTLYR buy/sell signal badge in the Sentiment card header; fetches fresh from `/api/ovtlyr/ticker/{sym}` on every chart load (no client-side cache); badge is green for BUY, red for SELL, hidden if no signal exists for the ticker
+
 ## [3.7.3] - 2026-05-11
 
 ### Changed

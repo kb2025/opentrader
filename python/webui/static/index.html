@@ -2510,6 +2510,7 @@ select option{background:var(--surface2)}
         <div class="card-header" style="padding:6px 14px">
           <span class="card-title" style="font-size:11px;color:var(--muted)">Sentiment</span>
           <span id="chart-sent-label" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-left:8px"></span>
+          <span id="chart-ovtlyr-signal" style="display:none;font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px;margin-left:8px;letter-spacing:.04em"></span>
         </div>
         <div id="chart-sentiment-body" style="padding:10px 14px;display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
           <!-- Score gauge -->
@@ -4248,7 +4249,9 @@ function statusChip(evtType) {
 }
 
 function getToken() {
-  return localStorage.getItem('ot_token') || '';
+  // Auth is now session-cookie based. Clear any legacy token to prevent 401s.
+  localStorage.removeItem('ot_token');
+  return '';
 }
 
 async function apiFetch(path, opts = {}) {
@@ -10017,6 +10020,29 @@ async function _chartLoad() {
 
 async function _chartLoadSentiment(sym) {
   const card = document.getElementById('chart-sentiment-card');
+  const ovtlyrEl = document.getElementById('chart-ovtlyr-signal');
+
+  // Fetch OVTLYR signal live (no client-side cache)
+  try {
+    const ov = await apiFetch(`/api/ovtlyr/ticker/${encodeURIComponent(sym)}`);
+    const sig = ov?.data?.signal || ov?.data?.list_type || null;
+    if (sig && ovtlyrEl) {
+      const isBuy = /buy|bull/i.test(sig);
+      const isSell = /sell|bear/i.test(sig);
+      const sigColor = isBuy ? '#4ade80' : isSell ? '#f87171' : 'var(--muted)';
+      const sigLabel = isBuy ? 'OVTLYR BUY' : isSell ? 'OVTLYR SELL' : sig.toUpperCase();
+      ovtlyrEl.textContent = sigLabel;
+      ovtlyrEl.style.background = sigColor + '22';
+      ovtlyrEl.style.border = `1px solid ${sigColor}55`;
+      ovtlyrEl.style.color = sigColor;
+      ovtlyrEl.style.display = '';
+    } else if (ovtlyrEl) {
+      ovtlyrEl.style.display = 'none';
+    }
+  } catch(_) {
+    if (ovtlyrEl) ovtlyrEl.style.display = 'none';
+  }
+
   try {
     const all = await apiFetch('/api/sentiment');
     const s = all[sym] || all[sym.toUpperCase()];
