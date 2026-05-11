@@ -4706,6 +4706,9 @@ const TOPO_NODES = [
   { id: 'scraper-ovtlyr',          label: 'OVTLYR Scanner',  x: 15,  y: 15,  group: 'scrapers' },
   { id: 'scraper-wsb',             label: 'r/WSB',            x: 15,  y: 80,  group: 'scrapers' },
   { id: 'scraper-seekalpha',       label: 'Seeking Alpha',    x: 15,  y: 145, group: 'scrapers' },
+  { id: 'scraper-news',            label: 'AV News',          x: 15,  y: 210, group: 'scrapers' },
+  { id: 'scraper-etf-flows',       label: 'ETF Flows',        x: 15,  y: 275, group: 'scrapers' },
+  { id: 'scraper-macro-regime',    label: 'Macro Regime',     x: 15,  y: 340, group: 'scrapers' },
   // ── Core pipeline ─────────────────────────────────────────────────────────
   { id: 'aggregator',              label: 'Aggregator',       x: 200, y: 125, group: 'core'     },
   { id: 'predictor',               label: 'Predictor',        x: 375, y: 80,  group: 'core'     },
@@ -4717,8 +4720,8 @@ const TOPO_NODES = [
   { id: 'review-agent',            label: 'Review Agent',     x: 735, y: 80,  group: 'review'   },
   { id: 'options-monitor',         label: 'Options Monitor',  x: 930, y: 260, group: 'review'   },
   // ── Infrastructure ────────────────────────────────────────────────────────
-  { id: 'scheduler',               label: 'Scheduler',        x: 15,  y: 360, group: 'infra'    },
-  { id: 'orchestrator',            label: 'Orchestrator',     x: 195, y: 350, group: 'infra'    },
+  { id: 'scheduler',               label: 'Scheduler',        x: 185, y: 420, group: 'infra'    },
+  { id: 'orchestrator',            label: 'Orchestrator',     x: 375, y: 420, group: 'infra'    },
   { id: 'broker-gateway',          label: 'Broker Gateway',   x: 735, y: 200, group: 'brokers'  },
   // ── MCP servers ───────────────────────────────────────────────────────────
   { id: 'mcp-alpaca',              label: 'MCP Alpaca',         x: 735, y: 310, group: 'mcp'      },
@@ -4733,10 +4736,13 @@ const NODE_W = 130, NODE_H = 38;
 
 const TOPO_EDGES = [
   // ── Scheduler triggers ────────────────────────────────────────────────────
-  { from: 'scheduler',              to: 'scraper-ovtlyr',          label: 'scrape_ovtlyr',    color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'scraper-wsb',             label: 'scrape_wsb',       color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'scraper-seekalpha',       label: 'scrape_seekalpha', color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'predictor',               label: 'run_predictor',    color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scheduler',              to: 'scraper-ovtlyr',          label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scheduler',              to: 'scraper-wsb',             label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scheduler',              to: 'scraper-seekalpha',       label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scheduler',              to: 'scraper-news',            label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scheduler',              to: 'scraper-etf-flows',       label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scheduler',              to: 'scraper-macro-regime',    label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scheduler',              to: 'predictor',               label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
   // ── Scrapers publish market data ──────────────────────────────────────────
   { from: 'scraper-ovtlyr',         to: 'predictor',               label: 'scanner.signals',  color: '#3b82f6', markerId: 'arrow-blue',   dashed: false },
   { from: 'scraper-wsb',            to: 'aggregator',              label: 'market.ticks',     color: '#8b5cf6', markerId: 'arrow-purple', dashed: false },
@@ -4759,6 +4765,9 @@ const TOPO_EDGES = [
   { from: 'scraper-ovtlyr',         to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'scraper-wsb',            to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'scraper-seekalpha',      to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scraper-news',           to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scraper-etf-flows',      to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
+  { from: 'scraper-macro-regime',   to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'aggregator',             to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'predictor',              to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'trader-equity',          to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
@@ -4821,15 +4830,17 @@ function resetTopoLayout() {
   localStorage.removeItem(TOPO_LAYOUT_KEY);
   // Reset to defaults (re-declare original positions)
   const defaults = {
-    'scraper-ovtlyr':15,'scraper-ovtlyr_y':20, 'scraper-wsb':15,'scraper-wsb_y':90,
-    'scraper-seekalpha':15,'scraper-seekalpha_y':160,
+    'scraper-ovtlyr':15,'scraper-ovtlyr_y':15, 'scraper-wsb':15,'scraper-wsb_y':80,
+    'scraper-seekalpha':15,'scraper-seekalpha_y':145,
+    'scraper-news':15,'scraper-news_y':210, 'scraper-etf-flows':15,'scraper-etf-flows_y':275,
+    'scraper-macro-regime':15,'scraper-macro-regime_y':340,
     'aggregator':200,'aggregator_y':125, 'predictor':375,'predictor_y':80,
     'trader-equity':555,'trader-equity_y':40, 'trader-options':555,'trader-options_y':130,
-    'review-agent':735,'review-agent_y':80, 'scheduler':15,'scheduler_y':310,
-    'orchestrator':195,'orchestrator_y':310, 'broker-gateway':735,'broker-gateway_y':200,
+    'review-agent':735,'review-agent_y':80, 'scheduler':185,'scheduler_y':420,
+    'orchestrator':375,'orchestrator_y':420, 'broker-gateway':735,'broker-gateway_y':200,
     'mcp-alpaca':735,'mcp-alpaca_y':310,
-    'mcp-massive':280,'mcp-massive_y':390,
-    'mcp-unusualwhales':90,'mcp-unusualwhales_y':460,
+    'mcp-massive':280,'mcp-massive_y':450,
+    'mcp-unusualwhales':90,'mcp-unusualwhales_y':515,
     'chat-agent':930,'chat-agent_y':140,
   };
   TOPO_NODES.forEach(n => {

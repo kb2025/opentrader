@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.16] - 2026-05-11
+
+### Fixed — Platform topology cleanup
+- Removed `scrape_wsb`, `scrape_seekalpha`, `scrape_ovtlyr`, `run_predictor` labels from scheduler trigger edges — dashed arrows convey the trigger relationship without floating midpoint labels
+- Moved `Scheduler` node off the scrapers' x-column so trigger edges are diagonal curves rather than invisible vertical lines
+- Added 3 missing scraper nodes: `AV News` (scraper-news), `ETF Flows` (scraper-etf-flows), `Macro Regime` (scraper-macro-regime) with scheduler trigger and heartbeat edges
+- Updated `resetTopoLayout` defaults to match new positions
+
 ## [3.7.15] - 2026-05-11
 
 ### Fixed
