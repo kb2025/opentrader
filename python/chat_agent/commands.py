@@ -12,8 +12,8 @@ Format: "cmd": (tool_name, arg_builder_fn, formatter_fn)
 import structlog
 from .mcp_registry import MCPRegistry
 from .formatter import (
-    fmt_quote, fmt_news, fmt_trending, fmt_history,
-    fmt_options_expiry, fmt_upgrades, fmt_financials, fmt_holders, fmt_generic,
+    fmt_massive_quote, fmt_massive_news, fmt_short_interest, fmt_analyst_consensus,
+    fmt_generic,
     fmt_alpaca_account, fmt_alpaca_positions, fmt_alpaca_orders,
     fmt_alpaca_clock, fmt_alpaca_bars, fmt_alpaca_quote, fmt_alpaca_snapshot,
 )
@@ -21,102 +21,79 @@ from .formatter import (
 log = structlog.get_logger("chat-agent.commands")
 
 # ── Command registry ──────────────────────────────────────────────────────────
-# Add new MCP server commands here.
 # Each entry: command_alias -> (tool_name, arg_builder, formatter)
 
 COMMAND_MAP: dict[str, tuple] = {
-    # ── Yahoo Finance ─────────────────────────────────────────────────────────
-    "quote":      ("get_stock_info",
-                   lambda a: {"ticker": a[0].upper()},
-                   fmt_quote),
-    "q":          ("get_stock_info",
-                   lambda a: {"ticker": a[0].upper()},
-                   fmt_quote),
-    "news":       ("get_yahoo_finance_news",
-                   lambda a: {"ticker": a[0].upper()},
-                   fmt_news),
-    "trending":   ("get_trending_tickers",
-                   lambda a: {"count": int(a[0]) if a else 15},
-                   fmt_trending),
-    "history":    ("get_historical_stock_prices",
-                   lambda a: {"ticker": a[0].upper(), "period": a[1] if len(a) > 1 else "1mo",
-                              "interval": a[2] if len(a) > 2 else "1d"},
-                   fmt_history),
-    "options":    ("get_option_expiration_dates",
-                   lambda a: {"ticker": a[0].upper()},
-                   fmt_options_expiry),
-    "chain":      ("get_option_chain",
-                   lambda a: {"ticker": a[0].upper(),
-                              "expiration_date": a[1],
-                              "option_type": a[2] if len(a) > 2 else "calls"},
-                   fmt_generic),
-    "financials": ("get_financial_statement",
-                   lambda a: {"ticker": a[0].upper(),
-                              "financial_type": a[1] if len(a) > 1 else "income_stmt"},
-                   fmt_financials),
-    "holders":    ("get_holder_info",
-                   lambda a: {"ticker": a[0].upper(),
-                              "holder_type": a[1] if len(a) > 1 else "institutional_holders"},
-                   fmt_holders),
-    "upgrades":   ("get_recommendations",
-                   lambda a: {"ticker": a[0].upper(),
-                              "recommendation_type": "upgrades_downgrades"},
-                   fmt_upgrades),
-    "recommend":  ("get_recommendations",
-                   lambda a: {"ticker": a[0].upper(),
-                              "recommendation_type": "recommendations"},
-                   fmt_generic),
+    # ── Massive Market Data (Polygon.io) ─────────────────────────────────────
+    "quote":     ("get_quote",
+                  lambda a: {"ticker": a[0].upper()},
+                  fmt_massive_quote),
+    "q":         ("get_quote",
+                  lambda a: {"ticker": a[0].upper()},
+                  fmt_massive_quote),
+    "news":      ("get_ticker_news",
+                  lambda a: {"ticker": a[0].upper(), "limit": int(a[1]) if len(a) > 1 else 8},
+                  fmt_massive_news),
+    "short":     ("get_short_interest",
+                  lambda a: {"ticker": a[0].upper(), "limit": 4},
+                  fmt_short_interest),
+    "consensus": ("get_analyst_consensus",
+                  lambda a: {"ticker": a[0].upper()},
+                  fmt_analyst_consensus),
+    "earnings":  ("get_earnings",
+                  lambda a: {"ticker": a[0].upper(), "limit": 4},
+                  fmt_generic),
+    "divs":      ("get_dividends",
+                  lambda a: {"ticker": a[0].upper(), "limit": 6},
+                  fmt_generic),
     # ── Alpaca Trading ────────────────────────────────────────────────────────
-    "account":    ("get_account_info",
-                   lambda a: {},
-                   fmt_alpaca_account),
-    "positions":  ("get_all_positions",
-                   lambda a: {},
-                   fmt_alpaca_positions),
-    "orders":     ("get_orders",
-                   lambda a: {"status": a[0] if a else "open"},
-                   fmt_alpaca_orders),
-    "clock":      ("get_clock",
-                   lambda a: {},
-                   fmt_alpaca_clock),
-    "movers":     ("get_market_movers",
-                   lambda a: {"market_type": a[0] if a else "stocks"},
-                   fmt_generic),
-    "active":     ("get_most_active_stocks",
-                   lambda a: {},
-                   fmt_generic),
-    "bars":       ("get_stock_bars",
-                   lambda a: {"symbols": a[0].upper(),
-                              "timeframe": a[1] if len(a) > 1 else "1Day",
-                              "limit": int(a[2]) if len(a) > 2 else 10},
-                   fmt_alpaca_bars),
-    "lquote":     ("get_stock_latest_quote",
-                   lambda a: {"symbols": a[0].upper()},
-                   fmt_alpaca_quote),
-    "snapshot":   ("get_stock_snapshot",
-                   lambda a: {"symbols": a[0].upper()},
-                   fmt_alpaca_snapshot),
+    "account":   ("get_account_info",
+                  lambda a: {},
+                  fmt_alpaca_account),
+    "positions": ("get_all_positions",
+                  lambda a: {},
+                  fmt_alpaca_positions),
+    "orders":    ("get_orders",
+                  lambda a: {"status": a[0] if a else "open"},
+                  fmt_alpaca_orders),
+    "clock":     ("get_clock",
+                  lambda a: {},
+                  fmt_alpaca_clock),
+    "movers":    ("get_market_movers",
+                  lambda a: {"market_type": a[0] if a else "stocks"},
+                  fmt_generic),
+    "active":    ("get_most_active_stocks",
+                  lambda a: {},
+                  fmt_generic),
+    "bars":      ("get_stock_bars",
+                  lambda a: {"symbols": a[0].upper(),
+                             "timeframe": a[1] if len(a) > 1 else "1Day",
+                             "limit": int(a[2]) if len(a) > 2 else 10},
+                  fmt_alpaca_bars),
+    "lquote":    ("get_stock_latest_quote",
+                  lambda a: {"symbols": a[0].upper()},
+                  fmt_alpaca_quote),
+    "snapshot":  ("get_stock_snapshot",
+                  lambda a: {"symbols": a[0].upper()},
+                  fmt_alpaca_snapshot),
     # ── Add more MCP server commands below ───────────────────────────────────
     # "mycommand": ("tool_name", lambda a: {...}, fmt_generic),
 }
 
 # Commands that don't need a ticker argument
-NO_ARGS_REQUIRED = {"trending"}
+NO_ARGS_REQUIRED = {"account", "positions", "orders", "clock", "active", "movers"}
 
 HELP_TEXT = """\
 **OpenTrader Finance Bot**
 
-**📊 Market Data (Yahoo Finance)**
-`!quote <ticker>` — Price, stats & company overview
-`!news <ticker>` — Latest news headlines
-`!trending [n]` — Most active tickers
-`!history <ticker> [period]` — Price history *(1d/5d/1mo/3mo/1y)*
-`!options <ticker>` — Options expiration dates
-`!chain <ticker> <date> [calls|puts]` — Options chain
-`!financials <ticker> [type]` — Financial statements *(income_stmt/balance_sheet/cashflow)*
-`!holders <ticker> [type]` — Holder info *(institutional/major/insider)*
-`!upgrades <ticker>` — Analyst upgrades & downgrades
-`!recommend <ticker>` — Analyst recommendations
+**📊 Market Data (Polygon.io)**
+`!quote <ticker>` — Real-time price, bid/ask, volume
+`!q <ticker>` — Alias for !quote
+`!news <ticker> [n]` — Latest news headlines
+`!short <ticker>` — Short interest & days-to-cover
+`!consensus <ticker>` — Analyst consensus rating & price target
+`!earnings <ticker>` — Upcoming & recent earnings dates
+`!divs <ticker>` — Dividend history (ex-date, pay-date, amount)
 
 **💼 Alpaca Account & Trading**
 `!account` — Account balances & buying power
@@ -131,7 +108,7 @@ HELP_TEXT = """\
 
 **🤖 AI Mode**
 Mention me or DM with any natural language question.
-*Examples:* `@bot What's my current P&L?` · `@bot Any bullish upgrades on NVDA?`
+*Examples:* `@bot What's my current P&L?` · `@bot Any bullish signals on NVDA?`
 """
 
 

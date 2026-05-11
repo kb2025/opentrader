@@ -318,6 +318,111 @@ def fmt_holders(raw: str, cmd: str, args: list) -> str:
     return fmt_generic(raw, cmd, args)
 
 
+def fmt_massive_quote(raw: str, cmd: str, args: list) -> str:
+    ticker = args[0].upper() if args else "?"
+    if not raw or raw.startswith("Error"):
+        return raw or f"No quote for {ticker}"
+    try:
+        d = json.loads(raw)
+    except Exception:
+        return _trunc(raw)
+    if d.get("error"):
+        return f"{ticker}: {d['error']}"
+    last     = d.get("last") or d.get("close") or d.get("prev_close")
+    chg_pct  = d.get("change_pct")
+    bid      = d.get("bid")
+    ask      = d.get("ask")
+    vol      = d.get("volume")
+    vwap     = d.get("vwap")
+    high     = d.get("high")
+    low      = d.get("low")
+    prev     = d.get("prev_close")
+    chg_str  = f" ({chg_pct:+.2f}%)" if isinstance(chg_pct, (int, float)) else ""
+    ba_str   = f"  ·  Bid/Ask: **${bid:.2f}** / **${ask:.2f}**" if bid and ask else ""
+    vol_str  = f"{int(vol):,}" if vol else "N/A"
+    lines = [
+        f"**{ticker}**  ${last:.2f}{chg_str}{ba_str}" if last else f"**{ticker}** — no last price",
+        f"High: ${high:.2f}  Low: ${low:.2f}  Prev Close: ${prev:.2f}" if high and low and prev else "",
+        f"Volume: {vol_str}" + (f"  ·  VWAP: ${vwap:.2f}" if vwap else ""),
+    ]
+    return "\n".join(l for l in lines if l)
+
+
+def fmt_massive_news(raw: str, cmd: str, args: list) -> str:
+    ticker = args[0].upper() if args else "?"
+    if not raw or raw.startswith("Error"):
+        return raw or f"No news for {ticker}"
+    try:
+        articles = json.loads(raw)
+    except Exception:
+        return _trunc(raw)
+    if not articles:
+        return f"No recent news found for {ticker}"
+    lines = [f"**Latest news — {ticker}**\n"]
+    for a in articles[:6]:
+        title = a.get("title", "")
+        url   = a.get("article_url", "")
+        pub   = a.get("publisher", "")
+        ts    = str(a.get("published_utc", ""))[:10]
+        if title:
+            src = f" _{pub}_ `{ts}`" if pub else f" `{ts}`"
+            lines.append(f"• **{title}**{src}")
+            if url:
+                lines.append(f"  {url}")
+    return "\n".join(lines)
+
+
+def fmt_short_interest(raw: str, cmd: str, args: list) -> str:
+    ticker = args[0].upper() if args else "?"
+    if not raw or raw.startswith("Error"):
+        return raw or f"No short interest data for {ticker}"
+    try:
+        rows = json.loads(raw)
+    except Exception:
+        return _trunc(raw)
+    if not rows:
+        return f"No short interest data found for {ticker}"
+    lines = [f"**{ticker} — Short Interest**\n"]
+    for r in rows[:4]:
+        date  = r.get("settlement_date", "?")
+        si    = r.get("short_interest")
+        dtc   = r.get("days_to_cover")
+        adv   = r.get("avg_daily_volume")
+        si_str  = f"{int(si):,}" if si else "N/A"
+        adv_str = f"{int(adv):,}" if adv else "N/A"
+        dtc_str = f"{dtc:.1f}" if dtc else "N/A"
+        lines.append(f"`{date}`  Short: **{si_str}**  DTC: **{dtc_str}d**  AvgVol: {adv_str}")
+    return "\n".join(lines)
+
+
+def fmt_analyst_consensus(raw: str, cmd: str, args: list) -> str:
+    ticker = args[0].upper() if args else "?"
+    if not raw or raw.startswith("Error"):
+        return raw or f"No analyst data for {ticker}"
+    try:
+        d = json.loads(raw)
+    except Exception:
+        return _trunc(raw)
+    if d.get("error"):
+        return f"{ticker}: {d['error']}"
+    rating  = (d.get("consensus_rating") or "N/A").upper()
+    target  = d.get("consensus_price_target")
+    high_t  = d.get("high_price_target")
+    low_t   = d.get("low_price_target")
+    buys    = d.get("buy_ratings", 0)
+    holds   = d.get("hold_ratings", 0)
+    sells   = d.get("sell_ratings", 0)
+    total   = d.get("total_analysts", buys + holds + sells)
+    tgt_str = f"${target:.2f}" if target else "N/A"
+    rng_str = f" (range ${low_t:.2f}–${high_t:.2f})" if low_t and high_t else ""
+    lines = [
+        f"**{ticker} — Analyst Consensus**\n",
+        f"Rating: **{rating}**  ·  Price Target: **{tgt_str}**{rng_str}",
+        f"Buy: {buys}  ·  Hold: {holds}  ·  Sell: {sells}  ({total} analysts)",
+    ]
+    return "\n".join(lines)
+
+
 def fmt_generic(raw: str, cmd: str, args: list) -> str:
     """Pretty-print JSON or truncate plain text."""
     try:

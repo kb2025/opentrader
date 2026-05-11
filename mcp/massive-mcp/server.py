@@ -26,6 +26,9 @@ Available tools:
 - get_dividends: Get dividend history (ex-date, pay-date, amount, frequency) for a ticker
 - get_splits: Get stock split history for a ticker
 - get_earnings: Get upcoming and recent earnings dates and estimates for a ticker
+- get_ticker_news: Get recent news articles for a ticker
+- get_short_interest: Get short interest data (shares short, days-to-cover) for a ticker
+- get_analyst_consensus: Get analyst consensus rating and price target for a ticker
 """,
 )
 
@@ -379,3 +382,84 @@ def get_earnings(ticker: str, limit: int = 8) -> list:
             "importance":            e.importance,
         })
     return results
+
+
+@massive_server.tool(
+    name="get_ticker_news",
+    description="Get recent news articles for a ticker from Polygon/Benzinga.",
+)
+def get_ticker_news(ticker: str, limit: int = 10) -> list:
+    """
+    Args:
+        ticker: Stock ticker symbol, e.g. 'AAPL'
+        limit:  Max number of articles to return (default: 10)
+    """
+    c = _client()
+    rows = c.list_ticker_news(ticker=ticker.upper(), limit=min(int(limit), 50),
+                              sort="published_utc", order="desc")
+    results = []
+    for n in (rows or []):
+        pub = getattr(n, "publisher", None)
+        results.append({
+            "title":         n.title,
+            "published_utc": n.published_utc,
+            "article_url":   n.article_url,
+            "description":   n.description,
+            "publisher":     pub.name if pub else None,
+            "tickers":       n.tickers or [],
+        })
+    return results
+
+
+@massive_server.tool(
+    name="get_short_interest",
+    description="Get short interest data for a ticker: shares short, days-to-cover, avg daily volume.",
+)
+def get_short_interest(ticker: str, limit: int = 4) -> list:
+    """
+    Args:
+        ticker: Stock ticker symbol, e.g. 'AAPL'
+        limit:  Number of settlement periods to return (default: 4, ~2 months)
+    """
+    c = _client()
+    rows = c.list_short_interest(ticker=ticker.upper(), limit=min(int(limit), 20),
+                                 sort="settlement_date", order="desc")
+    results = []
+    for r in (rows or []):
+        results.append({
+            "ticker":           r.ticker,
+            "settlement_date":  str(r.settlement_date) if r.settlement_date else None,
+            "short_interest":   r.short_interest,
+            "avg_daily_volume": r.avg_daily_volume,
+            "days_to_cover":    round(float(r.days_to_cover), 2) if r.days_to_cover else None,
+        })
+    return results
+
+
+@massive_server.tool(
+    name="get_analyst_consensus",
+    description="Get analyst consensus rating and price target for a ticker via Benzinga.",
+)
+def get_analyst_consensus(ticker: str) -> dict:
+    """
+    Args:
+        ticker: Stock ticker symbol, e.g. 'AAPL'
+    """
+    c = _client()
+    rows = c.list_benzinga_consensus_ratings(ticker=ticker.upper(), limit=1)
+    for r in (rows or []):
+        total = (int(r.buy_ratings or 0) + int(r.hold_ratings or 0) +
+                 int(r.sell_ratings or 0) + int(r.strong_buy_ratings or 0) +
+                 int(r.strong_sell_ratings or 0))
+        return {
+            "ticker":                  ticker.upper(),
+            "consensus_rating":        r.consensus_rating,
+            "consensus_price_target":  r.consensus_price_target,
+            "high_price_target":       r.high_price_target,
+            "low_price_target":        r.low_price_target,
+            "buy_ratings":             int(r.buy_ratings or 0) + int(r.strong_buy_ratings or 0),
+            "hold_ratings":            int(r.hold_ratings or 0),
+            "sell_ratings":            int(r.sell_ratings or 0) + int(r.strong_sell_ratings or 0),
+            "total_analysts":          total,
+        }
+    return {"ticker": ticker.upper(), "error": "No consensus data available"}

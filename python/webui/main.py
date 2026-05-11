@@ -7489,7 +7489,7 @@ def _div_fetch_dividendcom_sync(ticker: str) -> dict:
 
 
 async def _div_fetch_meta_tiered(ticker: str) -> dict:
-    """Fetch dividend metadata: massive.com → dividend.com → yfinance (last resort)."""
+    """Fetch dividend metadata: massive.com → dividend.com (two-tier, no yfinance)."""
     meta = await _div_fetch_massive_meta(ticker)
     if meta.get("ex_date") or meta.get("amount_per_share"):
         return meta
@@ -7500,124 +7500,9 @@ async def _div_fetch_meta_tiered(ticker: str) -> dict:
     if meta.get("ex_date") or meta.get("forward_yield_pct"):
         return meta
 
-    return await _div_fetch_yahoo(ticker)
+    return {}
 
 
-async def _div_fetch_yahoo(ticker: str) -> dict:
-    """Fetch dividend metadata for one ticker using yfinance (last-resort fallback)."""
-    import asyncio as _asyncio
-    loop = _asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _div_fetch_yahoo_sync, ticker)
-
-
-def _div_fetch_yahoo_sync(ticker: str) -> dict:
-    """Synchronous yfinance fetch — called via run_in_executor."""
-    try:
-        import yfinance as yf
-        from datetime import datetime as _dt
-        t = yf.Ticker(ticker)
-        info = t.info or {}
-
-        # ex_date: yfinance returns Unix timestamp
-        ex_raw = info.get("exDividendDate")
-        ex_date = None
-        if ex_raw:
-            try:
-                ex_date = _dt.fromtimestamp(float(ex_raw)).strftime("%Y-%m-%d")
-            except Exception:
-                pass
-
-        # Frequency: count dividend payments in trailing 18 months
-        frequency = 4
-        aps = None
-        try:
-            import pandas as _pd
-            actions = t.dividends
-            if actions is not None and len(actions) > 0:
-                cutoff = _pd.Timestamp.now(tz="America/New_York") - _pd.Timedelta(days=548)
-                if actions.index.tz is None:
-                    actions.index = actions.index.tz_localize("America/New_York")
-                recent = actions[actions.index >= cutoff]
-                n = len(recent)
-                if   n >= 40: frequency = 52   # weekly
-                elif n >= 10: frequency = 12   # monthly
-                elif n >= 3:  frequency = 4    # quarterly
-                elif n >= 1:  frequency = 2    # semi-annual
-                else:         frequency = 1    # annual
-                if n > 0:
-                    aps = float(recent.iloc[-1])
-        except Exception:
-            pass
-
-        # Forward annual rate — try multiple fields, then derive from yield × price
-        far = info.get("dividendRate") or info.get("trailingAnnualDividendRate")
-        fyp = info.get("dividendYield")
-        if fyp and fyp < 1:
-            fyp = fyp * 100  # convert 0.0399 → 3.99
-
-        # Derive far from yield × current price (common for ETFs)
-        if not far and fyp:
-            price_now = (info.get("currentPrice") or info.get("regularMarketPrice")
-                         or info.get("navPrice") or info.get("previousClose"))
-            if price_now:
-                far = float(fyp) / 100.0 * float(price_now)
-
-        # Derive far from sum of trailing-12-month dividends
-        if not far:
-            try:
-                actions = t.dividends
-                if actions is not None and len(actions) > 0:
-                    cutoff_12m = _pd.Timestamp.now(tz="America/New_York") - _pd.Timedelta(days=365)
-                    if actions.index.tz is None:
-                        actions.index = actions.index.tz_localize("America/New_York")
-                    last_12m = actions[actions.index >= cutoff_12m]
-                    if len(last_12m) > 0:
-                        far = float(last_12m.sum())
-            except Exception:
-                pass
-
-        if not aps:
-            aps = info.get("lastDividendValue") or (float(far) / frequency if far else None)
-
-        # Recalibrate forward_annual_rate from most recent payment × frequency.
-        # The trailing-12-month sum (used as far above) overstates when the dividend
-        # has been cut, because old high payments dominate the average.
-        # Example: HOOW cut from $0.93/wk to $0.28/wk → trailing sum $38/yr, but
-        # forward rate should be $0.28 × 52 = $14.72/yr. Using aps × freq here
-        # immediately reflects the current payout level without historical drag.
-        if aps and frequency:
-            aps_based_far = float(aps) * frequency
-            if far:
-                # When aps-based rate is more than 20% lower than trailing avg,
-                # use aps × freq (dividend cut detected). Accept increases too.
-                if aps_based_far < float(far) * 0.80:
-                    far = aps_based_far
-            else:
-                far = aps_based_far
-
-        # Derive fyp from far if still missing
-        if not fyp and far:
-            price_now = (info.get("currentPrice") or info.get("regularMarketPrice")
-                         or info.get("navPrice") or info.get("previousClose"))
-            if price_now and float(price_now) > 0:
-                fyp = float(far) / float(price_now) * 100.0
-
-        return {
-            "ex_date":               ex_date,
-            "pay_date":              None,
-            "amount_per_share":      float(aps) if aps else None,
-            "frequency":             frequency,
-            "forward_annual_rate":   float(far) if far else None,
-            "forward_yield_pct":     float(fyp) if fyp else None,
-            "sector":                info.get("sector"),
-            "industry":              info.get("industry"),
-            "payout_ratio":          float(info.get("payoutRatio")) if info.get("payoutRatio") else None,
-            "five_yr_avg_yield_pct": float(info.get("fiveYearAvgDividendYield") or 0) or None,
-            "raw":                   {k: v for k, v in info.items() if isinstance(v, (str, int, float, bool, type(None)))},
-        }
-    except Exception as e:
-        log.warning("dividend_yfinance_fetch_failed", ticker=ticker, error=str(e))
-        return {}
 
 
 def _div_parse_date(val):
@@ -8243,7 +8128,7 @@ async def div_refresh(token: str = ""):
 @app.post("/api/dividends/backfill")
 async def div_backfill(token: str = ""):
     """
-    Fetch 18 months of actual dividend payment history from yfinance for every
+    Fetch 18 months of actual dividend payment history from Polygon (Massive MCP) for every
     ticker held in every broker account and save to dividend_history.
     Uses current qty as the held quantity for each account/ticker pair.
     """
@@ -8274,41 +8159,35 @@ async def div_backfill(token: str = ""):
         return {"ok": True, "saved": 0, "tickers": 0}
 
     import asyncio as _asyncio
-    from datetime import date as _date
-    import pandas as _pd
+    from datetime import date as _date, timedelta as _td
 
-    cutoff = _pd.Timestamp.now(tz="America/New_York") - _pd.Timedelta(days=548)
+    cutoff_str = (_date.today() - _td(days=548)).isoformat()
 
-    def _fetch_history_sync(ticker: str) -> list[tuple]:
-        """Return list of (pay_date_str, amount_per_share) for last 18 months."""
+    async def _fetch_history_polygon(ticker: str) -> list[tuple]:
+        """Return list of (pay_date_str, amount_per_share) for last 18 months via Polygon."""
         try:
-            import yfinance as yf
-            t = yf.Ticker(ticker)
-            divs = t.dividends
-            if divs is None or len(divs) == 0:
+            from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
+            raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends",
+                                      {"ticker": ticker, "limit": 30})
+            if not raw:
                 return []
-            # Ensure index is tz-aware for comparison
-            if divs.index.tz is None:
-                divs.index = divs.index.tz_localize("America/New_York")
-            recent = divs[divs.index >= cutoff]
+            divs = json.loads(raw)
             results = []
-            for dt_idx, amt in recent.items():
-                try:
-                    d = dt_idx.date() if hasattr(dt_idx, 'date') else _pd.Timestamp(dt_idx).date()
-                    results.append((str(d), float(amt)))
-                except Exception:
-                    pass
+            for d in (divs or []):
+                pay = d.get("pay_date") or d.get("ex_date")
+                amt = d.get("cash_amount")
+                if pay and amt and str(pay) >= cutoff_str:
+                    results.append((str(pay)[:10], float(amt)))
             return results
         except Exception as e:
-            log.warning("div_backfill.fetch_failed", ticker=ticker, error=str(e))
+            log.warning("div_backfill.polygon_failed", ticker=ticker, error=str(e))
             return []
 
-    loop = _asyncio.get_event_loop()
     sem = _asyncio.Semaphore(5)
 
     async def _fetch_one(ticker):
         async with sem:
-            return ticker, await loop.run_in_executor(None, _fetch_history_sync, ticker)
+            return ticker, await _fetch_history_polygon(ticker)
 
     results = await _asyncio.gather(*[_fetch_one(t) for t in ticker_accounts], return_exceptions=True)
 
@@ -8886,7 +8765,7 @@ async def email_options_report(body: OptionsReportBody, token: str = ""):
 
 async def _get_sgov_alert() -> dict | None:
     """
-    Fetch SGOV's next ex-dividend date via yfinance and return an alert dict if
+    Fetch SGOV's next ex-dividend date via Massive MCP and return an alert dict if
     action is needed today, or None.  Alert dict keys:
       action  — "sell" (day before ex-div) or "buy" (on ex-div date)
       ex_date — YYYY-MM-DD string
@@ -8901,20 +8780,19 @@ async def _get_sgov_alert() -> dict | None:
         if not ira_labels:
             ira_labels = ["webull-live-2", "webull-live-3", "webull-live-4"]
 
-        loop = asyncio.get_event_loop()
-
-        def _fetch_ex_date():
-            import yfinance as yf
-            info = yf.Ticker("SGOV").info
-            return info.get("exDividendDate")
-
-        ex_ts = await loop.run_in_executor(None, _fetch_ex_date)
-        if not ex_ts:
-            return None
-
+        from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
         from datetime import date as _date, timedelta as _td
-        ex_date = _date.fromtimestamp(int(ex_ts))
+        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends",
+                                  {"ticker": "SGOV", "limit": 4})
+        if not raw:
+            return None
+        divs = json.loads(raw)
         today_et = now_et().date()
+        today_str = today_et.isoformat()
+        upcoming = [d for d in (divs or []) if d.get("ex_date") and d["ex_date"] >= today_str]
+        if not upcoming:
+            return None
+        ex_date = _date.fromisoformat(upcoming[-1]["ex_date"])
 
         if ex_date == today_et + _td(days=1):
             return {"action": "sell", "ex_date": ex_date.isoformat(), "accounts": ira_labels}
@@ -10303,47 +10181,41 @@ async def get_macro_regime(history: bool = False):
 
 @app.get("/api/market/macro-news")
 async def get_macro_news(limit: int = 15):
-    """Fetch broad market/macro news via yfinance (SPY, QQQ, ^GSPC). Cached 15 min."""
-    import asyncio as _asyncio
+    """Fetch broad market/macro news via Polygon (SPY, QQQ). Cached 15 min."""
     _redis = await get_redis()
     cached = await _redis.get("macro_news:latest")
     if cached:
         return {"articles": json.loads(cached)[:limit], "source": "cache"}
 
-    def _fetch_news_sync() -> list[dict]:
-        try:
-            import yfinance as _yf
-            seen_urls: set = set()
-            articles: list = []
-            for sym in ("SPY", "QQQ", "^GSPC", "^DJI", "^VIX"):
-                try:
-                    t = _yf.Ticker(sym)
-                    for item in (t.news or []):
-                        content = item.get("content") or {}
-                        if isinstance(content, dict) and content.get("contentType") == "STORY":
-                            url     = (content.get("canonicalUrl") or {}).get("url", "")
-                            title   = content.get("title", "")
-                            summary = content.get("summary", "") or content.get("description", "")
-                            pub_ts  = content.get("pubDate", "")
-                        else:
-                            url     = item.get("link", "")
-                            title   = item.get("title", "")
-                            summary = item.get("summary", "")
-                            pub_ts  = ""
-                        if not title or url in seen_urls:
-                            continue
-                        seen_urls.add(url or title)
-                        articles.append({"title": title, "summary": summary,
-                                         "url": url, "source": sym, "pub_ts": pub_ts})
-                except Exception:
-                    pass
-            articles.sort(key=lambda x: x.get("pub_ts", ""), reverse=True)
-            return articles[:30]
-        except Exception:
-            return []
+    from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
+    seen_urls: set = set()
+    articles: list = []
 
-    loop = _asyncio.get_event_loop()
-    articles = await loop.run_in_executor(None, _fetch_news_sync)
+    for sym in ("SPY", "QQQ"):
+        try:
+            raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_ticker_news",
+                                      {"ticker": sym, "limit": 15})
+            if not raw:
+                continue
+            news = json.loads(raw)
+            for item in (news or []):
+                url   = item.get("article_url", "")
+                title = item.get("title", "")
+                if not title or url in seen_urls:
+                    continue
+                seen_urls.add(url or title)
+                articles.append({
+                    "title":   title,
+                    "summary": item.get("description", ""),
+                    "url":     url,
+                    "source":  sym,
+                    "pub_ts":  item.get("published_utc", ""),
+                })
+        except Exception:
+            pass
+
+    articles.sort(key=lambda x: x.get("pub_ts", ""), reverse=True)
+    articles = articles[:30]
     if articles:
         await _redis.setex("macro_news:latest", 900, json.dumps(articles))
     return {"articles": articles[:limit], "source": "live"}
@@ -10724,59 +10596,49 @@ async def _fetch_technical_indicators(ticker: str) -> dict:
 
 
 async def _fetch_fundamentals(ticker: str) -> dict:
-    """Fetch fundamental data + net insider share purchases via yfinance."""
-    import asyncio as _asyncio
+    """Fetch fundamental data + short interest via Massive MCP (Polygon/Benzinga)."""
+    from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
     sym = ticker.upper()
+    result: dict = {
+        "market_cap":         None,
+        "analyst_target":     None,
+        "recommendation":     None,
+        "short_interest":     None,
+        "days_to_cover":      None,
+    }
 
-    def _sync_fetch(s: str) -> dict:
-        try:
-            import yfinance as _yf
-            import pandas as _pd
-            t    = _yf.Ticker(s)
-            info = t.info or {}
-            result: dict = {
-                "pe_ratio":           info.get("trailingPE") or info.get("forwardPE"),
-                "pb_ratio":           info.get("priceToBook"),
-                "roe":                info.get("returnOnEquity"),
-                "profit_margin":      info.get("profitMargins"),
-                "revenue_growth":     info.get("revenueGrowth"),
-                "debt_to_equity":     info.get("debtToEquity"),
-                "market_cap":         info.get("marketCap"),
-                "analyst_target":     info.get("targetMeanPrice"),
-                "recommendation":     info.get("recommendationKey"),
-                "net_insider_shares": None,
-            }
-            # Convert decimal fields to percentages
-            for k in ("roe", "profit_margin", "revenue_growth"):
-                if result[k] is not None:
-                    try:
-                        result[k] = round(float(result[k]) * 100, 2)
-                    except Exception:
-                        result[k] = None
-            for k in ("pe_ratio", "pb_ratio", "debt_to_equity", "analyst_target"):
-                if result[k] is not None:
-                    try:
-                        result[k] = round(float(result[k]), 2)
-                    except Exception:
-                        result[k] = None
-            # Net insider share purchases last 90 days
-            try:
-                txns = t.insider_transactions
-                if txns is not None and not txns.empty:
-                    if txns.index.tz is None:
-                        txns.index = txns.index.tz_localize("UTC")
-                    cutoff = _pd.Timestamp.now(tz="UTC") - _pd.Timedelta(days=90)
-                    recent = txns[txns.index >= cutoff]
-                    if "Shares" in recent.columns and not recent.empty:
-                        result["net_insider_shares"] = int(recent["Shares"].sum())
-            except Exception:
-                pass
-            return result
-        except Exception:
-            return {}
+    # Ticker details — market cap
+    try:
+        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_ticker_details", {"ticker": sym})
+        if raw:
+            d = json.loads(raw)
+            result["market_cap"] = d.get("market_cap")
+    except Exception:
+        pass
 
-    loop = _asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _sync_fetch, sym)
+    # Analyst consensus — target price + rating
+    try:
+        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_analyst_consensus", {"ticker": sym})
+        if raw:
+            d = json.loads(raw)
+            if not d.get("error"):
+                result["analyst_target"]  = d.get("consensus_price_target")
+                result["recommendation"]  = d.get("consensus_rating")
+    except Exception:
+        pass
+
+    # Short interest — replaces yfinance insider_transactions
+    try:
+        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_short_interest", {"ticker": sym, "limit": 1})
+        if raw:
+            rows = json.loads(raw)
+            if isinstance(rows, list) and rows:
+                result["short_interest"] = rows[0].get("short_interest")
+                result["days_to_cover"]  = rows[0].get("days_to_cover")
+    except Exception:
+        pass
+
+    return result
 
 
 async def _generate_stock_summary(

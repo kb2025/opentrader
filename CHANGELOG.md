@@ -3,6 +3,18 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.9] - 2026-05-11
+
+### Added
+- **Massive MCP — 3 new tools**: `get_ticker_news` (Polygon/Benzinga headlines), `get_short_interest` (shares short, days-to-cover), `get_analyst_consensus` (Benzinga consensus rating + price target)
+
+### Removed
+- **Yahoo Finance Phase 3 — 3f, 3j, 3k, 3l**:
+  - **3f** `main.py` dividend functions: removed `_div_fetch_yahoo` / `_div_fetch_yahoo_sync`; dividend backfill now uses Polygon `get_dividends`; SGOV ex-div alert uses Massive MCP `get_dividends`
+  - **3j** `chat_agent/commands.py`: replaced all Yahoo Finance commands with Massive equivalents (`!quote`/`!q` → Massive `get_quote`, `!news` → `get_ticker_news`, `!short` → `get_short_interest`, `!consensus` → `get_analyst_consensus`, `!earnings` → `get_earnings`, `!divs` → `get_dividends`); removed Yahoo-only commands (trending, history, options, chain, financials, holders, upgrades, recommend)
+  - **3k** `_fetch_fundamentals`: replaced yfinance insider_transactions with Massive `get_analyst_consensus` + `get_short_interest`; function is now async and uses MCP directly
+  - **3l** `get_macro_news`: replaced yfinance SPY/QQQ/^VIX news with Polygon `get_ticker_news` for SPY and QQQ
+
 ## [3.7.8] - 2026-05-11
 
 ### Removed
