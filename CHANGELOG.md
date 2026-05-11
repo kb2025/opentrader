@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.14] - 2026-05-11
+
+### Changed — Documentation refresh
+- README: removed all Yahoo Finance references; updated services table to match actual compose.yml containers (27 services); added Ticker Classification section; updated Market Intelligence Pipeline and Dividend Data Sources tables; fixed pre-built image pull commands; updated MCP Agents list to reflect Massive.com as primary data source
+- PROJECT_STATE: full rewrite to reflect current architecture (correct container list, MCP servers, scraper list, ticker_classification DB table, updated scheduler jobs)
+- CLAUDE.md: committed previously staged working-style and workflow additions
+
 ## [3.7.13] - 2026-05-11
 
 ### Removed — Phase 5: Yahoo Finance frontend cleanup
