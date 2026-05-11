@@ -2505,29 +2505,44 @@ select option{background:var(--surface2)}
         <div id="chart-macd-container" style="width:100%;height:110px"></div>
       </div>
 
-      <!-- Sentiment subpanel -->
-      <div class="card" id="chart-sentiment-card" style="display:none;margin-bottom:14px">
-        <div class="card-header" style="padding:6px 14px">
-          <span class="card-title" style="font-size:11px;color:var(--muted)">Sentiment</span>
-          <span id="chart-sent-label" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-left:8px"></span>
-          <span id="chart-ovtlyr-signal" style="display:none;font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px;margin-left:8px;letter-spacing:.04em"></span>
-        </div>
-        <div id="chart-sentiment-body" style="padding:10px 14px;display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
-          <!-- Score gauge -->
-          <div style="text-align:center;min-width:80px">
-            <div id="chart-sent-score" style="font-size:28px;font-weight:700;line-height:1">—</div>
-            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Score / 100</div>
+      <!-- Sentiment + OVTLYR row -->
+      <div style="display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap;align-items:stretch">
+
+        <!-- OVTLYR Signal card -->
+        <div class="card" id="chart-ovtlyr-card" style="display:none;min-width:150px;flex-shrink:0;display:flex;flex-direction:column">
+          <div class="card-header" style="padding:6px 14px">
+            <span class="card-title" style="font-size:11px;color:var(--muted)">OVTLYR Signal</span>
           </div>
-          <!-- Component bars -->
-          <div style="flex:1;min-width:160px">
-            <div style="display:grid;grid-template-columns:1fr;gap:5px" id="chart-sent-components"></div>
-          </div>
-          <!-- Sparkline -->
-          <div style="flex:2;min-width:200px">
-            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">30-Day Trend</div>
-            <svg id="chart-sent-sparkline" width="100%" height="56" style="display:block"></svg>
+          <div style="flex:1;padding:14px 18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+            <div id="chart-ovtlyr-signal" style="font-size:22px;font-weight:800;letter-spacing:.06em;padding:8px 22px;border-radius:8px;text-align:center">—</div>
+            <div id="chart-ovtlyr-signal-date" style="font-size:9px;color:var(--muted);text-align:center"></div>
           </div>
         </div>
+
+        <!-- Sentiment card -->
+        <div class="card" id="chart-sentiment-card" style="display:none;flex:1;min-width:300px">
+          <div class="card-header" style="padding:6px 14px">
+            <span class="card-title" style="font-size:11px;color:var(--muted)">Sentiment</span>
+            <span id="chart-sent-label" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;margin-left:8px"></span>
+          </div>
+          <div id="chart-sentiment-body" style="padding:10px 14px;display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+            <!-- Score gauge -->
+            <div style="text-align:center;min-width:80px">
+              <div id="chart-sent-score" style="font-size:28px;font-weight:700;line-height:1">—</div>
+              <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Score / 100</div>
+            </div>
+            <!-- Component bars -->
+            <div style="flex:1;min-width:160px">
+              <div style="display:grid;grid-template-columns:1fr;gap:5px" id="chart-sent-components"></div>
+            </div>
+            <!-- Sparkline -->
+            <div style="flex:2;min-width:200px">
+              <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">30-Day Trend</div>
+              <svg id="chart-sent-sparkline" width="100%" height="56" style="display:block"></svg>
+            </div>
+          </div>
+        </div>
+
       </div>
 
     </div>
@@ -10020,27 +10035,31 @@ async function _chartLoad() {
 
 async function _chartLoadSentiment(sym) {
   const card = document.getElementById('chart-sentiment-card');
-  const ovtlyrEl = document.getElementById('chart-ovtlyr-signal');
 
   // Fetch OVTLYR signal live (no client-side cache)
+  const ovCard   = document.getElementById('chart-ovtlyr-card');
+  const ovtlyrEl = document.getElementById('chart-ovtlyr-signal');
+  const ovDateEl = document.getElementById('chart-ovtlyr-signal-date');
   try {
     const ov = await apiFetch(`/api/ovtlyr/ticker/${encodeURIComponent(sym)}`);
     const sig = ov?.data?.signal || ov?.data?.list_type || null;
-    if (sig && ovtlyrEl) {
-      const isBuy = /buy|bull/i.test(sig);
+    if (sig && ovCard) {
+      const isBuy  = /buy|bull/i.test(sig);
       const isSell = /sell|bear/i.test(sig);
       const sigColor = isBuy ? '#4ade80' : isSell ? '#f87171' : 'var(--muted)';
-      const sigLabel = isBuy ? 'OVTLYR BUY' : isSell ? 'OVTLYR SELL' : sig.toUpperCase();
+      const sigLabel = isBuy ? 'BUY' : isSell ? 'SELL' : sig.toUpperCase();
       ovtlyrEl.textContent = sigLabel;
       ovtlyrEl.style.background = sigColor + '22';
       ovtlyrEl.style.border = `1px solid ${sigColor}55`;
       ovtlyrEl.style.color = sigColor;
-      ovtlyrEl.style.display = '';
-    } else if (ovtlyrEl) {
-      ovtlyrEl.style.display = 'none';
+      const sd = ov?.data?.signal_date;
+      ovDateEl.textContent = sd ? 'Since ' + sd.slice(0, 10) : '';
+      ovCard.style.display = 'flex';
+    } else if (ovCard) {
+      ovCard.style.display = 'none';
     }
   } catch(_) {
-    if (ovtlyrEl) ovtlyrEl.style.display = 'none';
+    if (ovCard) ovCard.style.display = 'none';
   }
 
   try {

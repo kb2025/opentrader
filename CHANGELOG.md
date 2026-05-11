@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.5] - 2026-05-11
+
+### Changed
+- **Charts — OVTLYR signal card** — moved OVTLYR signal from a small badge in the Sentiment header to its own full card sitting alongside the Sentiment card; shows BUY/SELL in large text with a "Since YYYY-MM-DD" date line; card is hidden when no signal exists for the ticker
+
 ## [3.7.4] - 2026-05-11
 
 ### Fixed
