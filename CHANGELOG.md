@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.6] - 2026-05-11
+
+### Added
+- **Massive MCP — `get_ohlcv_history`** — up to 2 years (730 days) of adjusted daily OHLCV bars; primary replacement for yfinance in ML predictor, backtesting, and portfolio optimizer
+- **Massive MCP — `get_avg_volume`** — average daily trading volume over N days (default 30); replaces Yahoo MCP `get_avg_volume` used in options liquidity screening
+- **Massive MCP — `get_dividends`** — dividend history (ex-date, pay-date, cash amount, frequency, type) via Polygon `list_dividends`; replaces yfinance `Ticker.dividends`
+- **Massive MCP — `get_splits`** — stock split history via Polygon `list_splits`
+- **Massive MCP — `get_earnings`** — upcoming and recent earnings dates, EPS/revenue estimates and actuals via Polygon Benzinga `list_benzinga_earnings`; replaces yfinance `info.get("earningsDate")`
+
 ## [3.7.5] - 2026-05-11
 
 ### Changed

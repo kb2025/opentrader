@@ -4,6 +4,7 @@ Provides real-time and historical market data tools via FastMCP.
 """
 import os
 from datetime import date, timedelta
+from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 massive_server = FastMCP(
@@ -17,10 +18,14 @@ Available tools:
 - get_quote: Get the latest quote (bid/ask/last/volume) for a ticker
 - get_daily_bars: Get OHLCV daily bars for a ticker over a date range
 - get_intraday_bars: Get intraday OHLCV bars (1m/5m/15m/1h) for a ticker
+- get_ohlcv_history: Get up to 2 years of daily OHLCV bars for ML/backtesting
 - get_ticker_details: Get company details, market cap, description for a ticker
 - get_market_status: Get current market open/closed status
 - get_prev_close: Get the previous trading day's close price and volume
-- get_aggregates: Get aggregate bars for a ticker with flexible timespan
+- get_avg_volume: Get average daily trading volume over N days for a ticker
+- get_dividends: Get dividend history (ex-date, pay-date, amount, frequency) for a ticker
+- get_splits: Get stock split history for a ticker
+- get_earnings: Get upcoming and recent earnings dates and estimates for a ticker
 """,
 )
 
@@ -226,3 +231,151 @@ def get_prev_close(ticker: str) -> dict:
         "close":  b.close, "volume": b.volume,
         "vwap":   b.vwap,
     }
+
+
+@massive_server.tool(
+    name="get_ohlcv_history",
+    description="Get up to 2 years of daily OHLCV bars for a ticker. Use for ML training, backtesting, and portfolio optimization.",
+)
+def get_ohlcv_history(ticker: str, days: int = 365) -> list:
+    """
+    Args:
+        ticker: Stock ticker symbol, e.g. 'AAPL'
+        days:   Number of calendar days to look back (max 730 / ~2 years)
+    """
+    c   = _client()
+    d   = min(int(days), 730)
+    to  = date.today().isoformat()
+    frm = (date.today() - timedelta(days=d)).isoformat()
+    bars = c.get_aggs(ticker.upper(), 1, "day", frm, to, limit=750, adjusted=True)
+    return [
+        {
+            "date":   date.fromtimestamp(b.timestamp / 1000).isoformat(),
+            "open":   b.open, "high": b.high, "low": b.low,
+            "close":  b.close, "volume": b.volume,
+            "vwap":   b.vwap,
+        }
+        for b in (bars or [])
+    ]
+
+
+@massive_server.tool(
+    name="get_avg_volume",
+    description="Get average daily trading volume for a ticker over the last N days.",
+)
+def get_avg_volume(ticker: str, days: int = 30) -> dict:
+    """
+    Args:
+        ticker: Stock ticker symbol, e.g. 'AAPL'
+        days:   Lookback window in calendar days (default: 30)
+    """
+    c   = _client()
+    d   = max(int(days), 5)
+    to  = date.today().isoformat()
+    frm = (date.today() - timedelta(days=d)).isoformat()
+    bars = c.get_aggs(ticker.upper(), 1, "day", frm, to, limit=60)
+    vols = [b.volume for b in (bars or []) if b.volume]
+    if not vols:
+        return {"ticker": ticker.upper(), "avg_volume": None, "days": d, "bars": 0}
+    return {
+        "ticker":     ticker.upper(),
+        "avg_volume": int(sum(vols) / len(vols)),
+        "days":       d,
+        "bars":       len(vols),
+    }
+
+
+@massive_server.tool(
+    name="get_dividends",
+    description="Get dividend history for a ticker: ex-date, pay-date, cash amount, frequency. Returns up to 36 months.",
+)
+def get_dividends(ticker: str, limit: int = 20) -> list:
+    """
+    Args:
+        ticker: Stock ticker symbol, e.g. 'AAPL'
+        limit:  Max number of dividend records to return (default: 20)
+    """
+    c = _client()
+    # Sort descending so most recent dividends come first
+    rows = c.list_dividends(
+        ticker=ticker.upper(),
+        limit=min(int(limit), 50),
+        sort="ex_dividend_date",
+        order="desc",
+    )
+    results = []
+    for d in (rows or []):
+        results.append({
+            "ticker":        ticker.upper(),
+            "ex_date":       str(d.ex_dividend_date) if d.ex_dividend_date else None,
+            "pay_date":      str(d.pay_date) if d.pay_date else None,
+            "record_date":   str(d.record_date) if d.record_date else None,
+            "declaration_date": str(d.declaration_date) if d.declaration_date else None,
+            "cash_amount":   d.cash_amount,
+            "frequency":     d.frequency,
+            "dividend_type": d.dividend_type,
+        })
+    return results
+
+
+@massive_server.tool(
+    name="get_splits",
+    description="Get stock split history for a ticker.",
+)
+def get_splits(ticker: str, limit: int = 10) -> list:
+    """
+    Args:
+        ticker: Stock ticker symbol, e.g. 'AAPL'
+        limit:  Max number of split records to return (default: 10)
+    """
+    c = _client()
+    rows = c.list_splits(
+        ticker=ticker.upper(),
+        limit=min(int(limit), 50),
+        sort="execution_date",
+        order="desc",
+    )
+    return [
+        {
+            "ticker":         ticker.upper(),
+            "execution_date": str(s.execution_date) if s.execution_date else None,
+            "split_from":     s.split_from,
+            "split_to":       s.split_to,
+        }
+        for s in (rows or [])
+    ]
+
+
+@massive_server.tool(
+    name="get_earnings",
+    description="Get upcoming and recent earnings dates and estimates for a ticker via Benzinga.",
+)
+def get_earnings(ticker: str, limit: int = 8) -> list:
+    """
+    Args:
+        ticker: Stock ticker symbol, e.g. 'AAPL'
+        limit:  Max number of earnings records (default: 8, covers ~2 years quarterly)
+    """
+    c = _client()
+    rows = c.list_benzinga_earnings(
+        ticker=ticker.upper(),
+        limit=min(int(limit), 20),
+        sort="date",
+        order="desc",
+    )
+    results = []
+    for e in (rows or []):
+        results.append({
+            "ticker":                ticker.upper(),
+            "date":                  str(e.date) if e.date else None,
+            "date_status":           e.date_status,
+            "fiscal_year":           e.fiscal_year,
+            "fiscal_period":         e.fiscal_period,
+            "eps_estimate":          e.eps_estimate,
+            "eps_actual":            e.eps_actual,
+            "eps_surprise_percent":  e.eps_surprise_percent,
+            "revenue_estimate":      e.revenue_estimate,
+            "revenue_actual":        e.revenue_actual,
+            "importance":            e.importance,
+        })
+    return results
