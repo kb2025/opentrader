@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.1] - 2026-05-11
+
+### Fixed
+- **Charts / nav label readability** — nav section labels (Trading, Equities, Options, etc.) were using `--dim` color (`#3d4566`) making them hard to read; changed to `--muted` (`#6b7394`)
+- **Charts / Alpaca options positions** — position pills used the raw OCC contract ID (e.g. `AEHR250117C00003000`) as the chart symbol causing the chart to fail; the backend now extracts the underlying ticker from OCC contract IDs
+
 ## [3.7.0] - 2026-05-11
 
 ### Fixed

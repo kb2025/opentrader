@@ -5040,9 +5040,12 @@ async def get_chart_positions():
             sym = (p.get("symbol") or "").upper()
             if not sym:
                 continue
+            # OCC option contract IDs look like AEHR250117C00003000 — extract underlying
+            occ_match = re.match(r'^([A-Z]+)\d{6}[CP]\d+$', sym)
+            chart_sym = occ_match.group(1) if occ_match else sym
             qty = float(p.get("qty") or p.get("quantity") or 0)
             positions.append({
-                "symbol":       sym,
+                "symbol":       chart_sym,
                 "broker":       broker,
                 "account":      label,
                 "display_name": display,
