@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.99] - 2026-05-11
+
+### Fixed
+- **WebUI token prompt on every login** — token was stored in `sessionStorage` (cleared on tab/browser close); switched to `localStorage` so the token persists across sessions and the prompt only appears once
+
 ## [3.6.98] - 2026-05-11
 
 ### Fixed

@@ -4248,10 +4248,10 @@ function statusChip(evtType) {
 }
 
 function getToken() {
-  let t = sessionStorage.getItem('ot_token');
+  let t = localStorage.getItem('ot_token');
   if (!t) {
     t = prompt('Enter WebUI token:');
-    if (t) sessionStorage.setItem('ot_token', t);
+    if (t) localStorage.setItem('ot_token', t);
   }
   return t || '';
 }
