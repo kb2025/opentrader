@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.10] - 2026-05-11
+
+### Added
+- Bull & bear facing-off SVG logo (blue outlined) on login page replacing the ⚡ icon
+- Same logo added to left navigation sidebar above OpenTrader title
+
+### Fixed
+- Quick Intel "Analysis unavailable: bullish map is not a function" — `bullish_factors`/`bearish_factors` columns are TEXT JSON in DB; now parsed with `json.loads()` before returning to frontend
+
 ## [3.7.9] - 2026-05-11
 
 ### Added

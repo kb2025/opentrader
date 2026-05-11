@@ -10324,8 +10324,8 @@ async def get_stock_analysis(ticker: str, generate: bool = False, token: str = "
             "ma_50":           float(row["ma_50"] or 0) if row["ma_50"] else None,
             "ma_200":          float(row["ma_200"] or 0) if row["ma_200"] else None,
             "trend":           row["trend"],
-            "bullish_factors": row["bullish_factors"] or [],
-            "bearish_factors": row["bearish_factors"] or [],
+            "bullish_factors": json.loads(row["bullish_factors"]) if row["bullish_factors"] else [],
+            "bearish_factors": json.loads(row["bearish_factors"]) if row["bearish_factors"] else [],
             "summary":         row["summary"],
         },
     }
