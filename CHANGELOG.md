@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.17] - 2026-05-11
+
+### Changed
+- Replaced inline bull/bear SVG logo with `blue_arrow.png` on login page and sidebar
+
 ## [3.7.16] - 2026-05-11
 
 ### Fixed — Platform topology cleanup
