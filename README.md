@@ -14,35 +14,31 @@ An AI-driven algorithmic trading platform built on a microservices architecture 
 - **Multi-broker support** — Tradier, Alpaca, and Webull (paper + live accounts)
 - **AI-powered signals** — LLM predictor via OpenRouter (Claude, GPT-4o, and more)
 - **Real-time WebUI** — Dark-themed SPA dashboard with live WebSocket updates
-- **TradingView Charts** — Embedded charts with EMA/SMA/BB/RSI/MACD overlays, live position picker, and per-ticker sentiment sub-panel (F&G score, component breakdown, 30-day trend sparkline)
+- **Secure login system** — Username/password auth with PBKDF2-SHA256 hashing and HMAC-SHA256 JWT session cookies; first-run `/setup` page creates the admin account automatically; all routes protected by auth middleware
+- **Encrypted secret storage** — API keys stored encrypted in DB (AES-128-CBC + HMAC-SHA256 via Fernet keyed from `SECRET_KEY`); never returned to the browser; managed via the My Profile page
+- **TradingView Charts** — Candlestick charts with EMA/SMA/BB/RSI/MACD overlays, live position picker (equity and options positions; Alpaca OCC contract IDs auto-resolved to underlying ticker), and per-ticker sentiment sub-panel (F&G score, component breakdown, 30-day trend sparkline)
 - **Market Breadth** — OVTLYR bull/bear breadth gauge with crossover detection and sparkline history
-- **Unified Market News** — Combined Alpha Vantage sentiment feed and yfinance macro news (SPY/QQQ/indices) in a single card; source badges (AV / MKT); filter by source and AV category (Equities / Macro / Technology / Energy); articles sorted newest-first
-- **Trading Dashboard layout** — Macro Regime card paired alongside Market Breadth; Portfolio NAV and Daily P&L in their own row; redesigned card arrangement for faster scanning
-- **Daily P&L accuracy** — Timezone-anchored to US Eastern time; scanner-induced false option closures (post-market Webull "not in scan" artifacts) excluded from daily total; negative values now display with correct sign
-- **Platform Dashboard** — Version, Total Trades, and Today's P&L stat cards added; version broadcast via WebSocket on every update cycle
+- **Unified Market News** — Combined Alpha Vantage sentiment feed and yfinance macro news in a single card; source badges (AV / MKT); filter by source and AV category; articles sorted newest-first
+- **Trading Dashboard layout** — Macro Regime card, Market Breadth, Portfolio NAV, and Daily P&L in a fast-scanning card arrangement; version broadcast via WebSocket on every update cycle
+- **Daily P&L accuracy** — Timezone-anchored to US Eastern; scanner-induced false option closures excluded; negative values display with correct sign
 - **Equity / Options separation** — Active Positions, Trades, and Dividends pages show equity-only data; Options Dashboard is a dedicated section
-- **Options Dashboard** — Live options position tracker with DTE, strike, delta, ATR levels, underlying price, buy/sell signal, Yahoo Finance chain enrichment; Portfolio Greeks panel (Δ/Θ/ν/Γ per underlying); YTD Performance panel (trades, P&L, win rate, alpha vs SPY); stat card hover tooltips; download and scheduled email report
-- **Options Trader** — Full-featured options trading dashboard: account selector, open positions panel (with expiration date + DTE), OVTLYR buy-signal list, LightweightCharts candlestick chart with EMA 10/20/50 + earnings/ex-dividend markers, broker-native options chain (Tradier → Webull → Alpaca → Yahoo fallback) with extrinsic value, IV, greeks, blue position highlighting; multi-leg order builder with BUY/SELL chips on strike cells; Risk & Sizing Calculator with per-account default risk % (configurable in Broker dashboard) and deviation warning
+- **Options Dashboard** — Live options positions with DTE, strike, delta, ATR levels, underlying price, buy/sell signal, Yahoo Finance chain enrichment; Portfolio Greeks panel (Δ/Θ/ν/Γ per underlying); YTD Performance panel; stat card hover tooltips; download and scheduled email report
+- **Options Trader** — Full-featured trading dashboard: account selector, open positions panel with DTE, OVTLYR buy-signal list, LightweightCharts candlestick chart with EMA 10/20/50 + earnings/ex-dividend markers, broker-native options chain (Tradier → Webull → Alpaca → Yahoo fallback) with extrinsic value, IV, greeks, blue position highlighting; multi-leg order builder; Risk & Sizing Calculator with per-account default risk % and deviation warning
 - **Options Trading Log** — Full P&L history as broker → account → ticker tree; milestone chains (Open → Roll → Closed/Expired); per-event P&L; post-close AI analysis via Claude Haiku; YTD performance panel; 18-month retention
-- **Options phantom-close prevention** — Redis-backed consecutive-miss counter (`MISS_THRESHOLD=3`) prevents the scanner from closing a position due to a transient broker drop; position must be absent for 3 consecutive 5-minute scans (~15 min) before a close is recorded
-- **Options Expiry Calendar** — Active positions grouped by expiration date with DTE urgency color coding (critical ≤3d, warning ≤7d, caution ≤14d); per-expiry Greeks totals
-- **1pm Report — SGOV ex-dividend alert** — Daily email report includes a SELL banner (yellow) the day before SGOV's ex-dividend date and a BUY banner (green) on the ex-dividend date; IRA accounts identified dynamically from `WEBULL_LIVE_ACCOUNT_{N}_IRA` env flags
-- **Strategy Engineer** — AI-assisted strategy builder with version control and real Backtrader backtesting
-- **Backtrader Engine** — EMA 10/21 crossover strategy with stop-loss/take-profit, full trade log, PDF + CSV exports, and equity/chart tabs
+- **Options phantom-close prevention** — Redis-backed consecutive-miss counter (`MISS_THRESHOLD=3`) prevents scanner from closing a position due to a transient broker drop
+- **Options Expiry Calendar** — Active positions grouped by expiration date with DTE urgency color coding; per-expiry Greeks totals
+- **1pm Report — SGOV ex-dividend alert** — Daily email report includes SELL/BUY banners around SGOV's ex-dividend date; IRA accounts identified dynamically from env flags
+- **Strategy Engineer** — AI-assisted strategy builder with version control and real Backtrader backtesting; pulls live TradingView data during strategy design
+- **Backtrader Engine** — EMA 10/21 crossover with configurable stop-loss/take-profit, full trade log, PDF + CSV exports, equity curve and indicator charts
 - **Trade Directives** — Natural-language GTC directives evaluated every 5 minutes by an LLM agent and executed automatically
-- **Market Intelligence** — Per-ticker intelligence pipeline: WSB sentiment, SeekingAlpha, Yahoo Finance news, analyst ratings, earnings proximity, and Unusual Whales options flow + dark pool data
+- **Market Intelligence** — Per-ticker pipeline: WSB sentiment, SeekingAlpha, Yahoo Finance news, analyst ratings, earnings proximity, and Unusual Whales options flow + dark pool data
+- **Quick Intel** — On-demand per-ticker intelligence card: WSB mention count + sentiment, SeekingAlpha analysis, Yahoo news, Unusual Whales flow
 - **Unusual Whales MCP** — Real-time options flow, dark pool prints, market tide, greek exposure, and short interest via MCP server
-- **Portfolio NAV History** — 90-day equity curve on Trading Dashboard from daily broker snapshots; drawdown tracking
+- **Portfolio NAV History** — 90-day equity curve from daily broker snapshots; drawdown tracking
 - **Daily P&L / Loss Limit** — Trading Dashboard widget with color-coded budget bar and circuit breaker banner
 - **Scheduler** — Market-hours-aware job runner with DB-persisted configuration and per-job execution history (last run, status chip, error, run count)
 - **MCP Agents** — Model Context Protocol servers for Yahoo Finance, Alpaca, TradingView, Webull, and Unusual Whales
-- **Equity Dividend Income** — Full dividend tracking dashboard with per-broker filtering throughout:
-  - **Income projection** from actual payment history — no synthetic rates; forward rate = recent payment × annual frequency from DB records
-  - **Rolling 12-month bar chart** blending actual received (green) with projected remaining (blue); future bars from history-based monthly avg
-  - **Upcoming ex-dividend panel** (7-day) — three-tier data: Massive.com API → dividendchannel.com projection → DB cache; per-broker qty and estimated total
-  - **Received history** table and chart (month / ticker / account grouping)
-  - **Per-broker filter** — clicking any broker card filters bar chart, holdings, upcoming events, and history simultaneously
-  - **Diagnostics panel** — expandable per-account breakdown showing payment count, total received, monthly avg, and forward rate
+- **Equity Dividend Income** — Full dividend tracking: per-broker filter, rolling 12-month bar chart (actual vs projected), upcoming ex-dividend panel (7-day), received history; income projection uses actual payment history (no synthetic rates)
 - **Library** — Trading book library with ISBN lookup, cover art, ratings, and reader rank achievement system
 - **Notifications** — Telegram, Discord, and AgentMail alerts
 - **EOD Review** — Automated end-of-day trade analysis and recommendations
@@ -56,6 +52,7 @@ An AI-driven algorithmic trading platform built on a microservices architecture 
 ┌─────────────────────────────────────────────────────────────┐
 │                     WebUI (port 8080)                       │
 │           FastAPI + WebSocket + Static SPA                  │
+│         Username/password auth · JWT session cookies        │
 └─────────────────────┬───────────────────────────────────────┘
                       │ Redis Streams / Pub-Sub
       ┌───────────────┼───────────────────────┐
@@ -132,7 +129,7 @@ git submodule update --init --recursive
 
 # Configure credentials
 cp .env.sample .env
-nano .env  # fill in your API keys
+nano .env  # fill in your API keys and set SECRET_KEY
 
 # Configure broker accounts
 cp config/accounts.toml.sample config/accounts.toml
@@ -141,9 +138,11 @@ cp config/accounts.toml.sample config/accounts.toml
 # Build and start
 podman-compose up -d
 
-# Open dashboard
+# Open dashboard — you'll be redirected to /setup on first run
 open http://localhost:8080
 ```
+
+The first visit redirects to `/setup` where you create the admin username and password. After that, `/login` is the entry point. API keys are managed in **Platform → My Profile** and stored encrypted in the database.
 
 ### Install from pre-built images
 
@@ -157,8 +156,8 @@ git submodule update --init --recursive
 cp .env.sample .env && nano .env
 cp config/accounts.toml.sample config/accounts.toml
 
-# Pull images (replace X.Y.Z with the release version)
-export OT_VERSION=3.6.33
+# Pull images
+export OT_VERSION=3.7.2
 podman pull ghcr.io/euriska/ot-webui:${OT_VERSION}
 podman pull ghcr.io/euriska/ot-python:${OT_VERSION}
 podman pull ghcr.io/euriska/ot-mcp-yahoo:${OT_VERSION}
@@ -178,7 +177,7 @@ Releases use semantic versioning (`MAJOR.MINOR.PATCH`). Patch resets at 99 (e.g.
 echo "X.Y.Z" > VERSION
 # Edit CHANGELOG.md with release notes
 git add VERSION CHANGELOG.md <changed-files>
-git commit --no-verify -m "feat/fix: description vX.Y.Z"
+git commit -m "feat/fix: description vX.Y.Z"
 git push
 gh release create vX.Y.Z --title "vX.Y.Z" --notes "Release notes here"
 ```
@@ -191,8 +190,8 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes "Release notes here"
 
 | Variable | Description |
 |---|---|
+| `SECRET_KEY` | 32-byte hex key for JWT signing and API key encryption — generate with `openssl rand -hex 32`; random if unset (sessions invalidated on restart) |
 | `OPENROUTER_API_KEY` | LLM provider — get at openrouter.ai |
-| `WEBUI_TOKEN` | Dashboard auth token (any string) |
 | `DB_PASSWORD` | TimescaleDB password |
 | `MASSIVE_API_KEY` | Massive.com API key (dividend data, market bars, ticker reference) |
 | `TRADIER_SANDBOX_API_KEY` | Tradier paper trading key |
@@ -209,11 +208,13 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes "Release notes here"
 | `AGENTMAIL_API_KEY` | AgentMail key for email reports (optional) |
 | `OVTLYR_EMAIL` / `OVTLYR_PASSWORD` | OVTLYR credentials (optional) |
 
+> **Note:** `SECRET_KEY` must be stable across restarts — if unset, a random key is generated each time, invalidating all session cookies. Set it once with `echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env`.
+
 See `.env.sample` for the full list.
 
 ### Broker accounts — `config/accounts.toml`
 
-Copy from `config/accounts.toml.sample`. All account IDs reference `${ENV_VAR}` so no credentials are stored in the file itself.
+Copy from `config/accounts.toml.sample`. All account IDs reference `${ENV_VAR}` so no credentials are stored in the file itself. Additional API keys (broker tokens, notification webhooks) can also be managed through **Platform → My Profile** in the dashboard, where they are stored encrypted in the database.
 
 ---
 
@@ -224,9 +225,9 @@ The dashboard is organized into six sections:
 ### Trading
 | Page | Description |
 |---|---|
-| Trading Dashboard | Live stat cards (equity/options split), market breadth, NAV history, daily P&L |
+| Trading Dashboard | Live stat cards (equity/options split), market breadth, NAV history, daily P&L, macro regime |
 | Trade Directives | Natural-language GTC directives with LLM evaluation and order execution |
-| Charts | TradingView charts with indicator overlays, position picker, and sentiment sub-panel |
+| Charts | Candlestick charts with indicator overlays, live position picker (equity + options), sentiment sub-panel |
 | Broker | Broker credential configuration, account management, per-account risk % defaults |
 
 ### Equities
@@ -264,7 +265,7 @@ The dashboard is organized into six sections:
 | Logs | Live container log viewer |
 | Scheduler | Job manager — create, edit, enable/disable, run now; per-job execution history with last run, status chip, and run count |
 | System | Circuit breaker, halt/resume, container table |
-| User Configuration | API key management (22 keys), clock color + 12hr/24hr, sector/stock exclusions, risk controls |
+| My Profile | Avatar, change password, full API key management (22 keys with set/unset status, inline update and delete) |
 
 ---
 

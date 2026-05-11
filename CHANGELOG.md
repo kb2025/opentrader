@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.3] - 2026-05-11
+
+### Changed
+- **README** — refreshed installation instructions (first-run `/setup` flow, `SECRET_KEY` guidance, pre-built image version updated to 3.7.2); updated feature list (secure login system, encrypted secret storage, Quick Intel, Charts position picker with Alpaca OCC resolution, My Profile page); architecture diagram updated to note auth layer
+
 ## [3.7.2] - 2026-05-11
 
 ### Fixed
