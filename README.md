@@ -18,12 +18,12 @@ An AI-driven algorithmic trading platform built on a microservices architecture 
 - **Encrypted secret storage** — API keys stored encrypted in DB (AES-128-CBC + HMAC-SHA256 via Fernet keyed from `SECRET_KEY`); never returned to the browser; managed via the My Profile page
 - **TradingView Charts** — Candlestick charts with EMA/SMA/BB/RSI/MACD overlays, live position picker (equity and options positions; Alpaca OCC contract IDs auto-resolved to underlying ticker), and per-ticker sentiment sub-panel (F&G score, component breakdown, 30-day trend sparkline)
 - **Market Breadth** — OVTLYR bull/bear breadth gauge with crossover detection and sparkline history
-- **Unified Market News** — Combined Alpha Vantage sentiment feed and yfinance macro news in a single card; source badges (AV / MKT); filter by source and AV category; articles sorted newest-first
+- **Unified Market News** — Combined Alpha Vantage sentiment feed and Massive.com macro news in a single card; source badges (AV / MKT); filter by source and AV category; articles sorted newest-first
 - **Trading Dashboard layout** — Macro Regime card, Market Breadth, Portfolio NAV, and Daily P&L in a fast-scanning card arrangement; version broadcast via WebSocket on every update cycle
 - **Daily P&L accuracy** — Timezone-anchored to US Eastern; scanner-induced false option closures excluded; negative values display with correct sign
 - **Equity / Options separation** — Active Positions, Trades, and Dividends pages show equity-only data; Options Dashboard is a dedicated section
-- **Options Dashboard** — Live options positions with DTE, strike, delta, ATR levels, underlying price, buy/sell signal, Yahoo Finance chain enrichment; Portfolio Greeks panel (Δ/Θ/ν/Γ per underlying); YTD Performance panel; stat card hover tooltips; download and scheduled email report
-- **Options Trader** — Full-featured trading dashboard: account selector, open positions panel with DTE, OVTLYR buy-signal list, LightweightCharts candlestick chart with EMA 10/20/50 + earnings/ex-dividend markers, broker-native options chain (Tradier → Webull → Alpaca → Yahoo fallback) with extrinsic value, IV, greeks, blue position highlighting; multi-leg order builder; Risk & Sizing Calculator with per-account default risk % and deviation warning
+- **Options Dashboard** — Live options positions with DTE, strike, delta, ATR levels, underlying price, buy/sell signal, live Polygon options chain; Portfolio Greeks panel (Δ/Θ/ν/Γ per underlying); YTD Performance panel; stat card hover tooltips; download and scheduled email report
+- **Options Trader** — Full-featured trading dashboard: account selector, open positions panel with DTE, OVTLYR buy-signal list, LightweightCharts candlestick chart with EMA 10/20/50 + earnings/ex-dividend markers, broker-native options chain (Tradier → Webull → Alpaca) with extrinsic value, IV, greeks, blue position highlighting; multi-leg order builder; Risk & Sizing Calculator with per-account default risk % and deviation warning
 - **Options Trading Log** — Full P&L history as broker → account → ticker tree; milestone chains (Open → Roll → Closed/Expired); per-event P&L; post-close AI analysis via Claude Haiku; YTD performance panel; 18-month retention
 - **Options phantom-close prevention** — Redis-backed consecutive-miss counter (`MISS_THRESHOLD=3`) prevents scanner from closing a position due to a transient broker drop
 - **Options Expiry Calendar** — Active positions grouped by expiration date with DTE urgency color coding; per-expiry Greeks totals
@@ -31,14 +31,15 @@ An AI-driven algorithmic trading platform built on a microservices architecture 
 - **Strategy Engineer** — AI-assisted strategy builder with version control and real Backtrader backtesting; pulls live TradingView data during strategy design
 - **Backtrader Engine** — EMA 10/21 crossover with configurable stop-loss/take-profit, full trade log, PDF + CSV exports, equity curve and indicator charts
 - **Trade Directives** — Natural-language GTC directives evaluated every 5 minutes by an LLM agent and executed automatically
-- **Market Intelligence** — Per-ticker pipeline: WSB sentiment, SeekingAlpha, Yahoo Finance news, analyst ratings, earnings proximity, and Unusual Whales options flow + dark pool data
-- **Quick Intel** — On-demand per-ticker intelligence card: WSB mention count + sentiment, SeekingAlpha analysis, Yahoo news, Unusual Whales flow
+- **Market Intelligence** — Per-ticker pipeline: WSB sentiment, SeekingAlpha, Massive.com news, analyst ratings, earnings proximity, and Unusual Whales options flow + dark pool data
+- **Quick Intel** — On-demand per-ticker intelligence card: WSB mention count + sentiment, SeekingAlpha analysis, Massive.com news, Unusual Whales flow
 - **Unusual Whales MCP** — Real-time options flow, dark pool prints, market tide, greek exposure, and short interest via MCP server
 - **Portfolio NAV History** — 90-day equity curve from daily broker snapshots; drawdown tracking
 - **Daily P&L / Loss Limit** — Trading Dashboard widget with color-coded budget bar and circuit breaker banner
 - **Scheduler** — Market-hours-aware job runner with DB-persisted configuration and per-job execution history (last run, status chip, error, run count)
-- **MCP Agents** — Model Context Protocol servers for Yahoo Finance, Alpaca, TradingView, Webull, and Unusual Whales
+- **MCP Agents** — Model Context Protocol servers for Alpaca, TradingView, Unusual Whales, and Massive.com (Polygon.io)
 - **Equity Dividend Income** — Full dividend tracking: per-broker filter, rolling 12-month bar chart (actual vs projected), upcoming ex-dividend panel (7-day), received history; income projection uses actual payment history (no synthetic rates)
+- **Ticker Classification** — GICS sector and industry for all open position tickers fetched via direct HTTP and stored persistently in a `ticker_classification` DB table; feeds the sector/industry exclusion system
 - **Library** — Trading book library with ISBN lookup, cover art, ratings, and reader rank achievement system
 - **Notifications** — Telegram, Discord, and AgentMail alerts
 - **EOD Review** — Automated end-of-day trade analysis and recommendations
@@ -79,7 +80,7 @@ An AI-driven algorithmic trading platform built on a microservices architecture 
 │  job + intel cache  │
 └─────────────────────┘
 
-MCP Layer: Yahoo Finance · Alpaca · TradingView · Unusual Whales · Massive.com
+MCP Layer: Alpaca · TradingView · Unusual Whales · Massive.com (Polygon.io)
 ```
 
 ---
@@ -90,6 +91,7 @@ MCP Layer: Yahoo Finance · Alpaca · TradingView · Unusual Whales · Massive.c
 |---|---|---|
 | `ot-webui` | Command Center dashboard | 8080 |
 | `ot-scheduler` | APScheduler job runner | — |
+| `ot-orchestrator` | Heartbeat watchdog + circuit breaker | — |
 | `ot-broker-gateway` | Multi-broker position/order router | — |
 | `ot-directive-agent` | LLM-evaluated GTC trade directives | — |
 | `ot-trader-equity` | Equity order executor | — |
@@ -97,15 +99,18 @@ MCP Layer: Yahoo Finance · Alpaca · TradingView · Unusual Whales · Massive.c
 | `ot-options-monitor` | Options position tracker + ATR level manager | — |
 | `ot-chat-agent` | AI chat with MCP tool access | — |
 | `ot-review-agent` | EOD trade review | — |
-| `ot-sentiment-agent` | WSB/SeekingAlpha/Yahoo sentiment aggregator | — |
-| `ot-dividend-agent` | Dividend tracking and DB population | — |
-| `ot-ovtlyr-agent` | OVTLYR market intelligence integration | — |
-| `ot-strategy-engine` | Strategy execution engine | — |
-| `ot-mcp-yahoo` | Yahoo Finance MCP server | — |
+| `ot-predictor` | LLM signal scoring + ML ensemble | — |
+| `ot-aggregator` | Sentiment + intel pipeline (enriches predictor candidates) | — |
+| `ot-scraper-ovtlyr` | OVTLYR market breadth scraper | — |
+| `ot-scraper-wsb` | WallStreetBets Reddit scraper | — |
+| `ot-scraper-seekalpha` | SeekingAlpha sentiment scraper | — |
+| `ot-scraper-news` | Macro news scraper | — |
+| `ot-scraper-etf-flows` | ETF flow data scraper | — |
+| `ot-scraper-macro-regime` | Macro regime signal scraper | — |
 | `ot-mcp-alpaca` | Alpaca MCP server | — |
 | `ot-mcp-tradingview` | TradingView MCP server | — |
 | `ot-mcp-unusualwhales` | Unusual Whales MCP server | — |
-| `ot-mcp-massive` | Massive.com MCP server | — |
+| `ot-mcp-massive` | Massive.com / Polygon.io MCP server | — |
 | `ot-redis` | Redis 7 | — |
 | `ot-timescaledb` | TimescaleDB (PostgreSQL) | — |
 | `ot-vault` | HashiCorp Vault (secrets) | — |
@@ -157,10 +162,9 @@ cp .env.sample .env && nano .env
 cp config/accounts.toml.sample config/accounts.toml
 
 # Pull images
-export OT_VERSION=3.7.2
+export OT_VERSION=3.7.13
 podman pull ghcr.io/euriska/ot-webui:${OT_VERSION}
 podman pull ghcr.io/euriska/ot-python:${OT_VERSION}
-podman pull ghcr.io/euriska/ot-mcp-yahoo:${OT_VERSION}
 podman pull ghcr.io/euriska/ot-mcp-tradingview:${OT_VERSION}
 podman pull ghcr.io/euriska/ot-mcp-unusualwhales:${OT_VERSION}
 
@@ -193,7 +197,7 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes "Release notes here"
 | `SECRET_KEY` | 32-byte hex key for JWT signing and API key encryption — generate with `openssl rand -hex 32`; random if unset (sessions invalidated on restart) |
 | `OPENROUTER_API_KEY` | LLM provider — get at openrouter.ai |
 | `DB_PASSWORD` | TimescaleDB password |
-| `MASSIVE_API_KEY` | Massive.com API key (dividend data, market bars, ticker reference) |
+| `MASSIVE_API_KEY` | Massive.com / Polygon.io API key (quotes, news, dividends, earnings, market bars) |
 | `TRADIER_SANDBOX_API_KEY` | Tradier paper trading key |
 | `TRADIER_PRODUCTION_API_KEY` | Tradier live trading key |
 | `ALPACA_API_KEY` | Alpaca paper API key |
@@ -240,7 +244,7 @@ The dashboard is organized into six sections:
 ### Options
 | Page | Description |
 |---|---|
-| Options Dashboard | Live options positions with DTE, strike, delta, ATR levels, Yahoo chain enrichment, Portfolio Greeks, Expiry Calendar, and YTD Performance |
+| Options Dashboard | Live options positions with DTE, strike, delta, ATR levels, live Polygon options chain, Portfolio Greeks, Expiry Calendar, and YTD Performance |
 | Options Trader | Full trading dashboard — account selector, positions panel, OVTLYR signals, EMA chart, live broker chain, multi-leg order builder, risk calculator |
 | Options Trading Log | Full P&L tree (broker → account → ticker) with milestone chains, AI post-close analysis, and YTD performance |
 
@@ -290,9 +294,8 @@ The aggregator enriches each candidate ticker with data from multiple sources be
 |---|---|
 | WSB scraper | Mention count, sentiment score, top headlines |
 | SeekingAlpha scraper | Professional analysis sentiment |
-| Yahoo Finance news | Broad market sentiment |
+| Massive.com / Polygon.io | News, analyst consensus, short interest |
 | Unusual Whales | Options flow (bullish/bearish counts, net premium), dark pool prints |
-| Massive.com | Dividend history, ex-dates, reference data |
 
 Intelligence is cached in Redis (`aggregator:intel:{ticker}`) and used to adjust predictor confidence by up to ±0.20.
 
@@ -303,10 +306,15 @@ Intelligence is cached in Redis (`aggregator:intel:{ticker}`) and used to adjust
 | Purpose | Source | Notes |
 |---|---|---|
 | Income projection | `dividend_history` DB table | Actual payments backfilled from broker history; `forward_annual_rate = recent_aps × annual_count` |
-| Ex/pay dates, frequency | Massive.com API (primary) | `api.massive.com/stocks/v1/dividends`, MASSIVE_API_KEY |
+| Ex/pay dates, frequency | Massive.com / Polygon.io (primary) | `list_dividends` via Massive MCP, `MASSIVE_API_KEY` |
 | Ex/pay dates fallback | dividend.com scrape | Usually Cloudflare-blocked; falls through gracefully |
-| Last resort metadata | yfinance | Only when both above return nothing |
 | Upcoming events | Massive.com → dividendchannel.com → DB | Three-tier for 7-day forward calendar |
+
+---
+
+## Ticker Classification (GICS)
+
+Sector and industry data for all open position tickers is stored in the `ticker_classification` DB table (30-day TTL per ticker) and synced to Redis hashes (`ticker:sectors` / `ticker:industries`) consumed by the trader exclusion system. The WebUI background task refreshes stale records automatically at startup.
 
 ---
 

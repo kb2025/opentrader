@@ -118,3 +118,22 @@ Cloudflare Tunnel is the only external ingress, forwarding to `ot-webui:8080`. C
 | `config/strategies.json` | Live strategy definitions |
 | `config/assignments.json` | Strategy-to-ticker-to-account assignments |
 | `VERSION` | Single source of truth for the release version |
+
+## Working Style
+
+**Operate autonomously — do not ask for confirmation before or after actions.**
+- Do not ask "shall I proceed?", "does this look right?", "want me to continue?", or similar check-ins.
+- Do not summarize what you are about to do and wait for approval — just do it.
+- Do not ask clarifying questions unless a task is genuinely ambiguous in a way that would cause irreversible harm if guessed wrong.
+- After completing work, give a concise summary of what changed — one or two sentences — then stop.
+
+The only exceptions are destructive or irreversible operations that affect shared systems (force-push to main, dropping DB tables, sending external messages). For those, state the action and ask once.
+
+## Workflows
+
+### Creating/Modifying API Endpoints
+
+When creating new API endpoints:
+
+1. Plan the changes (methods, paths, payloads)
+2. Implement immediately — no confirmation step needed
