@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.18] - 2026-05-11
+
+### Changed
+- Updated setup.html logo: replaced ⚡ emoji with blue arrow image to match login and sidebar
+
 ## [3.7.17] - 2026-05-11
 
 ### Changed

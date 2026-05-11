@@ -39,12 +39,11 @@
   }
   .logo { text-align: center; margin-bottom: 28px; }
   .logo-mark {
-    width: 52px; height: 52px;
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-    border-radius: 14px;
+    width: 72px; height: 72px;
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 24px; margin-bottom: 14px;
+    margin-bottom: 14px;
   }
+  .logo-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .logo h1 { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
   .logo p  { font-size: 13px; color: var(--muted); margin-top: 5px; line-height: 1.5; }
   .step-badge {
@@ -103,7 +102,7 @@
 <body>
 <div class="card">
   <div class="logo">
-    <div class="logo-mark">⚡</div>
+    <div class="logo-mark"><img src="/static/logo-opentrader.png" alt="OpenTrader"></div>
     <h1>Welcome to OpenTrader</h1>
     <p>Create your admin account to get started.<br>This only appears once.</p>
   </div>
