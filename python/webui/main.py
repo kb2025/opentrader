@@ -2289,28 +2289,7 @@ async def get_market_sector_map(index: str = "sp500"):
             log.warning("sector_map.polygon_error", error=str(e))
 
     if not changes:
-        # Fallback: yfinance batch download via thread executor
-        import yfinance as _yf
-        import asyncio as _asyncio
-        def _yf_fetch():
-            try:
-                data = _yf.download(all_tickers, period="5d", interval="1d",
-                                     progress=False, auto_adjust=True, group_by="ticker")
-            except Exception:
-                return {}
-            out: dict = {}
-            for tkr in all_tickers:
-                try:
-                    s = data[tkr]["Close"].dropna()
-                    if len(s) >= 2:
-                        c, p = float(s.iloc[-1]), float(s.iloc[-2])
-                        out[tkr] = (round((c - p) / p * 100, 2), round(c, 2))
-                    elif len(s) == 1:
-                        out[tkr] = (0.0, round(float(s.iloc[-1]), 2))
-                except Exception:
-                    pass
-            return out
-        changes = await _asyncio.get_event_loop().run_in_executor(None, _yf_fetch)
+        pass  # No fallback — Polygon/Massive is the only source for sector heatmap prices
 
     sectors = []
     for sname, stocks in SECTOR_STOCKS.items():
@@ -8689,36 +8668,6 @@ async def get_option_positions(status: str = "active"):
                             live_prices[sym] = price
                             await _redis2.setex(f"yf:price:{sym}", 900, str(price))
                             still_missing.remove(sym)
-                # Fallback: yfinance for anything Polygon didn't cover
-                if still_missing:
-                    import yfinance as _yf
-                    import concurrent.futures as _cf
-                    import asyncio as _asyncio
-                    def _batch_prices(syms):
-                        data = _yf.download(syms, period="1d", interval="1d",
-                                            auto_adjust=True, progress=False, threads=False)
-                        out = {}
-                        try:
-                            close = data["Close"] if "Close" in data else data
-                            if hasattr(close, "columns"):
-                                for sym in syms:
-                                    if sym in close.columns:
-                                        col = close[sym].dropna()
-                                        if not col.empty:
-                                            out[sym] = float(col.iloc[-1])
-                            else:
-                                col = close.dropna()
-                                if not col.empty and len(syms) == 1:
-                                    out[syms[0]] = float(col.iloc[-1])
-                        except Exception:
-                            pass
-                        return out
-                    loop = _asyncio.get_event_loop()
-                    with _cf.ThreadPoolExecutor(max_workers=1) as ex:
-                        yf_prices = await loop.run_in_executor(ex, _batch_prices, still_missing)
-                    for sym, price in yf_prices.items():
-                        await _redis2.setex(f"yf:price:{sym}", 900, str(price))
-                    live_prices.update(yf_prices)
         except Exception:
             pass
 
@@ -11589,12 +11538,6 @@ async def get_options_performance(mode: str = "live"):
                             if len(bars) >= 2:
                                 spy_close_first = float(bars[0]["c"])
                                 spy_close_last  = float(bars[-1]["c"])
-            if spy_close_first is None:
-                import yfinance as _yf
-                spy_hist = _yf.download("SPY", start=spy_start_str, end=spy_end_str, progress=False, auto_adjust=True)
-                if not spy_hist.empty:
-                    spy_close_first = float(spy_hist["Close"].iloc[0])
-                    spy_close_last  = float(spy_hist["Close"].iloc[-1])
             if spy_close_first and spy_close_last and spy_close_first != 0:
                 spy_ytd = (spy_close_last - spy_close_first) / spy_close_first * 100
                 days_ytd = (date.today() - year_start).days
@@ -11790,13 +11733,6 @@ async def _check_price_for_alert(ticker: str, pool, notifier) -> float | None:
                             return float(results[0]["c"])
         except Exception:
             pass
-    try:
-        import yfinance as _yf
-        hist = _yf.download(ticker, period="5d", progress=False, auto_adjust=True)
-        if not hist.empty:
-            return float(hist["Close"].iloc[-1])
-    except Exception:
-        pass
     return None
 
 
@@ -12089,54 +12025,6 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
             log.warning("options_trader.chain.tradier_fallback_error", ticker=sym, error=str(e))
             return None
 
-    # ── Yahoo Finance last-resort fallback ────────────────────────────────────
-    async def _yf_fallback() -> dict:
-        def _fetch(s: str) -> dict:
-            import yfinance as _yf
-            t = _yf.Ticker(s)
-            info  = t.info or {}
-            price = float(info.get("currentPrice") or info.get("regularMarketPrice")
-                          or info.get("previousClose") or 0)
-            exps = t.options
-            if not exps:
-                return {"ticker": s, "price": price, "expirations": [], "calls": [], "puts": []}
-            all_calls, all_puts = [], []
-            for exp in exps[:8]:
-                try:
-                    chain = t.option_chain(exp)
-                    for df, otype in ((chain.calls, "call"), (chain.puts, "put")):
-                        for _, row in df.iterrows():
-                            strike = float(row.get("strike") or 0)
-                            bid    = float(row.get("bid") or 0)
-                            ask    = float(row.get("ask") or 0)
-                            last   = float(row.get("lastPrice") or 0)
-                            mid    = round((bid + ask) / 2, 2) if bid and ask else last
-                            intrinsic = round(max(0, price - strike) if otype == "call"
-                                              else max(0, strike - price), 2)
-                            def _f(v): return round(float(v), 6) if v is not None else None
-                            rec = {
-                                "contract":   row.get("contractSymbol", ""),
-                                "strike":     strike, "expiration": exp,
-                                "bid": bid, "ask": ask, "mid": mid, "last": last,
-                                "intrinsic":  intrinsic,
-                                "extrinsic":  round(max(0, mid - intrinsic), 2),
-                                "iv":    _f(row.get("impliedVolatility")),
-                                "delta": _f(row.get("delta")),
-                                "gamma": _f(row.get("gamma")),
-                                "theta": _f(row.get("theta")),
-                                "vega":  _f(row.get("vega")),
-                                "volume": int(row.get("volume") or 0),
-                                "oi":     int(row.get("openInterest") or 0),
-                                "itm":    bool(row.get("inTheMoney", False)),
-                                "has_position": False,
-                            }
-                            (all_calls if otype == "call" else all_puts).append(rec)
-                except Exception:
-                    pass
-            return {"ticker": s, "price": round(price, 2), "expirations": list(exps[:8]),
-                    "calls": all_calls, "puts": all_puts, "source": "yahoo"}
-        return await _asyncio.get_event_loop().run_in_executor(None, _fetch, sym)
-
     # ── Select source ─────────────────────────────────────────────────────────
     data: dict | None = None
 
@@ -12144,11 +12032,8 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
         data = await _gateway_chain(account_label)
 
     if data is None:
-        # No account selected or gateway failed: try Tradier market API first
+        # No account selected or gateway failed: try Tradier market API
         data = await _tradier_fallback()
-
-    if data is None:
-        data = await _yf_fallback()
 
     # ── Mark open positions ───────────────────────────────────────────────────
     if data is None:

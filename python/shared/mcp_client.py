@@ -66,12 +66,7 @@ async def get_tv_indicators(ticker: str, interval: str = "1d") -> dict | None:
 
 
 async def get_classification(ticker: str) -> dict:
-    """
-    Returns {"sector": str, "industry": str}.
-    Priority: Massive MCP (primary) → Yahoo Finance (last resort).
-    Massive gives SIC-mapped sector; Yahoo gives GICS sector + industry.
-    """
-    # Primary: Massive MCP
+    """Returns {"sector": str, "industry": str} via Massive MCP (SIC-mapped)."""
     raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_ticker_details", {"ticker": ticker})
     if raw:
         try:
@@ -81,20 +76,6 @@ async def get_classification(ticker: str) -> dict:
                 return {"sector": sector, "industry": data.get("sic_description") or ""}
         except Exception:
             pass
-
-    # Last resort: Yahoo Finance MCP
-    raw = await call_mcp_tool(YAHOO_MCP_URL, "get_classification", {"ticker": ticker})
-    if raw:
-        try:
-            data = json.loads(raw)
-            if data.get("sector") or data.get("industry"):
-                return {
-                    "sector":   data.get("sector") or "",
-                    "industry": data.get("industry") or "",
-                }
-        except Exception:
-            pass
-
     return {"sector": "", "industry": ""}
 
 

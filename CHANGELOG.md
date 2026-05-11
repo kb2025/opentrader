@@ -3,6 +3,17 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.7] - 2026-05-11
+
+### Removed
+- **Yahoo Finance Phase 1 — safe fallback removal**: dropped 5 yfinance code blocks that were last-resort fallbacks with Polygon/Massive already covering the primary path:
+  - Sector heatmap 5-day price batch (`main.py`) — Polygon is primary
+  - Options position price fill batch (`main.py`) — Polygon is primary
+  - SPY YTD calculation (`main.py`) — Polygon is primary
+  - Price alert ticker price fetch (`main.py`) — Polygon is primary
+  - Options chain last-resort (`main.py`) — Tradier/broker chain is sufficient
+- **Yahoo Finance Phase 1 — GICS classification fallback** (`shared/mcp_client.py`) — removed Yahoo MCP `get_classification` call; Massive MCP SIC mapping is the only source now
+
 ## [3.7.6] - 2026-05-11
 
 ### Added
