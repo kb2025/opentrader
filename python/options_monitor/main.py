@@ -37,7 +37,7 @@ log = structlog.get_logger("options-monitor")
 
 DB_URL               = os.getenv("DB_URL", "")
 TRADINGVIEW_MCP_URL  = os.getenv("TRADINGVIEW_MCP_URL", "http://ot-mcp-tradingview:8000/mcp")
-YAHOO_MCP_URL        = os.getenv("YAHOO_MCP_URL", "http://ot-mcp-yahoo:8000/mcp")
+MASSIVE_MCP_URL      = os.getenv("MASSIVE_MCP_URL", "http://ot-mcp-massive:8000/mcp")
 BROKER_GATEWAY_TIMEOUT = int(os.getenv("BROKER_GATEWAY_TIMEOUT_SEC", "20"))
 SCAN_INTERVAL_MIN    = int(os.getenv("OPTIONS_SCAN_INTERVAL_MIN", "5"))
 # How many consecutive scans a position must be absent before it is marked closed.
@@ -166,17 +166,16 @@ async def _fetch_atr(ticker: str) -> Optional[float]:
 
 
 async def _fetch_underlying_price(ticker: str) -> Optional[float]:
-    """Fetch latest underlying stock price via Yahoo Finance MCP (get_stock_info)."""
-    raw = await call_mcp_tool(YAHOO_MCP_URL, "get_stock_info", {"ticker": ticker})
+    """Fetch latest underlying stock price via Massive MCP (Polygon.io)."""
+    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_quote", {"ticker": ticker})
     if not raw:
         return None
     try:
         data = json.loads(raw)
         price = (
-            data.get("currentPrice")
-            or data.get("regularMarketPrice")
-            or data.get("price")
-            or data.get("previousClose")
+            data.get("last")
+            or data.get("close")
+            or data.get("prev_close")
         )
         return float(price) if price else None
     except Exception:
@@ -184,20 +183,18 @@ async def _fetch_underlying_price(ticker: str) -> Optional[float]:
 
 
 async def _fetch_earnings_date(ticker: str) -> Optional[date]:
-    """
-    Fetch next earnings date via Yahoo Finance MCP.
-    Uses get_option_expiration_dates as a proxy for upcoming events,
-    or get_stock_info which sometimes includes earningsTimestamp.
-    """
-    raw = await call_mcp_tool(YAHOO_MCP_URL, "get_stock_info", {"ticker": ticker})
+    """Fetch next earnings date via Massive MCP (Polygon.io Benzinga)."""
+    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_earnings", {"ticker": ticker, "limit": 4})
     if not raw:
         return None
     try:
-        data = json.loads(raw)
-        # earningsTimestamp is a Unix timestamp in seconds
-        ts = data.get("earningsTimestamp") or data.get("earningsTimestampStart")
-        if ts:
-            return datetime.fromtimestamp(int(ts), tz=timezone.utc).date()
+        records = json.loads(raw)
+        if not isinstance(records, list):
+            return None
+        today_str = date.today().isoformat()
+        upcoming = [e for e in records if e.get("date") and e["date"] >= today_str]
+        if upcoming:
+            return date.fromisoformat(upcoming[-1]["date"])
         return None
     except Exception:
         return None
@@ -257,144 +254,112 @@ async def _fetch_option_chain_details(
     entry_date: Optional[date] = None,
 ) -> Optional[dict]:
     """
-    Look up option contract details (strike, type, expiry, delta) via Yahoo Finance.
-    - Yahoo get_option_chain requires option_type='calls' or 'puts' and returns a list.
-    - Delta is computed via Black-Scholes from the chain's impliedVolatility field.
-    - When current_option_price > 0, matches by lastPrice proximity.
+    Look up option contract details (strike, type, expiry, delta) via Polygon.io snapshots.
+    - Uses list_snapshot_options_chain which returns all live contracts with Greeks.
+    - When current_option_price > 0, matches by bid/ask midpoint proximity.
     - When current_option_price == 0, matches by nearest-ATM strike.
     - entry_date: if provided, skips expiry dates that would have been < 14 DTE when
       the position was opened (prevents ITM calls from matching near-weekly expiries).
     Returns dict with strike, option_type, expiration_date, delta — or None.
     """
-    raw_dates = await call_mcp_tool(
-        YAHOO_MCP_URL, "get_option_expiration_dates", {"ticker": underlying}
-    )
-    if not raw_dates or raw_dates.startswith("Error"):
+    import os
+    from polygon import RESTClient
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
         return None
+
+    opt_type_filter = hint_option_type if hint_option_type in ("call", "put") else "call"
+    MAX_ENTRY_TO_EXPIRY_DAYS = 90
+
     try:
-        dates_data = json.loads(raw_dates)
-        exp_dates = dates_data if isinstance(dates_data, list) else (
-            dates_data.get("expiration_dates") or dates_data.get("dates") or []
-        )
-    except Exception:
+        client = RESTClient(api_key)
+        contracts = list(client.list_snapshot_options_chain(
+            underlying_asset=underlying.upper(),
+            contract_type=opt_type_filter,
+            limit=250,
+        ))
+    except Exception as e:
+        log.warning("options_monitor.polygon_chain_error", ticker=underlying, error=str(e))
         return None
 
-    if not exp_dates:
+    if not contracts:
         return None
-
-    # Yahoo uses 'calls'/'puts' (not 'call'/'put').
-    # When hint is "unknown" or "call", always check calls first.
-    # Only fall back to puts if hint is explicitly "put" or calls return no match.
-    if hint_option_type == "put":
-        side_order = [("puts", "put")]
-    else:
-        # call (or unknown) — calls only; unknown never reaches here since
-        # WEBULL_DEFAULT_OPTION_TYPE defaults to "call"
-        side_order = [("calls", "call")]
 
     best: Optional[dict] = None
     best_score = float("inf")
 
-    # Cap the expiry search window to 90 days from the entry date.
-    # Without this, a far-OTM long-dated call (e.g. 240C Oct) can beat a
-    # near-term deep-ITM call (e.g. 202.50C May) because both happen to be
-    # priced similarly and the far-dated contract has a tighter bid/ask.
-    # Fall back to all 16 dates when no entry_date is known.
-    MAX_ENTRY_TO_EXPIRY_DAYS = 90
-    if entry_date:
-        qualifying = []
-        for d in exp_dates[:16]:
-            try:
-                ed = date.fromisoformat(str(d)[:10])
-                if (ed - entry_date).days <= MAX_ENTRY_TO_EXPIRY_DAYS:
-                    qualifying.append(d)
-            except Exception:
-                pass
-        exp_dates_search = qualifying if len(qualifying) >= 2 else exp_dates[:16]
-    else:
-        exp_dates_search = exp_dates[:16]
+    for snap in contracts:
+        details = getattr(snap, "details", None)
+        if not details:
+            continue
+        try:
+            exp_d = date.fromisoformat(str(details.expiration_date)[:10])
+        except Exception:
+            continue
 
-    for yahoo_type, opt_type in side_order:
-        for exp_date_str in exp_dates_search:
-            try:
-                exp_d = date.fromisoformat(str(exp_date_str)[:10])
-            except Exception:
-                exp_d = None
+        # Cap expiry to entry_date + 90 days
+        if entry_date and (exp_d - entry_date).days > MAX_ENTRY_TO_EXPIRY_DAYS:
+            continue
+        if entry_date and (exp_d - entry_date).days < 14:
+            continue
 
-            # Skip expiries that would have given < 14 DTE on the entry date.
-            # Prevents ITM calls from matching near-weekly expiries whose price
-            # is close due to intrinsic value dominance.
-            if entry_date and exp_d and (exp_d - entry_date).days < 14:
+        contract_strike = float(details.strike_price or 0)
+        opt_type        = details.contract_type or opt_type_filter
+
+        # Greeks from Polygon snapshot
+        greeks_snap = getattr(snap, "greeks", None)
+        delta = float(greeks_snap.delta) if greeks_snap and greeks_snap.delta is not None else None
+        gamma = float(greeks_snap.gamma) if greeks_snap and greeks_snap.gamma is not None else None
+        theta = float(greeks_snap.theta) if greeks_snap and greeks_snap.theta is not None else None
+        vega  = float(greeks_snap.vega)  if greeks_snap and greeks_snap.vega  is not None else None
+
+        # Fallback: compute B-S Greeks from IV if Polygon didn't return them
+        if delta is None and current_underlying_price > 0 and contract_strike > 0:
+            iv = float(getattr(snap, "implied_volatility", None) or 0)
+            if iv > 0:
+                T = max((exp_d - date.today()).days, 1) / 365.0
+                g = _bs_greeks(current_underlying_price, contract_strike, T, iv,
+                               option_type=opt_type)
+                delta, gamma, theta, vega = g["delta"], g["gamma"], g["theta"], g["vega"]
+
+        # Scoring
+        day_snap = getattr(snap, "day", None)
+        quote    = getattr(snap, "last_quote", None)
+        if current_option_price > 0:
+            bid  = float(quote.bid_price if quote else 0) if quote else 0
+            ask  = float(quote.ask_price if quote else 0) if quote else 0
+            last = float(day_snap.close if day_snap else 0) if day_snap else 0
+            if bid > 0 and ask > 0:
+                ref = (bid + ask) / 2.0
+            elif bid > 0:
+                ref = bid
+            elif last > 0:
+                ref = last
+            else:
                 continue
+            score = abs(ref - current_option_price) / current_option_price
+            threshold = 0.25
+        elif current_underlying_price > 0 and contract_strike > 0:
+            score = abs(contract_strike - current_underlying_price) / current_underlying_price
+            threshold = 0.25
+        else:
+            oi = float(getattr(snap, "open_interest", None) or 1)
+            score = 1.0 / max(oi, 1)
+            threshold = 1.0
 
-            raw_chain = await call_mcp_tool(
-                YAHOO_MCP_URL, "get_option_chain",
-                {"ticker": underlying, "expiration_date": str(exp_date_str),
-                 "option_type": yahoo_type},
-            )
-            if not raw_chain or raw_chain.startswith("Error"):
-                continue
-            try:
-                contracts = json.loads(raw_chain)
-            except Exception:
-                continue
-            if not isinstance(contracts, list) or not contracts:
-                continue
-
-            for c in contracts:
-                contract_strike = float(c.get("strike", 0) or 0)
-                iv = float(c.get("impliedVolatility", 0) or 0)
-
-                # Compute Black-Scholes Greeks
-                greeks = {"delta": None, "gamma": None, "theta": None, "vega": None}
-                if current_underlying_price > 0 and contract_strike > 0 and exp_d and iv > 0:
-                    T = max((exp_d - date.today()).days, 1) / 365.0
-                    greeks = _bs_greeks(current_underlying_price, contract_strike,
-                                        T, iv, option_type=opt_type)
-
-                # Score: match by price or by nearest-ATM strike.
-                # Use bid/ask midpoint as the reference price — it reflects the CURRENT
-                # market (not a stale last-trade price that could equal the old entry cost).
-                if current_option_price > 0:
-                    bid  = float(c.get("bid") or 0)
-                    ask  = float(c.get("ask") or 0)
-                    last = float(c.get("lastPrice") or 0)
-                    if bid > 0 and ask > 0:
-                        ref = (bid + ask) / 2.0
-                    elif bid > 0:
-                        ref = bid
-                    elif last > 0:
-                        ref = last
-                    else:
-                        continue  # no usable price — skip
-                    score = abs(ref - current_option_price) / current_option_price
-                    threshold = 0.25
-                elif current_underlying_price > 0 and contract_strike > 0:
-                    score = abs(contract_strike - current_underlying_price) / current_underlying_price
-                    threshold = 0.25
-                else:
-                    oi = float(c.get("openInterest") or 1)
-                    score = 1.0 / max(oi, 1)
-                    threshold = 1.0
-
-                # A later expiry must beat the current best by 50% to displace it.
-                # This strongly prefers the EARLIEST expiry with a qualifying score,
-                # preventing a marginally better far-dated match from winning.
-                improvement_required = best_score * 0.50
-                if score < improvement_required and score < threshold:
-                    best_score = score
-                    best = {
-                        "strike":          contract_strike,
-                        "option_type":     opt_type,
-                        "expiration_date": exp_d,
-                        "delta":           greeks["delta"],
-                        "gamma":           greeks["gamma"],
-                        "theta":           greeks["theta"],
-                        "vega":            greeks["vega"],
-                    }
-
-        if best:
-            break   # found a match, don't try the other side
+        improvement_required = best_score * 0.50
+        if score < improvement_required and score < threshold:
+            best_score = score
+            best = {
+                "strike":          contract_strike,
+                "option_type":     opt_type,
+                "expiration_date": exp_d,
+                "delta":           delta,
+                "gamma":           gamma,
+                "theta":           theta,
+                "vega":            vega,
+            }
 
     return best
 

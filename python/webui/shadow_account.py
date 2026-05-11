@@ -121,15 +121,30 @@ async def _fetch_signals(pool, date_from: date, date_to: date) -> dict:
 
 
 def _fetch_ohlcv(ticker: str, start: date, end: date) -> pd.DataFrame:
-    """Fetch OHLCV via Ticker.history() — always returns single-level columns."""
-    import yfinance as yf
-    df = yf.Ticker(ticker).history(
-        start=str(start),
-        end=str(end + timedelta(days=1)),
-        auto_adjust=True,
+    """Fetch OHLCV via Polygon.io REST — returns DataFrame with date index."""
+    import os
+    from polygon import RESTClient
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return pd.DataFrame()
+    client = RESTClient(api_key)
+    bars = client.get_aggs(
+        ticker.upper(), 1, "day",
+        str(start), str(end + timedelta(days=1)),
+        limit=500, adjusted=True,
     )
-    # Normalise index to plain date objects
-    df.index = pd.to_datetime(df.index).date
+    if not bars:
+        return pd.DataFrame()
+    rows = {
+        date.fromtimestamp(b.timestamp / 1000): {
+            "Open": b.open, "High": b.high, "Low": b.low,
+            "Close": b.close, "Volume": b.volume,
+        }
+        for b in bars
+    }
+    df = pd.DataFrame.from_dict(rows, orient="index")
+    df.index.name = None
     return df
 
 

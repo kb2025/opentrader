@@ -150,10 +150,10 @@ async def get_massive_daily_bars(
 
 async def get_avg_volume(ticker: str) -> float | None:
     """
-    Fetch the average daily volume for a ticker via Yahoo Finance MCP.
+    Fetch the average daily volume for a ticker via Massive MCP (Polygon.io).
     Returns volume as a float (e.g. 5_000_000) or None on failure.
     """
-    raw = await call_mcp_tool(YAHOO_MCP_URL, "get_avg_volume", {"ticker": ticker})
+    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_avg_volume", {"ticker": ticker})
     if not raw:
         return None
     try:

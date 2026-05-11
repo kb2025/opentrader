@@ -3,6 +3,21 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.8] - 2026-05-11
+
+### Removed
+- **Yahoo Finance Phase 3 — caller migration (3a–3i)**: replaced all remaining yfinance / Yahoo MCP calls with Polygon.io (Massive MCP) equivalents:
+  - `backtest_runner.py`: replaced `yf.download()` with Polygon `get_aggs` via REST client
+  - `portfolio_optimizer.py`: replaced `yf.download()` multi-ticker with per-ticker Polygon `get_aggs`
+  - `shadow_account.py`: replaced `yf.Ticker().history()` with Polygon `get_aggs`
+  - `ml_predictor.py`: replaced `yf.download(period="2y")` with Polygon `get_aggs(days=730)`
+  - `aggregator/combiner.py`: replaced `fetch_yfinance` / `_fetch_yfinance_sync` with `fetch_massive_fundamentals` (Massive MCP `get_dividends` + `get_earnings`); removed `yahoo` from `SOURCE_WEIGHTS`, renormalized to wsb=0.38 / seekalpha=0.62
+  - `aggregator/main.py`: renamed cache key `aggregator:yf:{ticker}` → `aggregator:massive:{ticker}`; wired `fetch_massive_fundamentals`
+  - `webui/main.py` `get_trader_ticker_meta`: replaced yfinance price/ex-div/earnings with Massive MCP `get_quote` + `get_dividends` + `get_earnings`
+  - `webui/main.py` `get_trader_fundamentals`: replaced `_fetch_earnings` yfinance block with Massive MCP `get_earnings`
+  - `shared/mcp_client.py` `get_avg_volume`: switched from `YAHOO_MCP_URL` to `MASSIVE_MCP_URL`
+  - `options_monitor/main.py`: replaced Yahoo MCP `get_stock_info` with Massive `get_quote` for price; `get_earnings` for earnings date; Polygon `list_snapshot_options_chain` for contract detail enrichment (replaces Yahoo `get_option_expiration_dates` + `get_option_chain`)
+
 ## [3.7.7] - 2026-05-11
 
 ### Removed

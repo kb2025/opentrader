@@ -5,7 +5,7 @@ Middleware between scrapers and the predictor.
 Two concurrent loops:
   1. _ticks_loop  — consumes market.ticks, caches per-ticker sentiment
   2. _scanner_loop — consumes scanner.signals, enriches each OVTLYR candidate
-     with sentiment + yfinance fundamentals, writes aggregator:intel:{ticker}
+     with sentiment + Massive fundamentals, writes aggregator:intel:{ticker}
 """
 import asyncio
 import json
@@ -15,8 +15,7 @@ import structlog
 from shared.base_agent import BaseAgent
 from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
 from shared.mcp_client import get_uw_ticker_flow, get_uw_darkpool
-from .combiner import build_intelligence, fetch_yfinance
-from .models import TickerIntelligence
+from .combiner import build_intelligence, fetch_massive_fundamentals
 
 log = structlog.get_logger("aggregator")
 
@@ -27,7 +26,7 @@ CONSUMER_NAME  = os.getenv("HOSTNAME", "aggregator-0")
 
 INTEL_TTL      = int(os.getenv("INTEL_TTL_SEC",      "7200"))   # 2 hours
 SENTIMENT_TTL  = int(os.getenv("SENTIMENT_TTL_SEC",  "7200"))
-YF_CACHE_TTL   = int(os.getenv("YF_CACHE_TTL_SEC",   "3600"))   # 1 hour for yf data
+MASSIVE_CACHE_TTL = int(os.getenv("MASSIVE_CACHE_TTL_SEC", "3600"))  # 1 hour
 UW_CACHE_TTL   = int(os.getenv("UW_CACHE_TTL_SEC",   "1800"))   # 30 min — flow is time-sensitive
 
 
@@ -167,8 +166,8 @@ class AggregatorAgent(BaseAgent):
             except Exception:
                 pass
 
-        # Fetch yfinance data (with short Redis cache to avoid hammering)
-        yf_data = await self._get_yf_cached(ticker, current_price)
+        # Fetch Massive fundamentals (with short Redis cache to avoid hammering)
+        yf_data = await self._get_massive_cached(ticker)
 
         # Fetch Unusual Whales options flow + dark pool (cached, non-blocking)
         uw_flow, uw_darkpool = await asyncio.gather(
@@ -185,7 +184,7 @@ class AggregatorAgent(BaseAgent):
         intel = build_intelligence(
             ticker=ticker,
             sentiment_data=sentiment_data,
-            yf_data=yf_data,
+            massive_data=yf_data,
             current_price=current_price,
             uw_flow=uw_flow,
             uw_darkpool=uw_darkpool,
@@ -202,9 +201,9 @@ class AggregatorAgent(BaseAgent):
                  delta=intel.confidence_delta,
                  summary=intel.summary)
 
-    async def _get_yf_cached(self, ticker: str, current_price: float) -> dict:
-        """Return cached yfinance data, or fetch fresh if expired."""
-        cache_key = f"aggregator:yf:{ticker}"
+    async def _get_massive_cached(self, ticker: str) -> dict:
+        """Return cached Massive fundamentals, or fetch fresh if expired."""
+        cache_key = f"aggregator:massive:{ticker}"
         cached = await self.redis.get(cache_key)
         if cached:
             try:
@@ -212,10 +211,10 @@ class AggregatorAgent(BaseAgent):
             except Exception:
                 pass
 
-        yf_data = await fetch_yfinance(ticker)
-        if yf_data:
-            await self.redis.set(cache_key, json.dumps(yf_data), ex=YF_CACHE_TTL)
-        return yf_data
+        data = await fetch_massive_fundamentals(ticker)
+        if data:
+            await self.redis.set(cache_key, json.dumps(data), ex=MASSIVE_CACHE_TTL)
+        return data
 
     async def _get_uw_flow_cached(self, ticker: str) -> dict | None:
         """Return cached Unusual Whales options flow, or fetch fresh if expired."""

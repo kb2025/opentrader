@@ -1,13 +1,12 @@
 """
 Aggregator Combiner
-Merges per-ticker sentiment from multiple scrapers with yfinance
-fundamentals (analyst ratings, dividends, earnings) into TickerIntelligence.
+Merges per-ticker sentiment from multiple scrapers with Massive MCP
+fundamentals (dividends, earnings) into TickerIntelligence.
 """
 import asyncio
+import json
 import os
-import time
-from datetime import date, datetime, timezone
-from typing import Optional
+from datetime import date
 import structlog
 
 from .models import TickerIntelligence
@@ -16,18 +15,17 @@ log = structlog.get_logger("aggregator.combiner")
 
 EARNINGS_BUFFER_DAYS = int(os.getenv("EARNINGS_BUFFER_DAYS", "5"))
 
-# Source weights for combined sentiment score
+# Source weights for combined sentiment score (wsb + seekalpha only)
 SOURCE_WEIGHTS = {
-    "wsb":       0.25,   # social/retail crowd
-    "seekalpha": 0.40,   # professional analysis
-    "yahoo":     0.35,   # broad market consensus
+    "wsb":       0.38,   # social/retail crowd
+    "seekalpha": 0.62,   # professional analysis
 }
 
 
 def build_intelligence(
     ticker:         str,
     sentiment_data: dict,           # source → {mention_count, sentiment_score, sentiment_label, headlines}
-    yf_data:        dict,           # from _fetch_yfinance()
+    massive_data:   dict,           # from fetch_massive_fundamentals()
     current_price:  float = 0.0,
     uw_flow:        dict | None = None,    # from get_uw_ticker_flow()
     uw_darkpool:    dict | None = None,    # from get_uw_darkpool()
@@ -73,27 +71,15 @@ def build_intelligence(
     intel.social_momentum  = _compute_momentum(wsb_mentions)
     intel.sources          = sources
 
-    # ── Analyst ratings ───────────────────────────────────────────────────────
-    analyst = yf_data.get("analyst", {})
-    if analyst:
-        intel.analyst_count        = analyst.get("count", 0)
-        intel.analyst_buy_pct      = analyst.get("buy_pct", 0.0)
-        intel.analyst_target_price = analyst.get("target_price", 0.0)
-        intel.analyst_consensus    = analyst.get("consensus", "none")
-        if current_price > 0 and intel.analyst_target_price > 0:
-            intel.analyst_upside_pct = round(
-                (intel.analyst_target_price - current_price) / current_price * 100, 2
-            )
-
     # ── Dividends ─────────────────────────────────────────────────────────────
-    div = yf_data.get("dividend", {})
+    div = massive_data.get("dividend", {})
     if div:
         intel.dividend_yield   = div.get("yield", 0.0)
         intel.dividend_annual  = div.get("annual", 0.0)
         intel.dividend_ex_date = div.get("ex_date")
 
     # ── Earnings ──────────────────────────────────────────────────────────────
-    earnings = yf_data.get("earnings", {})
+    earnings = massive_data.get("earnings", {})
     if earnings:
         intel.earnings_date      = earnings.get("date")
         intel.earnings_days_away = earnings.get("days_away")
@@ -224,101 +210,49 @@ def _build_summary(intel: TickerIntelligence) -> str:
     return " | ".join(parts) if parts else "no actionable intelligence"
 
 
-async def fetch_yfinance(ticker: str) -> dict:
+async def fetch_massive_fundamentals(ticker: str) -> dict:
     """
-    Async wrapper around yfinance — runs blocking calls in executor.
-    Returns dict with analyst, dividend, earnings sub-dicts.
+    Fetch dividend and earnings data via Massive MCP (Polygon.io).
+    Returns dict with dividend and earnings sub-dicts.
     """
-    loop = asyncio.get_event_loop()
-    try:
-        return await loop.run_in_executor(None, _fetch_yfinance_sync, ticker)
-    except Exception as e:
-        log.warning("combiner.yfinance_error", ticker=ticker, error=str(e))
-        return {}
+    from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
 
-
-def _fetch_yfinance_sync(ticker: str) -> dict:
-    """Synchronous yfinance data fetch — run in thread pool."""
-    import yfinance as yf
-
-    stock  = yf.Ticker(ticker)
-    result = {"analyst": {}, "dividend": {}, "earnings": {}}
-
-    # ── Analyst ratings ───────────────────────────────────────────────────────
-    try:
-        recs = stock.recommendations_summary
-        if recs is not None and not recs.empty:
-            # Use most recent period
-            latest = recs.iloc[0]
-            strong_buy = int(latest.get("strongBuy", 0))
-            buy        = int(latest.get("buy", 0))
-            hold       = int(latest.get("hold", 0))
-            sell       = int(latest.get("sell", 0))
-            strong_sell= int(latest.get("strongSell", 0))
-            total      = strong_buy + buy + hold + sell + strong_sell
-            if total > 0:
-                buy_pct  = (strong_buy + buy) / total
-                consensus = (
-                    "strong_buy"  if buy_pct >= 0.70 else
-                    "buy"         if buy_pct >= 0.55 else
-                    "hold"        if buy_pct >= 0.35 else
-                    "sell"        if buy_pct >= 0.20 else
-                    "strong_sell"
-                )
-                result["analyst"] = {
-                    "count":     total,
-                    "buy_pct":   round(buy_pct, 4),
-                    "consensus": consensus,
-                }
-    except Exception:
-        pass
-
-    try:
-        targets = stock.analyst_price_targets
-        if isinstance(targets, dict):
-            mean = targets.get("mean") or targets.get("current") or 0.0
-            result["analyst"]["target_price"] = float(mean) if mean else 0.0
-    except Exception:
-        pass
+    result: dict = {"dividend": {}, "earnings": {}}
 
     # ── Dividends ─────────────────────────────────────────────────────────────
     try:
-        info = stock.fast_info
-        div_yield  = getattr(info, "dividend_yield",  None) or 0.0
-        div_annual = getattr(info, "last_dividend_value", None) or 0.0
-        if div_yield > 0 or div_annual > 0:
-            result["dividend"] = {
-                "yield":  round(float(div_yield) * 100, 2),
-                "annual": round(float(div_annual), 4),
-            }
-        # Ex-dividend date
-        cal = stock.calendar
-        if isinstance(cal, dict) and "Ex-Dividend Date" in cal:
-            ex = cal["Ex-Dividend Date"]
-            result["dividend"]["ex_date"] = str(ex) if ex else None
-    except Exception:
-        pass
+        raw_div = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends", {"ticker": ticker, "limit": 4})
+        if raw_div:
+            divs = json.loads(raw_div)
+            if isinstance(divs, list) and divs:
+                today = date.today()
+                upcoming = [d for d in divs if d.get("ex_date") and d["ex_date"] >= today.isoformat()]
+                ref = upcoming[0] if upcoming else divs[0]
+                cash = float(ref.get("cash_amount") or 0)
+                freq = int(ref.get("frequency") or 0)
+                annual = cash * freq if freq else cash
+                result["dividend"] = {
+                    "yield":   0.0,  # yield requires current price — caller can compute
+                    "annual":  round(annual, 4),
+                    "ex_date": ref.get("ex_date"),
+                }
+    except Exception as e:
+        log.warning("combiner.massive_div_error", ticker=ticker, error=str(e))
 
     # ── Earnings ──────────────────────────────────────────────────────────────
     try:
-        cal = stock.calendar
-        if isinstance(cal, dict):
-            ed = cal.get("Earnings Date")
-            if ed is not None:
-                if hasattr(ed, "__iter__") and not isinstance(ed, str):
-                    ed = list(ed)[0] if ed else None
-                if ed is not None:
-                    if hasattr(ed, "date"):
-                        ed = ed.date()
-                    earnings_date = str(ed)[:10]
-                    today         = date.today()
-                    target        = date.fromisoformat(earnings_date)
-                    days_away     = (target - today).days
-                    result["earnings"] = {
-                        "date":      earnings_date,
-                        "days_away": days_away,
-                    }
-    except Exception:
-        pass
+        raw_earn = await call_mcp_tool(MASSIVE_MCP_URL, "get_earnings", {"ticker": ticker, "limit": 4})
+        if raw_earn:
+            records = json.loads(raw_earn)
+            if isinstance(records, list) and records:
+                today = date.today()
+                upcoming = [e for e in records if e.get("date") and e["date"] >= today.isoformat()]
+                if upcoming:
+                    nxt = upcoming[-1]  # earliest upcoming (list is desc, so last)
+                    earnings_date = nxt["date"]
+                    days_away     = (date.fromisoformat(earnings_date) - today).days
+                    result["earnings"] = {"date": earnings_date, "days_away": days_away}
+    except Exception as e:
+        log.warning("combiner.massive_earnings_error", ticker=ticker, error=str(e))
 
     return result

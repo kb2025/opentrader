@@ -10,12 +10,11 @@ Implements four classic allocation strategies from a list of tickers:
 
 All strategies are long-only (0 ≤ w ≤ 1, Σw = 1).
 An optional max_weight cap per asset is supported.
-Historical returns are fetched from yfinance (daily, auto-adjusted).
+Historical returns are fetched from Polygon.io (daily, auto-adjusted).
 scipy.optimize.minimize with SLSQP is used for the three constrained problems.
 """
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -26,29 +25,38 @@ log = logging.getLogger("portfolio_optimizer")
 
 def _fetch_returns(tickers: list[str], lookback_days: int) -> pd.DataFrame:
     """
-    Download daily adjusted close prices for all tickers and return
+    Download daily adjusted close prices for all tickers via Polygon.io and return
     a DataFrame of daily log-returns.  Tickers that fail are dropped.
     """
-    import yfinance as yf
+    import os
+    from datetime import date, timedelta as _td
+    from polygon import RESTClient
 
-    end   = datetime.now(timezone.utc)
-    start = end - timedelta(days=lookback_days + 10)  # buffer for weekends/holidays
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        raise ValueError("MASSIVE_API_KEY not set — cannot fetch OHLCV")
+    client  = RESTClient(api_key)
+    to_date = date.today().isoformat()
+    frm_date = (date.today() - _td(days=lookback_days + 10)).isoformat()
 
-    raw = yf.download(
-        tickers,
-        start  = start.strftime("%Y-%m-%d"),
-        end    = end.strftime("%Y-%m-%d"),
-        auto_adjust = True,
-        progress    = False,
-        threads     = False,
-    )
+    closes_dict: dict[str, dict[str, float]] = {}
+    for ticker in tickers:
+        try:
+            bars = client.get_aggs(ticker.upper(), 1, "day", frm_date, to_date,
+                                   limit=500, adjusted=True)
+            if bars:
+                for b in bars:
+                    d = date.fromtimestamp(b.timestamp / 1000).isoformat()
+                    closes_dict.setdefault(d, {})[ticker] = b.close
+        except Exception as e:
+            log.warning("portfolio_optimizer: polygon fetch failed for %s: %s", ticker, e)
 
-    # yfinance returns MultiIndex when >1 ticker, single-level when ==1
-    if isinstance(raw.columns, pd.MultiIndex):
-        closes = raw["Close"]
-    else:
-        closes = raw[["Close"]].rename(columns={"Close": tickers[0]})
+    if not closes_dict:
+        raise ValueError("No price data returned for any ticker")
 
+    closes = pd.DataFrame.from_dict(closes_dict, orient="index")
+    closes.index = pd.to_datetime(closes.index)
+    closes = closes.sort_index()
     closes = closes.dropna(how="all")
 
     # Drop columns (tickers) where more than 20% of rows are NaN

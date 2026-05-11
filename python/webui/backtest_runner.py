@@ -20,7 +20,6 @@ import matplotlib.pyplot as plt
 import backtrader as bt
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
 
 # ── Direction normaliser ───────────────────────────────────────────────────────
@@ -388,15 +387,37 @@ class _PortfolioValue(bt.Analyzer):
 
 # ── OHLCV fetch ────────────────────────────────────────────────────────────────
 
+_PERIOD_TO_DAYS = {
+    "1mo": 35, "3mo": 95, "6mo": 185, "1y": 370, "2y": 730,
+}
+
 def _fetch_ohlcv(ticker: str, period: str = "2y") -> pd.DataFrame:
-    df = yf.download(ticker, period=period, interval="1d", auto_adjust=True, progress=False)
-    if df.empty:
+    import os
+    from datetime import date, timedelta
+    from polygon import RESTClient
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        raise ValueError("MASSIVE_API_KEY not set — cannot fetch OHLCV")
+    days = _PERIOD_TO_DAYS.get(period, 730)
+    to_date  = date.today().isoformat()
+    frm_date = (date.today() - timedelta(days=days)).isoformat()
+    client = RESTClient(api_key)
+    bars = client.get_aggs(ticker.upper(), 1, "day", frm_date, to_date,
+                           limit=750, adjusted=True)
+    if not bars:
         raise ValueError(f"No OHLCV data returned for {ticker!r}")
-    df.index = pd.to_datetime(df.index)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [c[0].lower() for c in df.columns]
-    else:
-        df.columns = [c.lower() for c in df.columns]
+    rows = [
+        {
+            "date":   date.fromtimestamp(b.timestamp / 1000).isoformat(),
+            "open":   b.open, "high": b.high, "low": b.low,
+            "close":  b.close, "volume": b.volume,
+        }
+        for b in bars
+    ]
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.set_index("date").sort_index()
     return df[["open", "high", "low", "close", "volume"]].dropna()
 
 
@@ -416,7 +437,6 @@ def _build_chart(df: pd.DataFrame, trade_log: list, equity_curve: list, ticker: 
     """Build a custom chart from OHLCV + trade log + equity curve. Returns base64 PNG."""
     try:
         import matplotlib.gridspec as gridspec
-        from matplotlib.lines import Line2D
 
         fast_ema = df["close"].ewm(span=10, adjust=False).mean()
         slow_ema = df["close"].ewm(span=21, adjust=False).mean()

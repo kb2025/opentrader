@@ -48,7 +48,7 @@ FORWARD_DAYS   = 5       # predict price movement this many days out
 LABEL_THRESH   = 0.01    # 1% move required to count as signal
 TRAIN_RATIO    = 0.80    # fraction of history used for training
 MIN_TRAIN_ROWS = 120     # minimum rows needed to train (≈ 6 months)
-HISTORY_PERIOD = "2y"    # yfinance lookback period
+HISTORY_DAYS   = 730     # 2 years of daily OHLCV
 
 
 def _compute_rsi(close: "pd.Series", period: int = 14) -> "pd.Series":
@@ -124,16 +124,33 @@ def _create_labels(close: "pd.Series", direction: str) -> "pd.Series":
 
 
 def _fetch_ohlcv(ticker: str) -> "Optional[pd.DataFrame]":
-    """Fetch OHLCV from yfinance. Returns None on failure."""
+    """Fetch 2yr daily OHLCV from Polygon.io. Returns None on failure."""
     try:
-        import yfinance as yf
-        df = yf.download(ticker, period=HISTORY_PERIOD, auto_adjust=True,
-                         progress=False, threads=False)
-        if df is None or df.empty or len(df) < MIN_TRAIN_ROWS + FORWARD_DAYS + 50:
+        import os
+        from datetime import date, timedelta
+        from polygon import RESTClient
+
+        api_key = os.getenv("MASSIVE_API_KEY", "")
+        if not api_key:
+            log.warning("ml_predictor: MASSIVE_API_KEY not set, skipping %s", ticker)
             return None
+        client   = RESTClient(api_key)
+        to_date  = date.today().isoformat()
+        frm_date = (date.today() - timedelta(days=HISTORY_DAYS)).isoformat()
+        bars = client.get_aggs(ticker.upper(), 1, "day", frm_date, to_date,
+                               limit=750, adjusted=True)
+        if not bars or len(bars) < MIN_TRAIN_ROWS + FORWARD_DAYS + 50:
+            return None
+        rows = [
+            {"Date": date.fromtimestamp(b.timestamp / 1000),
+             "Open": b.open, "High": b.high, "Low": b.low,
+             "Close": b.close, "Volume": b.volume}
+            for b in bars
+        ]
+        df = pd.DataFrame(rows).set_index("Date").sort_index()
         return df
     except Exception as e:
-        log.warning("ml_predictor: yfinance failed for %s: %s", ticker, e)
+        log.warning("ml_predictor: polygon fetch failed for %s: %s", ticker, e)
         return None
 
 

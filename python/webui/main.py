@@ -12069,60 +12069,67 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
 async def get_trader_ticker_meta(ticker: str, token: str = ""):
     """Earnings date, ex-dividend date and current price for chart markers."""
     check_token(token)
-    import asyncio as _asyncio
+    from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
+    sym = ticker.upper()
+    result = {"ticker": sym, "price": None, "ex_dividend_date": None,
+              "earnings_date": None, "company_name": ""}
 
-    def _fetch(sym: str) -> dict:
-        import yfinance as _yf
-        from datetime import datetime as _dt
-        try:
-            t = _yf.Ticker(sym)
-            info = t.info or {}
-            price = float(info.get("currentPrice") or info.get("regularMarketPrice")
-                          or info.get("previousClose") or 0)
-            ex_date = None
-            ex_raw = info.get("exDividendDate")
-            if ex_raw:
-                try:
-                    ex_date = _dt.fromtimestamp(float(ex_raw)).strftime("%Y-%m-%d")
-                except Exception:
-                    pass
-            earnings_date = None
-            try:
-                cal = t.calendar
-                if cal is not None and not cal.empty:
-                    col = None
-                    for c in ("Earnings Date", "earningsDate"):
-                        if c in cal.columns:
-                            col = c; break
-                    if col:
-                        ed = cal[col].iloc[0]
-                        if hasattr(ed, "strftime"):
-                            earnings_date = ed.strftime("%Y-%m-%d")
-            except Exception:
-                pass
-            return {
-                "ticker": sym,
-                "price": round(price, 2) if price else None,
-                "ex_dividend_date": ex_date,
-                "earnings_date": earnings_date,
-                "company_name": info.get("longName", ""),
-            }
-        except Exception as e:
-            return {"ticker": sym, "price": None, "ex_dividend_date": None,
-                    "earnings_date": None, "error": str(e)}
+    # Price via Massive get_quote
+    try:
+        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_quote", {"ticker": sym})
+        if raw:
+            q = json.loads(raw)
+            price = q.get("last") or q.get("close") or q.get("prev_close")
+            if price:
+                result["price"] = round(float(price), 2)
+    except Exception:
+        pass
 
-    loop = _asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _fetch, ticker.upper())
+    # Ticker name via get_ticker_details
+    try:
+        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_ticker_details", {"ticker": sym})
+        if raw:
+            d = json.loads(raw)
+            result["company_name"] = d.get("name", "")
+    except Exception:
+        pass
+
+    # Upcoming ex-dividend date via get_dividends
+    try:
+        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends", {"ticker": sym, "limit": 4})
+        if raw:
+            divs = json.loads(raw)
+            if isinstance(divs, list):
+                today_str = date.today().isoformat()
+                upcoming = [d for d in divs if d.get("ex_date") and d["ex_date"] >= today_str]
+                if upcoming:
+                    result["ex_dividend_date"] = upcoming[-1]["ex_date"]
+    except Exception:
+        pass
+
+    # Upcoming earnings date via get_earnings
+    try:
+        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_earnings", {"ticker": sym, "limit": 4})
+        if raw:
+            records = json.loads(raw)
+            if isinstance(records, list):
+                today_str = date.today().isoformat()
+                upcoming = [e for e in records if e.get("date") and e["date"] >= today_str]
+                if upcoming:
+                    result["earnings_date"] = upcoming[-1]["date"]
+    except Exception:
+        pass
+
+    return result
 
 
 @app.get("/api/options/trader/fundamentals/{ticker}")
 async def get_trader_fundamentals(ticker: str, token: str = ""):
     """
     Company fundamentals for the Options Trader panel.
-    Merges: Polygon/massive (details + market cap) + massive dividends + yfinance (earnings).
+    Merges: Polygon/massive (details + market cap) + massive dividends + earnings.
     """
     check_token(token)
-    import asyncio as _asyncio
     sym = ticker.upper()
 
     api_key = os.getenv("MASSIVE_API_KEY", "") or _read_env_file().get("MASSIVE_API_KEY", "")
@@ -12186,79 +12193,28 @@ async def get_trader_fundamentals(ticker: str, token: str = ""):
         except Exception as ex:
             log.warning("fundamentals.massive_div_error", ticker=sym, error=str(ex))
 
-    # ── 3. Earnings date (yfinance) ────────────────────────────────────────────
+    # ── 3. Earnings date via Massive MCP ──────────────────────────────────────
     earnings: dict = {}
-    def _fetch_earnings(s: str) -> dict:
-        try:
-            import yfinance as _yf
-            from datetime import datetime as _dt
-            t = _yf.Ticker(s)
-            info = t.info or {}
-            # pe, eps, forward eps, revenue
-            result = {
-                "pe_ratio":      info.get("trailingPE"),
-                "forward_pe":    info.get("forwardPE"),
-                "eps":           info.get("trailingEps"),
-                "forward_eps":   info.get("forwardEps"),
-                "revenue":       info.get("totalRevenue"),
-                "profit_margin": info.get("profitMargins"),
-                "dividend_yield":info.get("dividendYield"),
-                "beta":          info.get("beta"),
-                "52w_high":      info.get("fiftyTwoWeekHigh"),
-                "52w_low":       info.get("fiftyTwoWeekLow"),
-                "avg_volume":    info.get("averageVolume"),
-            }
-            # ex-div fallback if massive didn't return one
-            ex_raw = info.get("exDividendDate")
-            if ex_raw:
-                try:
-                    result["ex_dividend_date_yf"] = _dt.fromtimestamp(float(ex_raw)).strftime("%Y-%m-%d")
-                except Exception:
-                    pass
-            # Earnings date + calendar ex-div — yfinance now returns a dict, not a DataFrame
-            try:
-                cal = t.calendar
-                if isinstance(cal, dict):
-                    # Earnings Date is a list of dates in the dict format
-                    ed_val = cal.get("Earnings Date")
-                    if ed_val:
-                        ed = ed_val[0] if isinstance(ed_val, list) else ed_val
-                        if hasattr(ed, "strftime"):
-                            result["earnings_date"] = ed.strftime("%Y-%m-%d")
-                        elif isinstance(ed, str):
-                            result["earnings_date"] = ed
-                    # Calendar ex-div date (more reliable than info.exDividendDate)
-                    ex_cal = cal.get("Ex-Dividend Date")
-                    if ex_cal and hasattr(ex_cal, "strftime"):
-                        result["ex_dividend_date_yf"] = ex_cal.strftime("%Y-%m-%d")
-                    # Dividend pay date
-                    pay_cal = cal.get("Dividend Date")
-                    if pay_cal and hasattr(pay_cal, "strftime"):
-                        result["pay_date_yf"] = pay_cal.strftime("%Y-%m-%d")
-                elif cal is not None:
-                    # Legacy DataFrame format
-                    for col in ("Earnings Date", "earningsDate"):
-                        if hasattr(cal, "columns") and col in cal.columns:
-                            ed = cal[col].iloc[0]
-                            if hasattr(ed, "strftime"):
-                                result["earnings_date"] = ed.strftime("%Y-%m-%d")
-                            break
-            except Exception:
-                pass
-            return result
-        except Exception as e:
-            return {"error": str(e)}
-
-    loop = _asyncio.get_event_loop()
-    earnings = await loop.run_in_executor(None, _fetch_earnings, sym)
-
-    # Merge: prefer massive div dates; fall back to yfinance calendar values
-    if not div.get("ex_dividend_date") and earnings.get("ex_dividend_date_yf"):
-        div["ex_dividend_date"] = earnings["ex_dividend_date_yf"]
-    if not div.get("pay_date") and earnings.get("pay_date_yf"):
-        div["pay_date"] = earnings["pay_date_yf"]
-    earnings.pop("ex_dividend_date_yf", None)
-    earnings.pop("pay_date_yf", None)
+    try:
+        from shared.mcp_client import call_mcp_tool as _call_mcp, MASSIVE_MCP_URL as _MASSIVE_URL
+        raw_earn = await _call_mcp(_MASSIVE_URL, "get_earnings", {"ticker": sym, "limit": 8})
+        if raw_earn:
+            records = json.loads(raw_earn)
+            if isinstance(records, list) and records:
+                today_str = date.today().isoformat()
+                upcoming = [e for e in records if e.get("date") and e["date"] >= today_str]
+                past = [e for e in records if e.get("date") and e["date"] < today_str]
+                if upcoming:
+                    nxt = upcoming[-1]
+                    earnings["earnings_date"] = nxt["date"]
+                if past:
+                    last = past[0]
+                    if last.get("eps_actual") is not None:
+                        earnings["eps"]          = last.get("eps_actual")
+                    if last.get("eps_estimate") is not None:
+                        earnings["eps_estimate"] = last.get("eps_estimate")
+    except Exception as e:
+        log.warning("fundamentals.massive_earnings_error", ticker=sym, error=str(e))
 
     return {
         "ticker":   sym,
