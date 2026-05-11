@@ -23,7 +23,7 @@ import io
 import json
 import os
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import asyncpg
@@ -31,8 +31,7 @@ import structlog
 
 from shared.base_agent import BaseAgent
 from shared.redis_client import STREAMS, get_redis
-from shared.mcp_client import call_mcp_tool, get_tv_indicators
-from scheduler.calendar import is_trading_day, now_et
+from shared.mcp_client import call_mcp_tool
 
 log = structlog.get_logger("options-monitor")
 
@@ -114,9 +113,9 @@ def _compute_atr(candles: list[dict], period: int = ATR_PERIOD) -> Optional[floa
     trs = []
     for i in range(1, len(candles)):
         h   = float(candles[i]["high"])
-        l   = float(candles[i]["low"])
+        lo  = float(candles[i]["low"])
         pc  = float(candles[i - 1]["close"])
-        tr  = max(h - l, abs(h - pc), abs(l - pc))
+        tr  = max(h - lo, abs(h - pc), abs(lo - pc))
         trs.append(tr)
     if len(trs) < period:
         return None
@@ -218,8 +217,10 @@ def _bs_greeks(S: float, K: float, T: float, sigma: float,
         sqrt_T = math.sqrt(T)
         d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
         d2 = d1 - sigma * sqrt_T
-        ncdf  = lambda x: (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
-        npdf  = lambda x: math.exp(-0.5 * x ** 2) / math.sqrt(2.0 * math.pi)
+        def ncdf(x):
+            return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
+        def npdf(x):
+            return math.exp(-0.5 * x ** 2) / math.sqrt(2.0 * math.pi)
         n_d1  = ncdf(d1)
         n_d2  = ncdf(d2)
         np_d1 = npdf(d1)
@@ -350,7 +351,6 @@ async def _fetch_option_chain_details(
                     T = max((exp_d - date.today()).days, 1) / 365.0
                     greeks = _bs_greeks(current_underlying_price, contract_strike,
                                         T, iv, option_type=opt_type)
-                delta = greeks["delta"]
 
                 # Score: match by price or by nearest-ATM strike.
                 # Use bid/ask midpoint as the reference price — it reflects the CURRENT
@@ -428,8 +428,6 @@ async def _generate_chart(pos: dict, candles: list[dict]) -> Optional[str]:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        import matplotlib.patches as mpatches
-        import numpy as np
 
         underlying    = pos["underlying"]
         entry_price   = float(pos["underlying_entry"] or 0)
@@ -481,9 +479,9 @@ async def _generate_chart(pos: dict, candles: list[dict]) -> Optional[str]:
         for spine in ax.spines.values():
             spine.set_edgecolor("#30363d")
         ax.grid(True, color="#21262d", linewidth=0.5, zorder=0)
-        legend = ax.legend(loc="upper left", framealpha=0.4,
-                           facecolor="#161b22", edgecolor="#30363d",
-                           labelcolor="#e6edf3", fontsize=8)
+        ax.legend(loc="upper left", framealpha=0.4,
+                  facecolor="#161b22", edgecolor="#30363d",
+                  labelcolor="#e6edf3", fontsize=8)
 
         buf = io.BytesIO()
         plt.tight_layout()

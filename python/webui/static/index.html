@@ -4248,12 +4248,7 @@ function statusChip(evtType) {
 }
 
 function getToken() {
-  let t = localStorage.getItem('ot_token');
-  if (!t) {
-    t = prompt('Enter WebUI token:');
-    if (t) localStorage.setItem('ot_token', t);
-  }
-  return t || '';
+  return localStorage.getItem('ot_token') || '';
 }
 
 async function apiFetch(path, opts = {}) {

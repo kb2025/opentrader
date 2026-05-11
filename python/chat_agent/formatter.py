@@ -214,7 +214,6 @@ def fmt_financials(raw: str, cmd: str, args: list) -> str:
     header = f"**{ticker} — {title}**\n"
     # Column header row
     col_w = 11
-    pad   = " " * 26
     header += f"`{'Metric':<24}  " + "  ".join(f"{d:>{col_w}}" for d in dates) + "`\n"
     header += "`" + "─" * (26 + (col_w + 2) * len(dates)) + "`\n"
 
@@ -313,7 +312,6 @@ def fmt_holders(raw: str, cmd: str, args: list) -> str:
         for r in rows[:15]:
             name  = r.get("Name", "Unknown")
             pos   = r.get("Position", "")
-            url   = r.get("URL", "")
             lines.append(f"• **{name}** — _{pos}_")
         return "\n".join(lines)
 
@@ -364,7 +362,6 @@ def fmt_alpaca_account(raw: str, cmd: str, args: list) -> str:
     pnl_day   = data.get("unrealized_pl") or data.get("equity") and data.get("last_equity") and \
                 str(float(data.get("equity",0)) - float(data.get("last_equity",0)))
     status    = data.get("status", "")
-    acct_type = data.get("account_type", data.get("pattern_day_trader") and "PDT" or "")
 
     lines = ["**Alpaca Account**\n"]
     lines.append(f"Portfolio Value: **{equity}**")
@@ -488,10 +485,10 @@ def fmt_alpaca_bars(raw: str, cmd: str, args: list) -> str:
         t = str(b.get("t") or b.get("timestamp", ""))[:10]
         o = f"{float(b.get('o') or b.get('open',0)):>8.2f}"
         h = f"{float(b.get('h') or b.get('high',0)):>8.2f}"
-        l = f"{float(b.get('l') or b.get('low',0)):>8.2f}"
+        lo = f"{float(b.get('l') or b.get('low',0)):>8.2f}"
         c = f"{float(b.get('c') or b.get('close',0)):>8.2f}"
         v = b.get("v") or b.get("volume", 0)
-        lines.append(f"`{t}  {o}  {h}  {l}  {c}  {int(v):>9,}`")
+        lines.append(f"`{t}  {o}  {h}  {lo}  {c}  {int(v):>9,}`")
     return "\n".join(lines)
 
 

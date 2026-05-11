@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.0] - 2026-05-11
+
+### Fixed
+- **WebUI token prompt on every login (v2)** — the `prompt('Enter WebUI token:')` dialog still appeared on fresh installs with the new username/password auth because `getToken()` prompts whenever `localStorage` has no `ot_token`; removed the prompt entirely — session cookie auth makes the WEBUI_TOKEN unnecessary for normal use; updated `check_token()` to only reject an *explicitly wrong* token (empty token is now allowed since the middleware already verified the JWT session cookie)
+- **Fresh-install build failure** — `mcp/tradingview-mcp/Dockerfile` pulled from `ghcr.io` (GitHub Container Registry) and ran `git clone` + `uv pip install` during build, any of which can fail on restricted networks; switched to `docker.io/python:3.12-slim` base with standard `pip`; `mcp/yahoo-finance-mcp/Dockerfile.http` used a BuildKit `--mount=type=cache` directive unsupported by some podman-compose versions, and also pulled from `ghcr.io`; switched to `docker.io/python:3.12-slim` with `pip install uv` instead
+- **Lint: 101 errors across 5 files** — fixed all F821 (6 undefined names: `redis` and `aiohttp` used before assignment in 5 endpoints), F841 (9 unused variables), F601 (duplicate AMZN/TSLA dict keys), E741 (2 ambiguous `l` variable names), E731 (4 lambda assignments), E402 (6 module-level imports not at top)
+
 ## [3.6.99] - 2026-05-11
 
 ### Fixed

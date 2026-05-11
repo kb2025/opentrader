@@ -4,12 +4,12 @@ Quotes, options chains, and expirations.
 Uses live endpoint for both live and sandbox (market data is the same).
 """
 import logging
+import os as _os
 from .client import TradierClient
 
 log = logging.getLogger(__name__)
 
 # Use sandbox endpoint — works for sandbox tokens; live tokens can use either
-import os as _os
 _market_mode   = _os.getenv("TRADIER_MARKET_MODE", "sandbox")
 _market_client = TradierClient(account_id="market", mode=_market_mode)
 

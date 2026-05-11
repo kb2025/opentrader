@@ -3,9 +3,10 @@ Scheduler Jobs
 Each job publishes a trigger message to the appropriate Redis stream.
 Agents consume triggers and execute their tasks.
 """
-import asyncio
-import logging
-from datetime import datetime
+
+import functools
+import json
+import time as _time
 
 import redis.asyncio as aioredis
 import structlog
@@ -13,15 +14,10 @@ import structlog
 from shared.redis_client import STREAMS
 from .calendar import (
     is_market_open, is_active_session, is_trading_day,
-    now_et, minutes_to_open, minutes_to_close,
+    now_et, minutes_to_open,
 )
 
 log = structlog.get_logger("scheduler.jobs")
-
-
-import json
-import time as _time
-import functools
 
 JOB_ERRORS_KEY = "scheduler:job_errors"
 

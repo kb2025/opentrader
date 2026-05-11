@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from shared.crypto import encrypt_secret as _encrypt_secret_fn, decrypt_secret as _decrypt_secret_fn
 from shared.redis_client import get_redis, STREAMS
 from scheduler.calendar import (
     is_market_open, is_trading_day, is_active_session,
@@ -109,8 +110,6 @@ def _verify_jwt(token: str) -> dict | None:
         return payload
     except Exception:
         return None
-
-from shared.crypto import encrypt_secret as _encrypt_secret_fn, decrypt_secret as _decrypt_secret_fn
 
 def _encrypt_secret(value: str) -> str:
     return _encrypt_secret_fn(value, SECRET_KEY)
@@ -661,7 +660,9 @@ CONTAINER_MAP = {
 
 
 def check_token(token: str):
-    if token != WEBUI_TOKEN:
+    # Empty token is allowed when the middleware already verified the session cookie.
+    # Only reject an explicitly-provided token that doesn't match.
+    if token and token != WEBUI_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
@@ -853,8 +854,7 @@ async def get_overview():
 
     # Job count and recent errors
     job_ids       = await redis.smembers(JOB_INDEX_KEY)
-    import time as _time
-    job_err_count = await redis.zcount("scheduler:job_errors", _time.time() - 3600, "+inf")
+    job_err_count = await redis.zcount("scheduler:job_errors", time.time() - 3600, "+inf")
 
     return {
         "market": {
@@ -1457,7 +1457,6 @@ async def get_options_trade_stats():
 @app.get("/api/trades/summary")
 async def get_trade_summary():
     """P&L summary across all accounts."""
-    redis  = await get_redis()
     trades = await get_trades(500)
     fills  = [t for t in trades if t["event_type"] == "fill"]
     total_pnl = sum(float(t["pnl"] or 0) for t in fills)
@@ -1539,7 +1538,8 @@ async def get_positions_signals():
     Open positions from the broker gateway cross-referenced with OVTLYR signal data.
     Returns one row per (account, symbol) with all available OVTLYR data points.
     """
-    import uuid as _uuid, json as _json
+    import uuid as _uuid
+    import json as _json
 
     try:
         import redis.asyncio as _aioredis
@@ -1753,7 +1753,7 @@ _SECTOR_STATIC: dict = {
     "ARKK":"ETF","ARKW":"ETF","ARKG":"ETF","ARKF":"ETF",
     # Technology
     "AAPL":"Technology","MSFT":"Technology","NVDA":"Technology","GOOGL":"Technology",
-    "GOOG":"Technology","META":"Technology","AMZN":"Technology","TSLA":"Technology",
+    "GOOG":"Technology","META":"Technology",
     "AMD":"Technology","INTC":"Technology","AVGO":"Technology","QCOM":"Technology",
     "TXN":"Technology","MU":"Technology","AMAT":"Technology","LRCX":"Technology",
     "KLAC":"Technology","MRVL":"Technology","SNPS":"Technology","CDNS":"Technology",
@@ -1815,7 +1815,7 @@ _SECTOR_STATIC: dict = {
 
 async def _fetch_sector_yahoo(ticker: str, session) -> str | None:
     """Fetch sector from Yahoo Finance chart API (free, no auth required)."""
-    import asyncio as _asyncio
+    import aiohttp
     _SECTOR_FROM_TYPE = {
         "ETF": "ETF", "MUTUALFUND": "Mutual Fund", "INDEX": "Index",
         "CRYPTOCURRENCY": "Crypto", "CURRENCY": "Currency",
@@ -2482,7 +2482,6 @@ async def get_market_groups(group: str = "sectors"):
 
     group_items = _MG_GROUP_MAP[group]
     tickers     = [t for t, _ in group_items]
-    name_map    = {t: n for t, n in group_items}
 
     api_key  = os.getenv("MASSIVE_API_KEY", "")
     today    = _dt.date.today()
@@ -2874,7 +2873,7 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
     Returns LightweightCharts-compatible format: time as Unix seconds.
     """
     import aiohttp as _aiohttp
-    from datetime import date as _date, timedelta, datetime
+    from datetime import date as _date, timedelta
 
     sym       = ticker.upper()
     to_date   = _date.today().isoformat()
@@ -3156,15 +3155,14 @@ async def get_broker_status():
 
 
 # ── Positions cache — avoids 20-second broker-gateway wait on every page load ──
-import time as _time
-
 _positions_cache: dict = {"data": None, "ts": 0.0, "refreshing": False}
 _POSITIONS_CACHE_TTL = 300  # serve cache for up to 5 minutes
 
 
 async def _fetch_positions_from_gateway() -> dict:
     """Core broker-gateway fetch — no caching logic here."""
-    import uuid as _uuid, json as _json
+    import uuid as _uuid
+    import json as _json
 
     try:
         import redis.asyncio as _aioredis
@@ -3417,7 +3415,7 @@ async def _refresh_positions_cache():
     try:
         data = await _fetch_positions_from_gateway()
         _positions_cache["data"] = data
-        _positions_cache["ts"]   = _time.monotonic()
+        _positions_cache["ts"]   = time.monotonic()
     except Exception:
         pass
     finally:
@@ -3432,7 +3430,7 @@ async def get_broker_positions(force: bool = False):
     Pass ?force=true to bypass cache and wait for a fresh fetch.
     """
     global _positions_cache
-    now = _time.monotonic()
+    now = time.monotonic()
     age = now - _positions_cache["ts"]
 
     if not force and _positions_cache["data"] is not None and age < _POSITIONS_CACHE_TTL:
@@ -3454,7 +3452,7 @@ async def get_broker_positions(force: bool = False):
     # No cache (first load) or forced refresh — wait for live fetch
     data = await _fetch_positions_from_gateway()
     _positions_cache["data"] = data
-    _positions_cache["ts"]   = _time.monotonic()
+    _positions_cache["ts"]   = time.monotonic()
     _positions_cache["refreshing"] = False
     result = dict(data)
     result["cached"] = False
@@ -3466,7 +3464,8 @@ async def get_broker_positions(force: bool = False):
 @app.get("/api/broker/orders")
 async def get_broker_orders(status: str = "open"):
     """Fetch open/all orders for all accounts via the broker gateway."""
-    import uuid as _uuid, json as _json
+    import uuid as _uuid
+    import json as _json
 
     try:
         import redis.asyncio as _aioredis
@@ -3513,7 +3512,8 @@ async def cancel_broker_order(body: dict):
     order_id = body.get("order_id", "")
     if not order_id:
         raise HTTPException(status_code=400, detail="order_id required")
-    import uuid as _uuid, json as _json
+    import uuid as _uuid
+    import json as _json
     try:
         import redis.asyncio as _aioredis
         REDIS_URL = os.getenv("REDIS_URL", "redis://ot-redis:6379/0")
@@ -3544,7 +3544,8 @@ async def cancel_broker_order(body: dict):
 @app.get("/api/broker/quote")
 async def get_broker_quote(symbol: str, account_label: str = ""):
     """Fetch bid/ask/last for a symbol via the broker gateway."""
-    import uuid as _uuid, json as _json
+    import uuid as _uuid
+    import json as _json
 
     try:
         import redis.asyncio as _aioredis
@@ -3596,7 +3597,8 @@ class ChartSnapshotBody(BaseModel):
 async def save_chart_snapshot(body: ChartSnapshotBody):
     """Save a chart screenshot PNG captured at order placement time."""
     check_token(body.token)
-    import base64 as _b64, re as _re
+    import base64 as _b64
+    import re as _re
     ticker = _re.sub(r"[^A-Z0-9]", "", body.ticker.upper())[:10]
     date   = _re.sub(r"[^0-9\-]", "", body.date)[:10]
     if not ticker or not date:
@@ -3694,7 +3696,8 @@ async def place_option_order(body: OptionOrderBody):
     if body.duration not in ("day", "gtc"):
         raise HTTPException(status_code=400, detail="duration must be day or gtc")
 
-    import uuid as _uuid, json as _json
+    import uuid as _uuid
+    import json as _json
     import redis.asyncio as _aioredis
 
     try:
@@ -3779,7 +3782,8 @@ async def liquidate_position(body: LiquidateBody):
     if body.price <= 0 or body.quantity <= 0:
         raise HTTPException(status_code=400, detail="price and quantity must be positive")
 
-    import uuid as _uuid, json as _json
+    import uuid as _uuid
+    import json as _json
 
     try:
         import redis.asyncio as _aioredis
@@ -4107,7 +4111,7 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                     allow_redirects=True,
                 )
                 if resp.status in (200, 301, 302):
-                    return {"ok": True, "message": f"OVTLYR login page reachable — credentials saved (full login requires scraper container)"}
+                    return {"ok": True, "message": "OVTLYR login page reachable — credentials saved (full login requires scraper container)"}
                 else:
                     return {"ok": False, "message": f"OVTLYR returned HTTP {resp.status}"}
 
@@ -4143,9 +4147,7 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                 if resp.status == 401:
                     raise HTTPException(status_code=400, detail="Invalid Massive API key — unauthorized")
                 if resp.status == 200:
-                    data = await resp.json()
-                    plan = data.get("queryCount", "?")
-                    return {"ok": True, "message": f"Massive API key valid — market data accessible"}
+                    return {"ok": True, "message": "Massive API key valid — market data accessible"}
                 raise HTTPException(status_code=400, detail=f"Massive API returned HTTP {resp.status}")
 
             elif service == "alpaca_mcp":
@@ -4345,7 +4347,10 @@ async def test_broker_connection(broker: str):
             return {"ok": ok, "message": " | ".join(results)}
 
         elif broker == "webull":
-            import base64 as _b64, hashlib as _hl, hmac as _hmac, uuid as _uuid, json as _json
+            import base64 as _b64
+            import hashlib as _hl
+            import hmac as _hmac
+            import uuid as _uuid
             from datetime import datetime as _dt, timezone as _tz
             from urllib.parse import quote as _quote
             api_key = ev("WEBULL_API_KEY")
@@ -4918,7 +4923,8 @@ def _tv_fetch_indicators(symbol: str, exchange: str, tf_ind: str) -> tuple:
 
 def _tv_fetch_ohlcv(symbol: str, exchange: str, tf_stream: str, bars: int) -> list:
     """Synchronous — run in subprocess via ProcessPoolExecutor."""
-    import os, glob as _glob
+    import os
+    import glob as _glob
     from tradingview_scraper.symbols.stream import Streamer
     streamer = Streamer(export_result=True, export_type="json")
     result = streamer.stream(
@@ -5052,7 +5058,10 @@ async def get_webull_subscriptions(token: str = ""):
     """Fetch all Webull account subscriptions from the developer API."""
     check_token(token)
     import aiohttp as _aiohttp
-    import base64 as _b64, hashlib as _hl, hmac as _hmac, uuid as _uuid
+    import base64 as _b64
+    import hashlib as _hl
+    import hmac as _hmac
+    import uuid as _uuid
     from datetime import datetime as _dt, timezone as _tz
     from urllib.parse import quote as _quote
 
@@ -5202,6 +5211,7 @@ async def strategy_engineer_chat(body: StrategyMessage, token: str = ""):
             pass  # MCP not available in this container — skip TV data
 
     # Load user exclusions from Redis
+    redis = await get_redis()
     exclusion_prompt = ""
     try:
         excl_raw = await redis.get("user:exclusions")
@@ -5314,6 +5324,7 @@ async def strategy_engineer_chat_stream(body: StrategyMessage, token: str = ""):
             pass
 
     # Load user exclusions from Redis
+    redis = await get_redis()
     exclusion_prompt = ""
     try:
         excl_raw = await redis.get("user:exclusions")
@@ -5442,13 +5453,15 @@ async def mentor_chat_stream(body: MentorMessage, token: str = ""):
     pos_context = "\n".join(pos_lines) if pos_lines else "  (no open positions)"
 
     # Load user exclusions
+    redis = await get_redis()
     exclusion_prompt = ""
     try:
         excl_raw = await redis.get("user:exclusions")
         if excl_raw:
             excl = json.loads(excl_raw)
-            excl_sectors = excl.get("sectors", [])
-            excl_tickers = excl.get("tickers", [])
+            excl_sectors    = excl.get("sectors",    [])
+            excl_industries = excl.get("industries", [])
+            excl_tickers    = excl.get("tickers",    [])
             parts = []
             if excl_sectors:    parts.append(f"Excluded sectors: {', '.join(excl_sectors)}")
             if excl_industries: parts.append(f"Excluded industries: {', '.join(excl_industries)}")
@@ -5542,7 +5555,6 @@ def _read_strategies() -> list:
         return []
 
 def _write_strategies(strategies: list):
-    import tempfile
     tmp = STRATEGIES_CONFIG_PATH + ".tmp"
     with open(tmp, "w") as f:
         json.dump(strategies, f, indent=2)
@@ -6152,7 +6164,7 @@ def _build_trades_pdf(trade_log: list, results: dict, family_id: str,
                       version: int, run_at: str) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
                                     Paragraph, Spacer, HRFlowable)
@@ -6161,7 +6173,6 @@ def _build_trades_pdf(trade_log: list, results: dict, family_id: str,
     doc    = SimpleDocTemplate(buf, pagesize=landscape(A4),
                                 leftMargin=12*mm, rightMargin=12*mm,
                                 topMargin=12*mm, bottomMargin=12*mm)
-    styles = getSampleStyleSheet()
     h1     = ParagraphStyle("h1", fontSize=14, fontName="Helvetica-Bold",
                              textColor=colors.HexColor("#e2e8f0"))
     sub    = ParagraphStyle("sub", fontSize=9, fontName="Helvetica",
@@ -6425,7 +6436,6 @@ async def search_stocks(q: str = "", token: str = ""):
         return []
     import urllib.request as _req
     import urllib.parse   as _parse
-    import asyncio        as _asyncio
 
     # ── Industry keyword → major tickers map ──────────────────────────────────
     _INDUSTRY_MAP = {
@@ -6634,7 +6644,8 @@ def _parse_cert_file(cert_path: str) -> dict:
     Returns expiry ISO string, days remaining, subject CN, and issuer O.
     Falls back to empty dict if openssl is unavailable or cert not found.
     """
-    import subprocess, re
+    import subprocess
+    import re
     from pathlib import Path
     from datetime import datetime, timezone
 
@@ -6696,6 +6707,7 @@ async def get_ssl_status(token: str = ""):
     """
     check_token(token)
 
+    import aiohttp
     domain      = os.getenv("CADDY_DOMAIN", "")
     caddy_up    = False
     cert_info   = {}
@@ -7520,7 +7532,7 @@ def _div_fetch_yahoo_sync(ticker: str) -> dict:
     """Synchronous yfinance fetch — called via run_in_executor."""
     try:
         import yfinance as yf
-        from datetime import datetime as _dt, timedelta as _td
+        from datetime import datetime as _dt
         t = yf.Ticker(ticker)
         info = t.info or {}
 
@@ -8280,7 +8292,7 @@ async def div_backfill(token: str = ""):
         return {"ok": True, "saved": 0, "tickers": 0}
 
     import asyncio as _asyncio
-    from datetime import date as _date, datetime as _dt, timedelta as _td, timezone as _tz
+    from datetime import date as _date
     import pandas as _pd
 
     cutoff = _pd.Timestamp.now(tz="America/New_York") - _pd.Timedelta(days=548)
@@ -8729,8 +8741,9 @@ async def get_option_positions(status: str = "active"):
     missing_after_predictor = [t for t in tickers if t not in live_signals]
     if missing_after_predictor:
         try:
+            def _nine_to_conf(n):
+                return round(0.55 + (int(n) / 9.0) * 0.40, 2) if n is not None else None
             _SIGNAL_MAP = {"buy": ("long", 0.90), "sell": ("short", 0.80)}
-            _nine_to_conf = lambda n: round(0.55 + (int(n) / 9.0) * 0.40, 2) if n is not None else None
             ovt_intel_raw  = await _redis.hgetall("ovtlyr:position_intel")
             ovt_screen_raw = await _redis.hgetall("scanner:ovtlyr:latest")
             for sym in missing_after_predictor:
@@ -9098,8 +9111,9 @@ async def email_options_report_auto(token: str = ""):
     # Override whatever the predictor says with OVTLYR's signal and flag any conflict.
     try:
         _redis = await get_redis()
+        def _nine_to_conf(n):
+            return round(0.55 + (int(n) / 9.0) * 0.40, 2) if n is not None else None
         _SIGNAL_MAP = {"buy": ("long", 0.90), "sell": ("short", 0.80)}
-        _nine_to_conf = lambda n: round(0.55 + (int(n) / 9.0) * 0.40, 2) if n is not None else None
         ovt_intel_raw  = await _redis.hgetall("ovtlyr:position_intel")
         ovt_screen_raw = await _redis.hgetall("scanner:ovtlyr:latest")
         _pool = await _get_db_pool()
@@ -11754,7 +11768,6 @@ async def reactivate_alert(alert_id: str, token: str = ""):
 async def _check_price_for_alert(ticker: str, pool, notifier) -> float | None:
     """Fetch latest price via Polygon or yfinance. Returns close price or None."""
     import aiohttp as _aiohttp
-    from datetime import timedelta
     api_key = os.getenv("MASSIVE_API_KEY", "")
     today = __import__("datetime").date.today()
     from_dt = (today - __import__("datetime").timedelta(days=5)).isoformat()
@@ -11952,7 +11965,8 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
     or the gateway call fails.
     """
     check_token(token)
-    import uuid as _uuid, json as _json
+    import uuid as _uuid
+    import json as _json
     import asyncio as _asyncio
 
     sym = ticker.upper()
