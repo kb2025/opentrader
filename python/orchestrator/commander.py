@@ -7,12 +7,10 @@ Listens on system.commands stream for directives from:
 """
 import asyncio
 import http.client
-import logging
 import os
 import socket
 import time
 
-import redis.asyncio as aioredis
 import structlog
 
 from shared.redis_client import STREAMS, GROUPS, get_redis
@@ -34,11 +32,9 @@ CONTAINER_MAP = {
     "scraper-ovtlyr":   "ot-scraper-ovtlyr",
     "scraper-wsb":      "ot-scraper-wsb",
     "scraper-seekalpha":"ot-scraper-seekalpha",
-    "scraper-yahoo":    "ot-scraper-yahoo",
     "aggregator":       "ot-aggregator",
     "review-agent":     "ot-review-agent",
     "broker-gateway":   "ot-broker-gateway",
-    "mcp-yahoo":        "ot-mcp-yahoo",
     "mcp-alpaca":       "ot-mcp-alpaca",
     "mcp-tradingview":  "ot-mcp-tradingview",
     "chat-agent":       "ot-chat-agent",

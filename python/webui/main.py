@@ -47,8 +47,6 @@ app.mount("/static", StaticFiles(directory="/app/webui/static"), name="static")
 
 WEBUI_TOKEN = os.getenv("WEBUI_TOKEN", "")
 SECRET_KEY  = os.getenv("SECRET_KEY", "")
-YAHOO_MCP_URL = os.getenv("YAHOO_MCP_URL", "http://ot-mcp-yahoo:8000/mcp")
-
 if not WEBUI_TOKEN:
     import secrets as _secrets
     WEBUI_TOKEN = _secrets.token_hex(32)
@@ -617,15 +615,15 @@ def _write_env_file(updates: dict):
 KNOWN_AGENTS = [
     "orchestrator", "scheduler", "predictor",
     "trader-equity", "trader-options", "options-monitor",
-    "scraper-ovtlyr", "scraper-wsb", "scraper-seekalpha", "scraper-yahoo",
-    "scraper-yahoo-sentiment", "scraper-etf-flows", "scraper-macro-regime", "scraper-news",
+    "scraper-ovtlyr", "scraper-wsb", "scraper-seekalpha",
+    "scraper-etf-flows", "scraper-macro-regime", "scraper-news",
     "aggregator", "review-agent", "broker-gateway", "directive-agent",
     # MCP servers & chat agent — health derived from Podman (no heartbeat)
-    "mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "chat-agent",
+    "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "chat-agent",
 ]
 
 # Containers that don't publish heartbeats — health is read from Podman status
-PODMAN_HEALTH_ONLY = {"mcp-yahoo", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "chat-agent"}
+PODMAN_HEALTH_ONLY = {"mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "chat-agent"}
 
 CONTAINER_MAP = {
     "orchestrator":    "ot-orchestrator",
@@ -637,8 +635,6 @@ CONTAINER_MAP = {
     "scraper-ovtlyr":  "ot-scraper-ovtlyr",
     "scraper-wsb":     "ot-scraper-wsb",
     "scraper-seekalpha":"ot-scraper-seekalpha",
-    "scraper-yahoo":            "ot-scraper-yahoo",
-    "scraper-yahoo-sentiment":  "ot-scraper-yahoo-sentiment",
     "scraper-etf-flows":        "ot-scraper-etf-flows",
     "scraper-macro-regime":     "ot-scraper-macro-regime",
     "scraper-news":             "ot-scraper-news",
@@ -646,7 +642,6 @@ CONTAINER_MAP = {
     "review-agent":    "ot-review-agent",
     "broker-gateway":  "ot-broker-gateway",
     "directive-agent": "ot-directive-agent",
-    "mcp-yahoo":          "ot-mcp-yahoo",
     "mcp-alpaca":         "ot-mcp-alpaca",
     "mcp-tradingview":    "ot-mcp-tradingview",
     "mcp-massive":        "ot-mcp-massive",
@@ -2848,7 +2843,6 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
     """
     Daily OHLCV bars for a ticker.
     Primary: Polygon.io REST API (MASSIVE_API_KEY).
-    Fallback: yfinance.
     Returns LightweightCharts-compatible format: time as Unix seconds.
     """
     import aiohttp as _aiohttp
@@ -2887,32 +2881,6 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
                             })
         except Exception as e:
             log.warning("webui.market_bars.polygon_error", ticker=sym, error=str(e))
-
-    # Fallback: yfinance (already installed in webui)
-    if not lc_bars:
-        try:
-            import yfinance as _yf
-            import asyncio as _asyncio
-            df = await _asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: _yf.download(sym, period=f"{days}d", interval="1d", progress=False, auto_adjust=True),
-            )
-            if df is not None and not df.empty:
-                for ts_idx, row in df.iterrows():
-                    try:
-                        ts = int(ts_idx.timestamp())
-                        lc_bars.append({
-                            "time":   ts,
-                            "open":   float(row.get("Open",  0) or 0),
-                            "high":   float(row.get("High",  0) or 0),
-                            "low":    float(row.get("Low",   0) or 0),
-                            "close":  float(row.get("Close", 0) or 0),
-                            "volume": int(row.get("Volume",  0) or 0),
-                        })
-                    except Exception:
-                        pass
-        except Exception as e:
-            log.warning("webui.market_bars.yfinance_error", ticker=sym, error=str(e))
 
     lc_bars.sort(key=lambda x: x["time"])
     return {"ticker": sym, "bars": lc_bars}
@@ -3344,35 +3312,6 @@ async def _warmup_caches():
                         if price is not None:
                             await _redis_w.setex(f"yf:price:{sym}", 900, str(price))
                             need_price.remove(sym)
-                # yfinance fallback for anything Polygon missed
-                if need_price:
-                    import yfinance as _yf
-                    import concurrent.futures as _cf
-                    def _batch(syms):
-                        data = _yf.download(syms, period="1d", interval="1d",
-                                            auto_adjust=True, progress=False, threads=False)
-                        out = {}
-                        try:
-                            close = data["Close"] if "Close" in data else data
-                            if hasattr(close, "columns"):
-                                for s in syms:
-                                    if s in close.columns:
-                                        col = close[s].dropna()
-                                        if not col.empty:
-                                            out[s] = float(col.iloc[-1])
-                            else:
-                                col = close.dropna()
-                                if not col.empty and len(syms) == 1:
-                                    out[syms[0]] = float(col.iloc[-1])
-                        except Exception:
-                            pass
-                        return out
-                    loop = _asyncio.get_event_loop()
-                    with _cf.ThreadPoolExecutor(max_workers=1) as ex:
-                        yf_prices = await loop.run_in_executor(ex, _batch, need_price)
-                    _redis_w2 = await get_redis()
-                    for sym, price in yf_prices.items():
-                        await _redis_w2.setex(f"yf:price:{sym}", 900, str(price))
     except Exception:
         pass
 
@@ -3877,7 +3816,7 @@ async def _restart_broker_gateway() -> None:
     await asyncio.sleep(1)  # let the HTTP response return first
     dependents = [
         "ot-trader-equity", "ot-trader-options", "ot-chat-agent",
-        "ot-mcp-tradingview", "ot-mcp-alpaca", "ot-mcp-yahoo",
+        "ot-mcp-tradingview", "ot-mcp-alpaca",
     ]
     restart_order = dependents + ["ot-broker-gateway"]
     try:
@@ -8502,7 +8441,7 @@ async def get_option_positions(status: str = "active"):
                     live_prices[ticker] = p
     except Exception:
         pass
-    # Fill any missing prices: Redis cache → Polygon.io (Massive) → yfinance (15-min TTL)
+    # Fill any missing prices: Redis cache → Polygon.io (Massive, 15-min TTL)
     missing = [t for t in tickers if t not in live_prices]
     if missing:
         try:
@@ -8601,19 +8540,22 @@ async def get_option_positions(status: str = "active"):
         except Exception:
             pass
 
-    # Fill remaining missing signals from Yahoo Finance analyst recommendations (Redis-cached, 4-hr TTL)
+    # Fill remaining missing signals from Benzinga analyst consensus (Massive MCP, Redis-cached 4-hr TTL)
     _REC_MAP = {
-        "strong_buy": ("long", 0.95), "buy": ("long", 0.75),
-        "hold": None,
-        "underperform": ("short", 0.60), "sell": ("short", 0.80), "strong_sell": ("short", 0.95),
+        "strong buy": ("long", 0.95), "buy": ("long", 0.75),
+        "outperform": ("long", 0.70), "overweight": ("long", 0.70),
+        "hold": None, "neutral": None, "market perform": None,
+        "underperform": ("short", 0.60), "underweight": ("short", 0.60),
+        "sell": ("short", 0.80), "strong sell": ("short", 0.95),
     }
     missing_sig = [t for t in tickers if t not in live_signals]
     if missing_sig:
         try:
+            from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
             _redis3 = await get_redis()
             still_missing_sig = []
             for sym in missing_sig:
-                cached = await _redis3.get(f"yf:rec:{sym}")
+                cached = await _redis3.get(f"consensus:{sym}")
                 if cached:
                     try:
                         live_signals[sym] = json.loads(cached)
@@ -8622,27 +8564,23 @@ async def get_option_positions(status: str = "active"):
                 else:
                     still_missing_sig.append(sym)
             if still_missing_sig:
-                import yfinance as _yf
-                import concurrent.futures as _cf
-                import asyncio as _asyncio
-                def _fetch_one_rec(sym):
-                    try:
-                        rec = _yf.Ticker(sym).info.get("recommendationKey", "")
-                        mapped = _REC_MAP.get((rec or "").lower())
-                        if mapped:
-                            return sym, {"direction": mapped[0], "confidence": mapped[1], "source": "yahoo"}
-                    except Exception:
-                        pass
-                    return sym, None
-                loop = _asyncio.get_event_loop()
-                with _cf.ThreadPoolExecutor(max_workers=min(len(still_missing_sig), 8)) as ex:
-                    rec_results = await _asyncio.gather(*[
-                        loop.run_in_executor(ex, _fetch_one_rec, sym)
-                        for sym in still_missing_sig
-                    ])
+                _sem = asyncio.Semaphore(5)
+                async def _fetch_one_consensus(sym):
+                    async with _sem:
+                        try:
+                            raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_analyst_consensus", {"ticker": sym})
+                            d = json.loads(raw) if raw else {}
+                            rating = (d.get("consensus_rating") or "").lower()
+                            mapped = _REC_MAP.get(rating)
+                            if mapped:
+                                return sym, {"direction": mapped[0], "confidence": mapped[1], "source": "consensus"}
+                        except Exception:
+                            pass
+                        return sym, None
+                rec_results = await asyncio.gather(*[_fetch_one_consensus(s) for s in still_missing_sig])
                 for sym, sig in rec_results:
                     if sig:
-                        await _redis3.setex(f"yf:rec:{sym}", 14400, json.dumps(sig))
+                        await _redis3.setex(f"consensus:{sym}", 14400, json.dumps(sig))
                         live_signals[sym] = sig
         except Exception:
             pass
@@ -10512,21 +10450,6 @@ async def _fetch_technical_indicators(ticker: str) -> dict:
         except Exception as e:
             log.warning("stock_analysis.bars_error", ticker=sym, error=str(e))
 
-    if not closes:
-        try:
-            import yfinance as _yf
-            import asyncio as _asyncio
-            df = await _asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: _yf.download(sym, period="280d", interval="1d", progress=False, auto_adjust=True),
-            )
-            if df is not None and not df.empty:
-                closes = [float(v) for v in df["Close"].dropna().tolist()]
-                highs  = [float(v) for v in df["High"].dropna().tolist()]
-                lows   = [float(v) for v in df["Low"].dropna().tolist()]
-        except Exception as e:
-            log.warning("stock_analysis.yfinance_error", ticker=sym, error=str(e))
-
     if len(closes) < 20:
         return {}
 
@@ -10770,23 +10693,33 @@ async def reflect_stock_signal(ticker: str, token: str = ""):
     price_at    = float(row["price"] or 0)
     summary_at  = row["summary"] or ""
 
-    def _fetch_prices_sync(sym: str) -> dict:
-        try:
-            import yfinance as _yf
-            hist = _yf.Ticker(sym).history(period="10d", auto_adjust=True)
-            if hist is None or hist.empty:
-                return {}
-            return {
-                "current":  float(hist["Close"].iloc[-1]),
-                "five_ago": float(hist["Close"].iloc[-5]) if len(hist) >= 5 else float(hist["Close"].iloc[0]),
-            }
-        except Exception:
+    async def _fetch_prices_polygon(sym: str) -> dict:
+        import aiohttp as _aiohttp
+        api_key = os.getenv("MASSIVE_API_KEY", "")
+        if not api_key:
             return {}
+        from_d = (date.today() - timedelta(days=14)).isoformat()
+        to_d   = date.today().isoformat()
+        url = (f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+               f"/{from_d}/{to_d}?adjusted=true&sort=asc&limit=15&apiKey={api_key}")
+        try:
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        results = data.get("results", [])
+                        if results:
+                            return {
+                                "current":  float(results[-1].get("c", 0)),
+                                "five_ago": float(results[-5].get("c", 0)) if len(results) >= 5 else float(results[0].get("c", 0)),
+                            }
+        except Exception:
+            pass
+        return {}
 
-    loop = _asyncio.get_event_loop()
     prices_sym, prices_spy = await _asyncio.gather(
-        loop.run_in_executor(None, _fetch_prices_sync, ticker),
-        loop.run_in_executor(None, _fetch_prices_sync, "SPY"),
+        _fetch_prices_polygon(ticker),
+        _fetch_prices_polygon("SPY"),
     )
 
     current_price = prices_sym.get("current", price_at)

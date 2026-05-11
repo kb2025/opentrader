@@ -3,6 +3,27 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.11] - 2026-05-11
+
+### Removed — Phase 4: Yahoo Finance container & config teardown
+- `ot-mcp-yahoo` service removed from compose.yml and CI build matrix
+- `ot-scraper-yahoo` service removed from compose.yml
+- `ot-scraper-yahoo-sentiment` service removed from compose.yml
+- `YAHOO_MCP_URL` env var removed from options-monitor and chat-agent in compose.yml
+- `yahoo=...` entry removed from chat-agent `MCP_SERVERS`
+- `mcp-yahoo` dependency removed from options-monitor and chat-agent `depends_on`
+- `scraper-yahoo`, `scraper-yahoo-sentiment`, `mcp-yahoo` removed from orchestrator `CONTAINER_MAP`
+- `scraper-yahoo`, `scraper-yahoo-sentiment` consumer groups removed from `shared/redis_client.py`
+- `YAHOO_MCP_URL` constant removed from `shared/mcp_client.py` and `webui/main.py`
+- `yfinance>=0.2.36` removed from `requirements.txt` and `requirements.webui.txt`
+
+### Changed — remaining yfinance callers replaced or dropped
+- `get_market_bars()` yfinance fallback dropped (Polygon REST is primary and reliable)
+- Options dashboard price fill yfinance fallback dropped (Polygon handles all equities)
+- Quick Intel `_generate_stock_analysis()` yfinance bars fallback dropped
+- Options dashboard signal 3rd-tier: replaced yfinance `recommendationKey` with Massive `get_analyst_consensus` (Benzinga ratings, 4-hr Redis cache under `consensus:{sym}`)
+- Quick Intel "Record Reflection" price fetch: replaced yfinance with Polygon REST `get_aggs` for 5-day return and alpha vs SPY calculation
+
 ## [3.7.10] - 2026-05-11
 
 ### Added

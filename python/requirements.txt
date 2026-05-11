@@ -16,7 +16,6 @@ structlog>=24.0.0
 prometheus-client>=0.20.0
 
 # ── Market data / sentiment ───────────────────
-yfinance>=0.2.36
 vaderSentiment>=3.3.2
 
 # ── MCP client (Yahoo Finance MCP integration) ─

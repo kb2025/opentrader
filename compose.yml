@@ -237,7 +237,6 @@ services:
       DB_URL: postgresql://trading:${DB_PASSWORD:-trading_secret}@ot-timescaledb/trading
       SERVICE_NAME: options-monitor
       TRADINGVIEW_MCP_URL: http://ot-mcp-tradingview:8000/mcp
-      YAHOO_MCP_URL: http://ot-mcp-yahoo:8000/mcp
       BROKER_GATEWAY_TIMEOUT_SEC: "20"
       OPTIONS_SCAN_INTERVAL_MIN: "5"
     env_file: [.env]
@@ -255,8 +254,6 @@ services:
       broker-gateway:
         condition: service_started
       mcp-tradingview:
-        condition: service_started
-      mcp-yahoo:
         condition: service_started
 
   scraper-ovtlyr:
@@ -330,18 +327,6 @@ services:
       ALPACA_PAPER_TRADE: ${ALPACA_PAPER_TRADE:-true}
     networks: [trading-net]
 
-  mcp-yahoo:
-    build:
-      context: ./mcp/yahoo-finance-mcp
-      dockerfile: Dockerfile.http
-    container_name: ot-mcp-yahoo
-    restart: unless-stopped
-    command: python run_http.py
-    environment:
-      FASTMCP_HOST: "0.0.0.0"
-      FASTMCP_PORT: "8000"
-    networks: [trading-net]
-
   mcp-unusualwhales:
     build:
       context: ./mcp/unusual-whales-mcp
@@ -366,51 +351,6 @@ services:
       MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
     networks: [trading-net]
 
-
-  scraper-yahoo:
-    build:
-      context: ./python
-      dockerfile: Dockerfile
-    container_name: ot-scraper-yahoo
-    restart: unless-stopped
-    command: python -m scrapers.yahoo.main
-    environment:
-      REDIS_URL: redis://ot-redis:6379
-      SERVICE_NAME: scraper-yahoo
-      YAHOO_MCP_URL: "http://ot-mcp-yahoo:8000/mcp"
-    env_file: [.env]
-    volumes:
-      - ./logs/python:/app/logs
-    networks: [trading-net]
-    depends_on:
-      redis:
-        condition: service_healthy
-      mcp-yahoo:
-        condition: service_started
-
-  scraper-yahoo-sentiment:
-    build:
-      context: ./python
-      dockerfile: Dockerfile
-    container_name: ot-scraper-yahoo-sentiment
-    restart: unless-stopped
-    command: python -m scrapers.yahoo_sentiment.main
-    environment:
-      REDIS_URL: redis://ot-redis:6379
-      DB_URL: postgresql://trading:${DB_PASSWORD:-trading_secret}@ot-timescaledb/trading
-      SERVICE_NAME: scraper-yahoo-sentiment
-      YAHOO_MCP_URL: "http://ot-mcp-yahoo:8000/mcp"
-    env_file: [.env]
-    volumes:
-      - ./logs/python:/app/logs
-    networks: [trading-net]
-    depends_on:
-      redis:
-        condition: service_healthy
-      timescaledb:
-        condition: service_healthy
-      mcp-yahoo:
-        condition: service_started
 
   scraper-etf-flows:
     build:
@@ -612,7 +552,7 @@ services:
     environment:
       SERVICE_NAME: chat-agent
       # MCP servers — comma-separated name=url pairs
-      MCP_SERVERS: "yahoo=http://ot-mcp-yahoo:8000/mcp,alpaca=http://ot-mcp-alpaca:8000/mcp,tradingview=http://ot-mcp-tradingview:8000/mcp,massive=http://ot-mcp-massive:8000/mcp"
+      MCP_SERVERS: "alpaca=http://ot-mcp-alpaca:8000/mcp,tradingview=http://ot-mcp-tradingview:8000/mcp,massive=http://ot-mcp-massive:8000/mcp"
       # AI agent model (OpenRouter model ID)
       CHAT_AGENT_MODEL: ${CHAT_AGENT_MODEL:-anthropic/claude-3-5-haiku}
     env_file: [.env]
@@ -620,8 +560,6 @@ services:
       - ./logs/python:/app/logs
     networks: [trading-net]
     depends_on:
-      mcp-yahoo:
-        condition: service_started
       mcp-alpaca:
         condition: service_started
       mcp-tradingview:

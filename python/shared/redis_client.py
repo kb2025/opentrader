@@ -35,8 +35,6 @@ GROUPS = {
     "scraper-ovtlyr":     "scraper-ovtlyr-group",
     "scraper-wsb":        "scraper-wsb-group",
     "scraper-seekalpha":  "scraper-seekalpha-group",
-    "scraper-yahoo":            "scraper-yahoo-group",
-    "scraper-yahoo-sentiment":  "scraper-yahoo-sentiment-group",
     "scraper-news":             "scraper-news-group",
     "scraper-etf-flows":        "scraper-etf-flows-group",
     "scraper-macro-regime":     "scraper-macro-regime-group",

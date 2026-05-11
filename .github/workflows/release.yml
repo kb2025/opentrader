@@ -65,9 +65,6 @@ jobs:
           - name: ot-webui
             context: python
             dockerfile: python/Dockerfile.webui
-          - name: ot-mcp-yahoo
-            context: mcp/yahoo-finance-mcp
-            dockerfile: mcp/yahoo-finance-mcp/Dockerfile.http
           - name: ot-mcp-massive
             context: mcp/massive-mcp
             dockerfile: mcp/massive-mcp/Dockerfile

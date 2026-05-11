@@ -16,9 +16,6 @@ TRADINGVIEW_MCP_URL = os.getenv(
 MASSIVE_MCP_URL = os.getenv(
     "MASSIVE_MCP_URL", "http://ot-mcp-massive:8000/mcp"
 )
-YAHOO_MCP_URL = os.getenv(
-    "YAHOO_MCP_URL", "http://ot-mcp-yahoo:8000/mcp"
-)
 UNUSUALWHALES_MCP_URL = os.getenv(
     "UNUSUALWHALES_MCP_URL", "http://ot-mcp-unusualwhales:8000/mcp"
 )
