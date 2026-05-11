@@ -420,6 +420,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:var(--purple)"></span>
         Scheduler
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-platform-reports')" data-page="page-platform-reports">
+        <span class="nav-dot" style="background:var(--blue)"></span>
+        Reports
+      </div>
       <div class="nav-item" draggable="true" onclick="navigate('page-platform-system')" data-page="page-platform-system">
         <span class="nav-dot" style="background:var(--amber)"></span>
         System
@@ -705,6 +709,151 @@ select option{background:var(--surface2)}
               <tr><td colspan="6" class="empty-state">Loading…</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════
+         PAGE: Reports
+    ════════════════════════════════════════ -->
+    <div class="page" id="page-platform-reports">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+
+        <!-- 1pm Options Report card -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">1pm Options Report</span>
+            <span style="font-size:11px;color:var(--muted)">Mon–Fri 1:00 PM ET</span>
+          </div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12px;color:var(--muted)">Last sent</span>
+              <span id="rpt-options-lastsent" style="font-size:12px;color:var(--text)">—</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12px;color:var(--muted)">Channels</span>
+              <span id="rpt-options-channels" style="font-size:12px;color:var(--text)">—</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12px;color:var(--muted)">Recipient</span>
+              <span id="rpt-options-recipient" style="font-size:12px;color:var(--text)">—</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border)">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" id="rpt-options-enabled" onchange="reportsToggle('options_1pm',this.checked)" style="cursor:pointer">
+                Enabled
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span style="font-size:11px;color:var(--muted)">Deliver via</span>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" id="rpt-options-ch-agentmail" onchange="reportsUpdateChannels('options_1pm')"> AgentMail
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" id="rpt-options-ch-telegram" onchange="reportsUpdateChannels('options_1pm')"> Telegram
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" id="rpt-options-ch-discord" onchange="reportsUpdateChannels('options_1pm')"> Discord
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;padding-top:4px">
+              <button class="btn btn-ghost btn-sm" onclick="reportsPreview('options')">Preview</button>
+              <button class="btn btn-primary btn-sm" onclick="reportsSendNow('options')">Send Now</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- EOD After-Market Report card -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">EOD After-Market Report</span>
+            <span style="font-size:11px;color:var(--muted)">Mon–Fri 4:05 PM ET</span>
+          </div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12px;color:var(--muted)">Last sent</span>
+              <span id="rpt-eod-lastsent" style="font-size:12px;color:var(--text)">—</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12px;color:var(--muted)">Channels</span>
+              <span id="rpt-eod-channels" style="font-size:12px;color:var(--text)">—</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12px;color:var(--muted)">Trades in report</span>
+              <span id="rpt-eod-trades" style="font-size:12px;color:var(--text)">—</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border)">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" id="rpt-eod-enabled" onchange="reportsToggle('eod',this.checked)" style="cursor:pointer">
+                Enabled
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span style="font-size:11px;color:var(--muted)">Deliver via</span>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" id="rpt-eod-ch-agentmail" onchange="reportsUpdateChannels('eod')"> AgentMail
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" id="rpt-eod-ch-telegram" onchange="reportsUpdateChannels('eod')"> Telegram
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" id="rpt-eod-ch-discord" onchange="reportsUpdateChannels('eod')"> Discord
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;padding-top:4px">
+              <button class="btn btn-ghost btn-sm" onclick="reportsPreview('eod')">Preview</button>
+              <button class="btn btn-primary btn-sm" onclick="reportsSendNow('eod')">Send Now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Report History card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Report History</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <select id="rpt-hist-filter" class="select-input" style="width:130px;padding:4px 6px;font-size:12px" onchange="reportsLoadHistory(0)">
+              <option value="">All Types</option>
+              <option value="options_1pm">Options 1pm</option>
+              <option value="eod">EOD</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="reportsLoadHistory(0)">Refresh</button>
+          </div>
+        </div>
+        <div class="card-body table-wrap">
+          <table>
+            <thead><tr>
+              <th>Date / Time</th><th>Type</th><th>Status</th><th>Recipient / Channels</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="rpt-hist-tbody">
+              <tr><td colspan="5" class="empty-state">Loading…</td></tr>
+            </tbody>
+          </table>
+          <div id="rpt-hist-pagination" style="display:flex;align-items:center;justify-content:space-between;padding:10px 4px 2px;font-size:12px;color:var(--muted)">
+            <span id="rpt-hist-page-info"></span>
+            <div style="display:flex;gap:4px" id="rpt-hist-page-btns"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reports preview / view modal -->
+    <div id="rpt-preview-overlay" class="bk-modal-overlay" style="display:none" onclick="if(event.target===this)_rptClosePreview()">
+      <div class="bk-modal" style="width:820px;max-width:96vw;max-height:92vh">
+        <div class="bk-modal-head">
+          <span id="rpt-preview-icon" style="font-size:20px">📊</span>
+          <div style="margin-left:10px">
+            <div id="rpt-preview-title" style="font-size:15px;font-weight:700"></div>
+            <div id="rpt-preview-meta" style="font-size:11px;color:var(--muted);margin-top:2px"></div>
+          </div>
+        </div>
+        <div class="bk-modal-body" style="padding:0;overflow:hidden">
+          <iframe id="rpt-preview-iframe" style="width:100%;height:560px;border:none;display:none;background:#fff"></iframe>
+          <pre id="rpt-preview-text" style="display:none;margin:0;padding:16px 20px;font-size:12px;line-height:1.6;color:var(--text);overflow-y:auto;max-height:560px;white-space:pre-wrap;word-break:break-word"></pre>
+        </div>
+        <div class="bk-modal-foot">
+          <button class="btn btn-ghost btn-sm" onclick="_rptClosePreview()">Close</button>
         </div>
       </div>
     </div>
@@ -4178,6 +4327,7 @@ const PAGE_TITLES = {
   'page-platform-agents':    'Agents',
   'page-platform-logs':      'Logs',
   'page-platform-scheduler': 'Scheduler',
+  'page-platform-reports':   'Reports',
   'page-platform-system':    'System',
   'page-platform-ssl':       'SSL / TLS',
   'page-platform-profile':   'User Configuration',
@@ -4312,6 +4462,7 @@ function navigate(pageId) {
     case 'page-platform-dashboard': loadPlatformDailyPnl(); break;
     case 'page-platform-agents':    loadAgentsPage();    break;
     case 'page-platform-scheduler': _initSchedThead(); loadSchedulerPage(); break;
+    case 'page-platform-reports':   loadReportsPage(); break;
     case 'page-platform-system':    _ctRenderThead();  loadSystemPage();   break;
     case 'page-platform-ssl':       loadSslPage();       break;
     case 'page-platform-profile':   loadProfilePage();   break;
@@ -20601,6 +20752,240 @@ function _startPnlAutoRefresh() {
 
 function _stopPnlAutoRefresh() {
   if (_pnlRefreshTimer) { clearInterval(_pnlRefreshTimer); _pnlRefreshTimer = null; }
+}
+
+// ─── Reports Page ─────────────────────────────────────────────────────────────
+
+let _rptHistOffset = 0;
+const _rptHistPageSize = 20;
+
+async function loadReportsPage() {
+  try {
+    const [cfg, optHist, eodHist] = await Promise.all([
+      apiFetch('/api/reports/config'),
+      apiFetch('/api/reports/history?limit=1&type=options_1pm'),
+      apiFetch('/api/reports/history?limit=1&type=eod'),
+    ]);
+    _rptApplyConfig(cfg);
+
+    const optLast = (optHist.rows || [])[0];
+    if (optLast) {
+      const ts = new Date(optLast.ts);
+      const today = new Date().toDateString() === ts.toDateString();
+      document.getElementById('rpt-options-lastsent').textContent =
+        (today ? 'Today ' : ts.toLocaleDateString() + ' ') +
+        ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) +
+        (optLast.status === 'sent' ? ' ✓' : ' ⊖');
+      if (optLast.recipient) document.getElementById('rpt-options-recipient').textContent = optLast.recipient;
+    }
+    const eodLast = (eodHist.rows || [])[0];
+    if (eodLast) {
+      const ts = new Date(eodLast.ts);
+      const today = new Date().toDateString() === ts.toDateString();
+      document.getElementById('rpt-eod-lastsent').textContent =
+        (today ? 'Today ' : ts.toLocaleDateString() + ' ') +
+        ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) +
+        (eodLast.status === 'sent' ? ' ✓' : ' ⊖');
+      const meta = eodLast.meta || {};
+      if (meta.trade_count !== undefined) document.getElementById('rpt-eod-trades').textContent = meta.trade_count;
+    }
+  } catch(e) {
+    console.error('loadReportsPage', e);
+  }
+  reportsLoadHistory(0);
+}
+
+function _rptApplyConfig(cfg) {
+  const opt = cfg.options_1pm || {};
+  const eod = cfg.eod || {};
+
+  document.getElementById('rpt-options-enabled').checked = !!opt.enabled;
+  const optCh = opt.channels || ['agentmail'];
+  document.getElementById('rpt-options-ch-agentmail').checked = optCh.includes('agentmail');
+  document.getElementById('rpt-options-ch-telegram').checked  = optCh.includes('telegram');
+  document.getElementById('rpt-options-ch-discord').checked   = optCh.includes('discord');
+  document.getElementById('rpt-options-channels').textContent = optCh.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' ·') || '—';
+  if (opt.recipient) document.getElementById('rpt-options-recipient').textContent = opt.recipient;
+
+  document.getElementById('rpt-eod-enabled').checked = !!eod.enabled;
+  const eodCh = eod.channels || ['agentmail'];
+  document.getElementById('rpt-eod-ch-agentmail').checked = eodCh.includes('agentmail');
+  document.getElementById('rpt-eod-ch-telegram').checked  = eodCh.includes('telegram');
+  document.getElementById('rpt-eod-ch-discord').checked   = eodCh.includes('discord');
+  document.getElementById('rpt-eod-channels').textContent = eodCh.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' ·') || '—';
+}
+
+async function reportsLoadHistory(offset) {
+  _rptHistOffset = offset;
+  const filter = document.getElementById('rpt-hist-filter')?.value || '';
+  const tbody = document.getElementById('rpt-hist-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading…</td></tr>';
+  try {
+    const typeParam = filter ? `&type=${filter}` : '';
+    const d = await apiFetch(`/api/reports/history?limit=${_rptHistPageSize}&offset=${offset}${typeParam}`);
+    const rows = d.rows || [];
+    const total = d.total || 0;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No report history</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(r => {
+        const ts = new Date(r.ts);
+        const dtStr = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        const typeLabel = r.report_type === 'options_1pm' ? 'Options 1pm' : 'EOD After-Market';
+        const statusHtml = r.status === 'sent'
+          ? '<span style="color:var(--green)">✓ Sent</span>'
+          : r.status === 'skipped'
+          ? '<span style="color:var(--muted)">⊖ Skipped</span>'
+          : '<span style="color:var(--red)">✗ Failed</span>';
+        const recipient = r.recipient || (r.channels || []).join(', ') || '—';
+        const viewBtn = (r.body_html || r.body_text)
+          ? `<button class="btn btn-ghost btn-sm" onclick="reportsViewEntry('${r.id}')">View</button>`
+          : '';
+        return `<tr>
+          <td style="white-space:nowrap">${dtStr}</td>
+          <td>${typeLabel}</td>
+          <td>${statusHtml}</td>
+          <td style="font-size:11px;color:var(--muted)">${recipient}</td>
+          <td>${viewBtn}</td>
+        </tr>`;
+      }).join('');
+    }
+    const info = document.getElementById('rpt-hist-page-info');
+    const btns = document.getElementById('rpt-hist-page-btns');
+    const page = Math.floor(offset / _rptHistPageSize);
+    const totalPages = Math.ceil(total / _rptHistPageSize) || 1;
+    info.textContent = total ? `${offset + 1}–${Math.min(offset + _rptHistPageSize, total)} of ${total}` : '0 results';
+    const btnStyle = 'padding:3px 8px;font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;';
+    btns.innerHTML =
+      `<button style="${page===0?'opacity:.4;cursor:default;'+btnStyle:btnStyle}" ${page===0?'disabled':''} onclick="reportsLoadHistory(${(page-1)*_rptHistPageSize})">‹</button>` +
+      `<button style="${page>=totalPages-1?'opacity:.4;cursor:default;'+btnStyle:btnStyle}" ${page>=totalPages-1?'disabled':''} onclick="reportsLoadHistory(${(page+1)*_rptHistPageSize})">›</button>`;
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state" style="color:var(--red)">Error: ${e.message}</td></tr>`;
+  }
+}
+
+async function reportsPreview(type) {
+  const overlay = document.getElementById('rpt-preview-overlay');
+  const iframe  = document.getElementById('rpt-preview-iframe');
+  const pre     = document.getElementById('rpt-preview-text');
+  const title   = document.getElementById('rpt-preview-title');
+  const meta    = document.getElementById('rpt-preview-meta');
+  const icon    = document.getElementById('rpt-preview-icon');
+  iframe.style.display = 'none';
+  pre.style.display = 'none';
+  iframe.srcdoc = '';
+  pre.textContent = '';
+  title.textContent = 'Loading…';
+  meta.textContent = '';
+  overlay.style.display = 'flex';
+  try {
+    const d = await apiFetch(`/api/reports/preview/${type}`);
+    if (type === 'options') {
+      title.textContent = '1pm Options Report Preview';
+      meta.textContent = `${d.position_count ?? '?'} positions · Generated ${d.generated_at ? new Date(d.generated_at).toLocaleTimeString() : ''}`;
+      icon.textContent = '📋';
+      iframe.srcdoc = d.html || '<em>No content</em>';
+      iframe.style.display = 'block';
+    } else {
+      title.textContent = 'EOD After-Market Report Preview';
+      const stats = d.stats || {};
+      meta.textContent = `${stats.trade_count ?? '?'} trades · Generated ${d.generated_at ? new Date(d.generated_at).toLocaleTimeString() : ''}`;
+      icon.textContent = '📊';
+      pre.textContent = d.text || '(No content)';
+      pre.style.display = 'block';
+    }
+  } catch(e) {
+    title.textContent = 'Preview failed';
+    pre.textContent = e.message;
+    pre.style.display = 'block';
+  }
+}
+
+function _rptClosePreview() {
+  document.getElementById('rpt-preview-overlay').style.display = 'none';
+  document.getElementById('rpt-preview-iframe').srcdoc = '';
+  document.getElementById('rpt-preview-text').textContent = '';
+}
+
+async function reportsViewEntry(id) {
+  const overlay = document.getElementById('rpt-preview-overlay');
+  const iframe  = document.getElementById('rpt-preview-iframe');
+  const pre     = document.getElementById('rpt-preview-text');
+  const title   = document.getElementById('rpt-preview-title');
+  const meta    = document.getElementById('rpt-preview-meta');
+  const icon    = document.getElementById('rpt-preview-icon');
+  iframe.style.display = 'none';
+  pre.style.display = 'none';
+  iframe.srcdoc = '';
+  pre.textContent = '';
+  title.textContent = 'Loading…';
+  meta.textContent = '';
+  overlay.style.display = 'flex';
+  try {
+    const d = await apiFetch(`/api/reports/entry/${id}`);
+    const ts = d.ts ? new Date(d.ts).toLocaleString() : '';
+    if (d.body_html) {
+      title.textContent = d.report_type === 'options_1pm' ? '1pm Options Report' : 'EOD Report';
+      meta.textContent = ts;
+      icon.textContent = '📋';
+      iframe.srcdoc = d.body_html;
+      iframe.style.display = 'block';
+    } else {
+      title.textContent = d.report_type === 'options_1pm' ? '1pm Options Report' : 'EOD After-Market Report';
+      meta.textContent = ts;
+      icon.textContent = '📊';
+      pre.textContent = d.body_text || '(No content)';
+      pre.style.display = 'block';
+    }
+  } catch(e) {
+    title.textContent = 'Load failed';
+    pre.textContent = e.message;
+    pre.style.display = 'block';
+  }
+}
+
+async function reportsSendNow(type) {
+  const label = type === 'options' ? '1pm Options Report' : 'EOD After-Market Report';
+  if (!confirm(`Send ${label} now?\n\nThis will deliver the report to all configured channels.`)) return;
+  try {
+    const d = await apiFetch(`/api/reports/trigger/${type}`, {method:'POST'});
+    showToast(d.message || 'Report triggered', 'success');
+    reportsLoadHistory(0);
+  } catch(e) {
+    showToast('Send failed: ' + e.message, 'error');
+  }
+}
+
+async function reportsToggle(type, enabled) {
+  try {
+    await apiFetch('/api/reports/config', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({type, enabled}),
+    });
+    const label = type === 'options_1pm' ? 'Options' : 'EOD';
+    showToast(`${label} report ${enabled ? 'enabled' : 'disabled'}`, 'success');
+  } catch(e) {
+    showToast('Config update failed: ' + e.message, 'error');
+  }
+}
+
+async function reportsUpdateChannels(type) {
+  const prefix = type === 'options_1pm' ? 'rpt-options' : 'rpt-eod';
+  const channels = [];
+  if (document.getElementById(`${prefix}-ch-agentmail`)?.checked) channels.push('agentmail');
+  if (document.getElementById(`${prefix}-ch-telegram`)?.checked)  channels.push('telegram');
+  if (document.getElementById(`${prefix}-ch-discord`)?.checked)   channels.push('discord');
+  try {
+    await apiFetch('/api/reports/config', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({type, channels}),
+    });
+    showToast('Channels updated', 'success');
+  } catch(e) {
+    showToast('Config update failed: ' + e.message, 'error');
+  }
 }
 
 

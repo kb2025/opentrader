@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.22] - 2026-05-11
+
+### Added
+- Reporting page in Platform nav section — shows both scheduled reports (1pm Options and 4:05pm EOD) with last-sent status, channel config, enable toggle, Preview and Send Now actions
+- `report_log` DB table to track every report send/skip with HTML/text body, recipient, channels, and meta (position_count, trade_count)
+- API endpoints: `GET/POST /api/reports/config`, `GET /api/reports/history`, `GET /api/reports/entry/{id}`, `GET /api/reports/preview/options`, `GET /api/reports/preview/eod`, `POST /api/reports/trigger/options`, `POST /api/reports/trigger/eod`, `POST /api/reports/log`
+- `review/main.py` now POSTs to `/api/reports/log` after each EOD report send so history is captured automatically
+- Legacy `review_log` rows surfaced in Report History (backfill for pre-3.7.22 EOD reports)
+
 ## [3.7.21] - 2026-05-11
 
 ### Fixed

@@ -1224,6 +1224,31 @@ async def on_startup():
             """)
         except Exception:
             pass
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute("""
+                CREATE TABLE IF NOT EXISTS report_log (
+                    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                    ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    report_type TEXT        NOT NULL,
+                    status      TEXT        NOT NULL,
+                    subject     TEXT,
+                    channels    TEXT[]      DEFAULT '{}',
+                    recipient   TEXT,
+                    body_html   TEXT,
+                    body_text   TEXT,
+                    meta        JSONB       DEFAULT '{}'
+                )
+            """)
+            await pool.execute(
+                "CREATE INDEX IF NOT EXISTS report_log_ts_idx   ON report_log (ts DESC)"
+            )
+            await pool.execute(
+                "CREATE INDEX IF NOT EXISTS report_log_type_idx ON report_log (report_type, ts DESC)"
+            )
+        except Exception:
+            pass
     # Start price alert checker background loop
     asyncio.create_task(_price_alert_loop())
     # Pre-warm caches in background so first page load is fast
@@ -9031,6 +9056,14 @@ async def email_options_report_auto(token: str = ""):
     check_token(token)
     positions = await get_option_positions(status="active")
     if not positions:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute(
+                """INSERT INTO report_log (report_type, status, subject, channels, meta)
+                   VALUES ('options_1pm', 'skipped', 'No active positions', '{}', '{}')"""
+            )
+        except Exception:
+            pass
         return {"ok": True, "message": "No active positions — report skipped"}
 
     # OVTLYR is the authoritative signal source for the report.
@@ -9090,7 +9123,328 @@ async def email_options_report_auto(token: str = ""):
     sgov_alert = await _get_sgov_alert()
     html = _build_options_report_html(positions, sgov_alert=sgov_alert)
     body = OptionsReportBody(html=html, count=len(positions))
-    return await email_options_report(body, token=token)
+    result = await email_options_report(body, token=token)
+    # Log to report_log
+    try:
+        env = _read_env_file()
+        def _ev(k): return env.get(k) or os.getenv(k, "")
+        recipient = _ev("REPORT_RECIPIENT_EMAIL") or ""
+        date_str  = datetime.now().strftime("%Y-%m-%d")
+        subject   = f"OpenTrader Daily Option Report {date_str} ({len(positions)} positions)"
+        pool = await _get_db_pool()
+        await pool.execute(
+            """INSERT INTO report_log
+               (report_type, status, subject, channels, recipient, body_html, meta)
+               VALUES ('options_1pm', 'sent', $1, $2, $3, $4, $5)""",
+            subject, ["agentmail"], recipient, html,
+            json.dumps({"position_count": len(positions), "sgov_alert": bool(sgov_alert)}),
+        )
+    except Exception:
+        pass
+    return result
+
+
+# ── Reporting API ─────────────────────────────────────────────────────────────
+
+@app.post("/api/reports/log")
+async def log_report_entry(body: dict, token: str = ""):
+    """Internal endpoint: review-agent calls this to write an EOD entry to report_log."""
+    check_token(token)
+    pool = await _get_db_pool()
+    await pool.execute(
+        """INSERT INTO report_log
+           (report_type, status, subject, channels, body_text, meta)
+           VALUES ($1, $2, $3, $4, $5, $6)""",
+        body.get("report_type", "eod"),
+        body.get("status", "sent"),
+        body.get("subject"),
+        body.get("channels", []),
+        body.get("body_text"),
+        json.dumps(body.get("meta") or {}),
+    )
+    return {"ok": True}
+
+
+@app.get("/api/reports/history")
+async def get_reports_history(
+    limit: int = 50, offset: int = 0, report_type: str = "", token: str = ""
+):
+    """Paginated report history from report_log + review_log backfill."""
+    check_token(token)
+    pool = await _get_db_pool()
+
+    where = "WHERE r.report_type = $3" if report_type else ""
+    params = [limit, offset] + ([report_type] if report_type else [])
+    rows = await pool.fetch(
+        f"""SELECT id::text, ts, report_type, status, subject, channels, recipient,
+                   meta, (body_html IS NOT NULL) AS has_html, (body_text IS NOT NULL) AS has_text
+            FROM report_log r
+            {where}
+            ORDER BY ts DESC
+            LIMIT $1 OFFSET $2""",
+        *params,
+    )
+    entries = []
+    for r in rows:
+        meta = {}
+        try:
+            meta = json.loads(r["meta"]) if r["meta"] else {}
+        except Exception:
+            pass
+        entries.append({
+            "id":          r["id"],
+            "ts":          r["ts"].isoformat(),
+            "report_type": r["report_type"],
+            "status":      r["status"],
+            "subject":     r["subject"],
+            "channels":    r["channels"] or [],
+            "recipient":   r["recipient"],
+            "meta":        meta,
+            "has_html":    r["has_html"],
+            "has_text":    r["has_text"],
+        })
+
+    # Backfill from review_log for EOD reports not yet in report_log
+    if not report_type or report_type == "eod":
+        existing_dates = {e["ts"][:10] for e in entries if e["report_type"] == "eod"}
+        legacy = await pool.fetch(
+            """SELECT id::text, ts, trade_count, findings
+               FROM review_log
+               ORDER BY ts DESC LIMIT 90"""
+        )
+        for r in legacy:
+            d = r["ts"].strftime("%Y-%m-%d")
+            if d in existing_dates:
+                continue
+            entries.append({
+                "id":          r["id"],
+                "ts":          r["ts"].isoformat(),
+                "report_type": "eod",
+                "status":      "sent",
+                "subject":     f"OpenTrader EOD Report — {d}",
+                "channels":    [],
+                "recipient":   None,
+                "meta":        {"trade_count": r["trade_count"]},
+                "has_html":    False,
+                "has_text":    bool(r["findings"]),
+                "_legacy":     True,
+            })
+        entries.sort(key=lambda x: x["ts"], reverse=True)
+
+    total = await pool.fetchval(
+        "SELECT COUNT(*) FROM report_log" + (" WHERE report_type=$1" if report_type else ""),
+        *([report_type] if report_type else []),
+    )
+    return {"entries": entries[:limit], "total": int(total)}
+
+
+@app.get("/api/reports/entry/{entry_id}")
+async def get_report_entry(entry_id: str, legacy: bool = False, token: str = ""):
+    """Return full body of a single report entry."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if legacy:
+        row = await pool.fetchrow(
+            "SELECT id::text, ts, findings AS body_text, trade_count FROM review_log WHERE id=$1",
+            uuid.UUID(entry_id),
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Not found")
+        return {"body_text": row["body_text"], "body_html": None,
+                "ts": row["ts"].isoformat(), "meta": {"trade_count": row["trade_count"]}}
+    row = await pool.fetchrow(
+        "SELECT body_html, body_text, ts, meta FROM report_log WHERE id=$1",
+        uuid.UUID(entry_id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    meta = {}
+    try:
+        meta = json.loads(row["meta"]) if row["meta"] else {}
+    except Exception:
+        pass
+    return {"body_html": row["body_html"], "body_text": row["body_text"],
+            "ts": row["ts"].isoformat(), "meta": meta}
+
+
+@app.get("/api/reports/preview/options")
+async def preview_options_report(token: str = ""):
+    """Build the options report HTML without sending it."""
+    check_token(token)
+    positions = await get_option_positions(status="active")
+    if not positions:
+        return {"html": None, "position_count": 0,
+                "generated_at": datetime.now().isoformat(),
+                "message": "No active positions"}
+    sgov_alert = await _get_sgov_alert()
+    html = _build_options_report_html(positions, sgov_alert=sgov_alert)
+    return {"html": html, "position_count": len(positions),
+            "generated_at": datetime.now().isoformat(), "sgov_alert": bool(sgov_alert)}
+
+
+@app.get("/api/reports/preview/eod")
+async def preview_eod_report(token: str = ""):
+    """Build today's EOD report text without sending it."""
+    check_token(token)
+    pool = await _get_db_pool()
+    date_str = now_et().date().isoformat()
+
+    trades = []
+    option_closures = []
+    try:
+        rows = await pool.fetch(
+            """SELECT id, ticker, direction, qty, entry_price, exit_price,
+                      pnl, strategy, status, signal_src, ts
+               FROM trades WHERE ts::date = $1 ORDER BY ts DESC""",
+            datetime.fromisoformat(date_str).date(),
+        )
+        trades = [dict(r) for r in rows]
+    except Exception:
+        pass
+    try:
+        rows = await pool.fetch(
+            """SELECT p.underlying, l.contract_symbol, l.contract_price,
+                      l.realized_pnl, p.account_label, p.broker
+               FROM option_trade_log l
+               JOIN option_positions p ON l.position_id = p.id
+               WHERE l.event_type = 'closed' AND l.ts::date = $1
+               ORDER BY l.ts DESC""",
+            datetime.fromisoformat(date_str).date(),
+        )
+        option_closures = [dict(r) for r in rows]
+    except Exception:
+        pass
+
+    # Build stats and template report (no LLM — instant)
+    rejects  = [t for t in trades if t.get("status") == "reject"]
+    active   = [t for t in trades if t.get("status") != "reject"]
+    closed   = [t for t in active if t.get("pnl") is not None]
+    wins     = [t for t in closed if (t.get("pnl") or 0) > 0]
+    losses   = [t for t in closed if (t.get("pnl") or 0) < 0]
+    equity_pnl = sum(float(t.get("pnl") or 0) for t in closed)
+    opt_with_pnl = [o for o in option_closures if o.get("realized_pnl") is not None]
+    opt_wins     = [o for o in opt_with_pnl if float(o["realized_pnl"]) > 0]
+    opt_losses   = [o for o in opt_with_pnl if float(o["realized_pnl"]) <= 0]
+    opt_pnl      = sum(float(o["realized_pnl"]) for o in opt_with_pnl)
+
+    stats = {
+        "total_trades": len(active), "rejected": len(rejects),
+        "filled": len(active), "longs": sum(1 for t in active if t.get("direction") == "long"),
+        "shorts": sum(1 for t in active if t.get("direction") == "short"),
+        "closed": len(closed), "wins": len(wins), "losses": len(losses),
+        "win_rate": round(len(wins)/len(closed)*100, 1) if closed else 0.0,
+        "total_pnl": round(equity_pnl, 2),
+        "avg_pnl": round(equity_pnl/len(closed), 2) if closed else 0.0,
+        "opt_closed": len(opt_with_pnl), "opt_wins": len(opt_wins),
+        "opt_losses": len(opt_losses),
+        "opt_win_rate": round(len(opt_wins)/len(opt_with_pnl)*100, 1) if opt_with_pnl else 0.0,
+        "opt_pnl": round(opt_pnl, 2),
+        "combined_pnl": round(equity_pnl + opt_pnl, 2),
+    }
+    opt_lines = ""
+    if opt_with_pnl:
+        rows_txt = "\n".join(
+            f"  {o['underlying']:6s}  {o['contract_symbol']}  "
+            f"price=${float(o['contract_price']):.2f}  P&L=${int(o['realized_pnl']):+d}"
+            for o in opt_with_pnl if o.get("realized_pnl") is not None
+        ) or "  None."
+        opt_lines = (
+            f"\nOPTIONS CLOSURES\n"
+            f"  Closed: {len(opt_with_pnl)}  Wins/Losses: {len(opt_wins)}/{len(opt_losses)}"
+            f"  P&L: ${opt_pnl:+.2f}\n\n{rows_txt}\n"
+        )
+    text = (
+        f"OpenTrader EOD Report — {date_str} (PREVIEW)\n{'='*40}\n\n"
+        f"EQUITY TRADING SUMMARY\n"
+        f"  Total: {stats['total_trades']}  Rejected: {stats['rejected']}"
+        f"  Filled: {stats['filled']}\n"
+        f"  Longs: {stats['longs']}  Shorts: {stats['shorts']}\n\n"
+        f"EQUITY PERFORMANCE\n"
+        f"  Closed: {stats['closed']}  Wins: {stats['wins']}  Losses: {stats['losses']}\n"
+        f"  Win rate: {stats['win_rate']}%  P&L: ${stats['total_pnl']:+.2f}\n"
+        f"{opt_lines}"
+    )
+    return {"text": text, "stats": stats, "generated_at": datetime.now().isoformat()}
+
+
+@app.post("/api/reports/trigger/options")
+async def trigger_options_report(token: str = ""):
+    """Manually fire the 1pm options report."""
+    check_token(token)
+    return await email_options_report_auto(token=token)
+
+
+@app.post("/api/reports/trigger/eod")
+async def trigger_eod_report(token: str = ""):
+    """Manually fire the EOD report by publishing to the scheduler command stream."""
+    check_token(token)
+    redis = await get_redis()
+    date_str = now_et().date().isoformat()
+    await redis.xadd(
+        "system.commands",
+        {
+            "command":   "trigger_job",
+            "job":       "eod_report",
+            "date":      date_str,
+            "channels":  json.dumps(["agentmail", "telegram", "discord"]),
+            "issued_by": "reports_ui",
+        },
+        maxlen=500,
+    )
+    return {"ok": True, "triggered_at": datetime.now().isoformat(),
+            "message": "EOD report triggered — check Agents logs for delivery status"}
+
+
+@app.get("/api/reports/config")
+async def get_reports_config(token: str = ""):
+    """Return per-report enabled state and channel config."""
+    check_token(token)
+    redis = await get_redis()
+    env   = _read_env_file()
+    def ev(k): return env.get(k) or os.getenv(k, "")
+
+    raw_opts = await redis.get("report_config:options_1pm")
+    raw_eod  = await redis.get("report_config:eod")
+
+    def _parse(raw, defaults):
+        try:
+            return {**defaults, **json.loads(raw)} if raw else defaults
+        except Exception:
+            return defaults
+
+    opt_defaults = {
+        "enabled":   True,
+        "channels":  ["agentmail"],
+        "recipient": ev("REPORT_RECIPIENT_EMAIL") or "",
+        "schedule":  "Mon–Fri 1:00 PM ET",
+    }
+    eod_defaults = {
+        "enabled":  True,
+        "channels": ["agentmail"]
+                    + (["telegram"] if ev("TELEGRAM_BOT_TOKEN") else [])
+                    + (["discord"]  if ev("DISCORD_WEBHOOK_URL") else []),
+        "schedule": "Mon–Fri 4:05 PM ET",
+    }
+    return {
+        "options_1pm": _parse(raw_opts, opt_defaults),
+        "eod":         _parse(raw_eod,  eod_defaults),
+    }
+
+
+@app.post("/api/reports/config")
+async def save_reports_config(body: dict, token: str = ""):
+    """Save per-report config to Redis."""
+    check_token(token)
+    redis = await get_redis()
+    if "options_1pm" in body:
+        cfg = body["options_1pm"]
+        await redis.set("report_config:options_1pm", json.dumps(cfg))
+        # Keep scheduler job toggle in sync
+        job_rec = {"id": "options_report", "enabled": cfg.get("enabled", True)}
+        await redis.set("scheduler:job:options_report", json.dumps(job_rec))
+    if "eod" in body:
+        await redis.set("report_config:eod", json.dumps(body["eod"]))
+    return {"ok": True}
 
 
 @app.get("/api/options/positions/{position_id}/log")

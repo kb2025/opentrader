@@ -8,9 +8,9 @@ Two responsibilities:
 import asyncio
 import json
 import os
-from datetime import datetime, date, timezone
+from datetime import date
 from typing import Optional
-from urllib.parse import urlparse, urlunparse, quote
+from urllib.parse import quote
 
 import asyncpg
 import structlog
@@ -282,6 +282,28 @@ class ReviewAgent(BaseAgent):
             "date":    date_str,
             "summary": json.dumps(stats),
         }, maxlen=500)
+
+        # 9. Log to report_log via webui internal endpoint
+        try:
+            import aiohttp as _aiohttp
+            webui_url = os.getenv("WEBUI_INTERNAL_URL", "http://ot-webui:8080")
+            token     = os.getenv("WEBUI_TOKEN", "opentrader")
+            channels  = ["agentmail"] + (["telegram"] if os.getenv("TELEGRAM_BOT_TOKEN") else []) + (["discord"] if os.getenv("DISCORD_WEBHOOK_URL") else [])
+            async with _aiohttp.ClientSession() as _s:
+                await _s.post(
+                    f"{webui_url}/api/reports/log?token={token}",
+                    json={
+                        "report_type": "eod",
+                        "status":      "sent",
+                        "subject":     subject,
+                        "channels":    channels,
+                        "body_text":   report_text,
+                        "meta":        stats,
+                    },
+                    timeout=_aiohttp.ClientTimeout(total=10),
+                )
+        except Exception:
+            pass
 
         log.info("review-agent.eod_report.done",
                  trades=len(trades), fills=len(fills), option_closures=len(option_closures))
