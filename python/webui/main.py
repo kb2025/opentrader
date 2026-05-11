@@ -3203,6 +3203,10 @@ async def _fetch_positions_from_gateway() -> dict:
                 d = r.get("data", {})
                 for p in d.get("items", d.get("positions", [])):
                     sym = (p.get("symbol") or "").upper().strip()
+                    # OCC option symbols (e.g. AEHR260529C00080000) → underlying ticker
+                    occ = re.match(r'^([A-Z]{1,6})\d{6}[CP]\d{8}$', sym)
+                    if occ:
+                        sym = occ.group(1)
                     if sym:
                         tickers.add(sym)
         if tickers:
@@ -9098,9 +9102,23 @@ async def email_options_report_auto(token: str = ""):
         _nine_to_conf = lambda n: round(0.55 + (int(n) / 9.0) * 0.40, 2) if n is not None else None
         ovt_intel_raw  = await _redis.hgetall("ovtlyr:position_intel")
         ovt_screen_raw = await _redis.hgetall("scanner:ovtlyr:latest")
+        _pool = await _get_db_pool()
         for pos in positions:
             sym = pos["underlying"]
             raw = ovt_intel_raw.get(sym) or ovt_screen_raw.get(sym)
+            if not raw and _pool:
+                try:
+                    row = await _pool.fetchrow(
+                        """SELECT signal, signal_active, nine_score
+                           FROM ovtlyr_intel WHERE ticker=$1
+                           ORDER BY created_at DESC LIMIT 1""",
+                        sym,
+                    )
+                    if row and row["signal"]:
+                        raw = {"signal": row["signal"], "signal_active": row["signal_active"],
+                               "nine_score": row["nine_score"]}
+                except Exception:
+                    pass
             if not raw:
                 continue
             try:

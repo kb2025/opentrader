@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.6.98] - 2026-05-11
+
+### Fixed
+- **OVTLYR signal missing from option report for Alpaca positions** — Alpaca option positions report their symbol as the OCC contract string (e.g. `AEHR260529C00080000`) rather than the underlying ticker; `broker:position_tickers` was storing the OCC symbol verbatim so the OVTLYR scraper was looking up the contract string on OVTLYR (which returns nothing) instead of the underlying `AEHR`; fixed by stripping OCC suffixes to the underlying when writing the tickers key; also added DB fallback to the report email function so stale Redis misses still surface a signal from `ovtlyr_intel`
+
 ## [3.6.97] - 2026-05-10
 
 ### Fixed
