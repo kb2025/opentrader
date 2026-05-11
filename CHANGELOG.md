@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.12] - 2026-05-11
+
+### Added
+- `ticker_classification` DB table — stores sector, industry, market_type per ticker (primary key: ticker, updated at most every 30 days)
+- `_fetch_classification_yahoo()` — direct HTTP call to Yahoo Finance quoteSummary API (`assetProfile` module) returning proper GICS sector + industry for equities
+- `_enrich_ticker_classifications()` — background task that runs 15s after startup and on demand; collects all unique underlyings from active `option_positions` + `broker:position_tickers`, skips tickers updated within 30 days, fetches from Yahoo, writes to DB and populates `ticker:sectors` / `ticker:industries` Redis hashes
+- `GET /api/market/ticker-classifications` — returns all stored classifications
+- `POST /api/market/ticker-classifications/refresh?token=...` — triggers enrichment on demand
+- `get_position_sector_map` now checks `ticker_classification` DB (step 4b) before falling back to Polygon SIC mapping
+
 ## [3.7.11] - 2026-05-11
 
 ### Removed — Phase 4: Yahoo Finance container & config teardown

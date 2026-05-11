@@ -1210,10 +1210,26 @@ async def on_startup():
             """)
         except Exception:
             pass
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute("""
+                CREATE TABLE IF NOT EXISTS ticker_classification (
+                    ticker      TEXT        PRIMARY KEY,
+                    sector      TEXT,
+                    industry    TEXT,
+                    market_type TEXT,
+                    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            pass
     # Start price alert checker background loop
     asyncio.create_task(_price_alert_loop())
     # Pre-warm caches in background so first page load is fast
     asyncio.create_task(_warmup_caches())
+    # Enrich ticker sector/industry from Yahoo Finance (delayed so DB is ready)
+    asyncio.create_task(_enrich_ticker_classifications(delay=15))
 
 
 async def save_job(redis, job: dict):
@@ -1808,6 +1824,102 @@ _SECTOR_STATIC: dict = {
 }
 
 
+async def _fetch_classification_yahoo(ticker: str, session) -> dict:
+    """Fetch GICS sector + industry from Yahoo Finance quoteSummary API."""
+    import aiohttp as _aiohttp
+    url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=assetProfile"
+    hdrs = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
+    try:
+        async with session.get(url, headers=hdrs, timeout=_aiohttp.ClientTimeout(total=8)) as r:
+            if r.status != 200:
+                return {}
+            d = await r.json(content_type=None)
+            profile = ((d.get("quoteSummary") or {}).get("result") or [{}])[0]
+            ap = profile.get("assetProfile") or {}
+            return {
+                "sector":      ap.get("sector")      or "",
+                "industry":    ap.get("industry")    or "",
+                "market_type": "Stock",
+            }
+    except Exception:
+        return {}
+
+
+async def _enrich_ticker_classifications(delay: int = 0):
+    """
+    Fetch sector + industry from Yahoo Finance for all active position tickers
+    and persist to ticker_classification table + Redis sector/industry caches.
+    Skips tickers updated within the last 30 days.
+    """
+    import aiohttp as _aiohttp
+    if delay:
+        await asyncio.sleep(delay)
+    if not DB_URL:
+        return
+    pool   = await _get_db_pool()
+    _redis = await get_redis()
+
+    # Collect all unique underlying tickers from active positions
+    tickers: set[str] = set()
+    try:
+        rows = await pool.fetch(
+            "SELECT DISTINCT underlying FROM option_positions WHERE status = 'active'"
+        )
+        tickers.update(r["underlying"] for r in rows if r["underlying"])
+    except Exception:
+        pass
+    try:
+        raw = await _redis.get("broker:position_tickers")
+        if raw:
+            tickers.update(json.loads(raw))
+    except Exception:
+        pass
+
+    if not tickers:
+        return
+
+    # Skip tickers already classified within 30 days
+    try:
+        rows = await pool.fetch(
+            "SELECT ticker FROM ticker_classification WHERE updated_at > NOW() - INTERVAL '30 days'"
+        )
+        fresh = {r["ticker"] for r in rows}
+        tickers -= fresh
+    except Exception:
+        pass
+
+    if not tickers:
+        return
+
+    log.info("ticker_classification.enriching", count=len(tickers))
+    enriched = 0
+    async with _aiohttp.ClientSession() as session:
+        for ticker in sorted(tickers):
+            cls = await _fetch_classification_yahoo(ticker, session)
+            sector   = cls.get("sector",   "")
+            industry = cls.get("industry", "")
+            mtype    = cls.get("market_type", "")
+            try:
+                await pool.execute(
+                    """INSERT INTO ticker_classification (ticker, sector, industry, market_type, updated_at)
+                       VALUES ($1, $2, $3, $4, NOW())
+                       ON CONFLICT (ticker) DO UPDATE
+                       SET sector=EXCLUDED.sector, industry=EXCLUDED.industry,
+                           market_type=EXCLUDED.market_type, updated_at=NOW()""",
+                    ticker, sector or None, industry or None, mtype or None,
+                )
+                if sector:
+                    await _redis.hset("ticker:sectors",    ticker, sector)
+                if industry:
+                    await _redis.hset("ticker:industries", ticker, industry)
+                enriched += 1
+            except Exception:
+                pass
+            await asyncio.sleep(0.25)   # stay polite with Yahoo's rate limits
+
+    log.info("ticker_classification.done", enriched=enriched, total=len(tickers))
+
+
 async def _fetch_sector_yahoo(ticker: str, session) -> str | None:
     """Fetch sector from Yahoo Finance chart API (free, no auth required)."""
     import aiohttp
@@ -1892,6 +2004,20 @@ async def get_position_sector_map():
         if sym not in result and sym in _SECTOR_STATIC:
             result[sym] = _SECTOR_STATIC[sym]
 
+    # 4b. ticker_classification DB table (Yahoo-sourced GICS data)
+    missing_cls = [sym for sym in tickers if sym not in result]
+    if missing_cls and DB_URL:
+        try:
+            pool = await _get_db_pool()
+            rows = await pool.fetch(
+                "SELECT ticker, sector FROM ticker_classification WHERE ticker = ANY($1) AND sector IS NOT NULL",
+                missing_cls,
+            )
+            for row in rows:
+                result[row["ticker"]] = row["sector"]
+        except Exception:
+            pass
+
     # 5. Polygon.io ticker details → SIC-mapped sector
     missing = [sym for sym in tickers if sym not in result]
     _poly_key = os.getenv("MASSIVE_API_KEY", "") or _read_env_file().get("MASSIVE_API_KEY", "")
@@ -1937,6 +2063,38 @@ async def get_position_sector_map():
             pass
 
     return result
+
+
+# ── API — Ticker classification (sector + industry, Yahoo-sourced) ────────────
+
+@app.get("/api/market/ticker-classifications")
+async def get_ticker_classifications():
+    """Return all stored ticker sector/industry classifications from DB."""
+    if not DB_URL:
+        return []
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        "SELECT ticker, sector, industry, market_type, updated_at "
+        "FROM ticker_classification ORDER BY ticker"
+    )
+    return [
+        {
+            "ticker":      r["ticker"],
+            "sector":      r["sector"],
+            "industry":    r["industry"],
+            "market_type": r["market_type"],
+            "updated_at":  r["updated_at"].isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@app.post("/api/market/ticker-classifications/refresh")
+async def refresh_ticker_classifications(token: str = ""):
+    """Trigger a background classification refresh for all active position tickers."""
+    check_token(token)
+    asyncio.create_task(_enrich_ticker_classifications())
+    return {"ok": True, "message": "Enrichment started in background"}
 
 
 # ── API — Market sector map (Finviz-style) ────────────────────────────────────

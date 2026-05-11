@@ -7,9 +7,8 @@ Reads user:exclusions from Redis and blocks trades on:
   - Excluded industries / sub-sectors (e.g. "Biotechnology")
 
 Classification source priority:
-  1. Redis cache  (ticker:sectors / ticker:industries)
-  2. Yahoo Finance MCP  (primary — GICS sector + industry)
-  3. Massive MCP        (fallback — sector only via SIC mapping)
+  1. Redis cache  (ticker:sectors / ticker:industries) — populated by webui enrichment task
+  2. Massive MCP  (fallback — sector via SIC mapping)
 """
 import json
 import structlog
