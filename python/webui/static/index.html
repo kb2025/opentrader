@@ -680,14 +680,11 @@ select option{background:var(--surface2)}
               <option value="scraper-ovtlyr">scraper-ovtlyr</option>
               <option value="scraper-wsb">scraper-wsb</option>
               <option value="scraper-seekalpha">scraper-seekalpha</option>
-              <option value="scraper-yahoo">scraper-yahoo</option>
-              <option value="scraper-yahoo-sentiment">scraper-yahoo-sentiment</option>
               <option value="aggregator">aggregator</option>
               <option value="options-monitor">options-monitor</option>
               <option value="directive-agent">directive-agent</option>
               <option value="review-agent">review-agent</option>
               <option value="broker-gateway">broker-gateway</option>
-              <option value="mcp-yahoo">mcp-yahoo</option>
               <option value="mcp-alpaca">mcp-alpaca</option>
               <option value="mcp-tradingview">mcp-tradingview</option>
               <option value="mcp-massive">mcp-massive</option>
@@ -3013,10 +3010,6 @@ select option{background:var(--surface2)}
                     <span style="font-size:11px;color:var(--muted)">SeekingAlpha article sentiment score</span>
                   </div>
                   <div style="display:flex;flex-direction:column;gap:2px">
-                    <code style="font-size:11px;color:var(--accent);background:rgba(99,102,241,0.1);padding:2px 6px;border-radius:4px;width:fit-content">yahoo_trending</code>
-                    <span style="font-size:11px;color:var(--muted)">Yahoo Finance trending ticker list</span>
-                  </div>
-                  <div style="display:flex;flex-direction:column;gap:2px">
                     <code style="font-size:11px;color:var(--accent);background:rgba(99,102,241,0.1);padding:2px 6px;border-radius:4px;width:fit-content">predictor</code>
                     <span style="font-size:11px;color:var(--muted)">ML predictor score (0–1 directional confidence)</span>
                   </div>
@@ -4713,8 +4706,6 @@ const TOPO_NODES = [
   { id: 'scraper-ovtlyr',          label: 'OVTLYR Scanner',  x: 15,  y: 15,  group: 'scrapers' },
   { id: 'scraper-wsb',             label: 'r/WSB',            x: 15,  y: 80,  group: 'scrapers' },
   { id: 'scraper-seekalpha',       label: 'Seeking Alpha',    x: 15,  y: 145, group: 'scrapers' },
-  { id: 'scraper-yahoo',           label: 'Yahoo Finance',    x: 15,  y: 210, group: 'scrapers' },
-  { id: 'scraper-yahoo-sentiment', label: 'Yahoo Sentiment',  x: 15,  y: 275, group: 'scrapers' },
   // ── Core pipeline ─────────────────────────────────────────────────────────
   { id: 'aggregator',              label: 'Aggregator',       x: 200, y: 125, group: 'core'     },
   { id: 'predictor',               label: 'Predictor',        x: 375, y: 80,  group: 'core'     },
@@ -4730,7 +4721,6 @@ const TOPO_NODES = [
   { id: 'orchestrator',            label: 'Orchestrator',     x: 195, y: 350, group: 'infra'    },
   { id: 'broker-gateway',          label: 'Broker Gateway',   x: 735, y: 200, group: 'brokers'  },
   // ── MCP servers ───────────────────────────────────────────────────────────
-  { id: 'mcp-yahoo',               label: 'MCP Yahoo',         x: 15,  y: 440, group: 'mcp'      },
   { id: 'mcp-alpaca',              label: 'MCP Alpaca',         x: 735, y: 310, group: 'mcp'      },
   { id: 'mcp-tradingview',         label: 'MCP TradingView',    x: 555, y: 230, group: 'mcp'      },
   { id: 'mcp-massive',             label: 'MCP Massive',        x: 280, y: 450, group: 'mcp'      },
@@ -4746,15 +4736,11 @@ const TOPO_EDGES = [
   { from: 'scheduler',              to: 'scraper-ovtlyr',          label: 'scrape_ovtlyr',    color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
   { from: 'scheduler',              to: 'scraper-wsb',             label: 'scrape_wsb',       color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
   { from: 'scheduler',              to: 'scraper-seekalpha',       label: 'scrape_seekalpha', color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'scraper-yahoo',           label: 'scrape_yahoo',     color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'scraper-yahoo-sentiment', label: 'score_sentiment',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
   { from: 'scheduler',              to: 'predictor',               label: 'run_predictor',    color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
   // ── Scrapers publish market data ──────────────────────────────────────────
   { from: 'scraper-ovtlyr',         to: 'predictor',               label: 'scanner.signals',  color: '#3b82f6', markerId: 'arrow-blue',   dashed: false },
   { from: 'scraper-wsb',            to: 'aggregator',              label: 'market.ticks',     color: '#8b5cf6', markerId: 'arrow-purple', dashed: false },
   { from: 'scraper-seekalpha',      to: 'aggregator',              label: 'market.ticks',     color: '#8b5cf6', markerId: 'arrow-purple', dashed: false },
-  { from: 'scraper-yahoo',          to: 'aggregator',              label: 'market.ticks',     color: '#8b5cf6', markerId: 'arrow-purple', dashed: false },
-  { from: 'scraper-yahoo-sentiment',to: 'aggregator',              label: 'market.ticks',     color: '#8b5cf6', markerId: 'arrow-purple', dashed: false },
   // ── Aggregator → Predictor ────────────────────────────────────────────────
   { from: 'aggregator',             to: 'predictor',               label: 'intel',            color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   // ── Predictor → Traders ───────────────────────────────────────────────────
@@ -4773,8 +4759,6 @@ const TOPO_EDGES = [
   { from: 'scraper-ovtlyr',         to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'scraper-wsb',            to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'scraper-seekalpha',      to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scraper-yahoo',          to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scraper-yahoo-sentiment',to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'aggregator',             to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'predictor',              to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'trader-equity',          to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
@@ -4787,7 +4771,6 @@ const TOPO_EDGES = [
   { from: 'mcp-unusualwhales',      to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   { from: 'orchestrator',           to: 'scheduler',               label: 'system.commands',  color: '#334155', markerId: 'arrow-gray',   dashed: true  },
   // ── MCP tool connections ──────────────────────────────────────────────────
-  { from: 'mcp-yahoo',              to: 'scraper-yahoo',           label: 'mcp/tools',        color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-alpaca',             to: 'broker-gateway',          label: 'mcp/tools',        color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-tradingview',        to: 'trader-equity',           label: 'tv confirm',       color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-tradingview',        to: 'trader-options',          label: 'tv confirm',       color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
@@ -4795,7 +4778,6 @@ const TOPO_EDGES = [
   { from: 'mcp-massive',            to: 'aggregator',              label: 'market data',      color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-unusualwhales',      to: 'predictor',               label: 'options flow',     color: '#f97316', markerId: 'arrow-orange', dashed: false },
   // ── Chat Agent queries ────────────────────────────────────────────────────
-  { from: 'chat-agent',             to: 'mcp-yahoo',               label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
   { from: 'chat-agent',             to: 'mcp-alpaca',              label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
   { from: 'chat-agent',             to: 'mcp-tradingview',         label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
   { from: 'chat-agent',             to: 'mcp-massive',             label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
@@ -4840,12 +4822,12 @@ function resetTopoLayout() {
   // Reset to defaults (re-declare original positions)
   const defaults = {
     'scraper-ovtlyr':15,'scraper-ovtlyr_y':20, 'scraper-wsb':15,'scraper-wsb_y':90,
-    'scraper-seekalpha':15,'scraper-seekalpha_y':160, 'scraper-yahoo':15,'scraper-yahoo_y':230,
+    'scraper-seekalpha':15,'scraper-seekalpha_y':160,
     'aggregator':200,'aggregator_y':125, 'predictor':375,'predictor_y':80,
     'trader-equity':555,'trader-equity_y':40, 'trader-options':555,'trader-options_y':130,
     'review-agent':735,'review-agent_y':80, 'scheduler':15,'scheduler_y':310,
     'orchestrator':195,'orchestrator_y':310, 'broker-gateway':735,'broker-gateway_y':200,
-    'mcp-yahoo':15,'mcp-yahoo_y':375, 'mcp-alpaca':735,'mcp-alpaca_y':310,
+    'mcp-alpaca':735,'mcp-alpaca_y':310,
     'mcp-massive':280,'mcp-massive_y':390,
     'mcp-unusualwhales':90,'mcp-unusualwhales_y':460,
     'chat-agent':930,'chat-agent_y':140,
@@ -8428,14 +8410,14 @@ async function loadConfigPage() {
 
 // ── User Exclusions ────────────────────────────────────────────────────────────
 
-// Yahoo Finance GICS sector names
+// GICS sector names
 const _ALL_SECTORS = [
   'Basic Materials','Communication Services','Consumer Cyclical',
   'Consumer Defensive','Energy','Financial Services','Healthcare',
   'Industrials','Real Estate','Technology','Utilities'
 ];
 
-// Sector → industries mapping (Yahoo Finance GICS)
+// Sector → industries mapping (GICS)
 const _SECTOR_INDUSTRIES = {
   'Basic Materials':        ['Aluminum','Building Materials','Chemicals','Coal','Copper','Gold','Lumber & Wood Production','Other Industrial Metals & Mining','Other Precious Metals & Mining','Paper & Paper Products','Silver','Specialty Chemicals','Steel'],
   'Communication Services': ['Advertising Agencies','Broadcasting','Electronic Gaming & Multimedia','Entertainment','Internet Content & Information','Publishing','Telecom Services','Wireless Communications'],
@@ -8456,7 +8438,7 @@ Object.entries(_SECTOR_INDUSTRIES).forEach(([sec, inds]) =>
   inds.forEach(i => { _INDUSTRY_SECTOR[i] = sec; })
 );
 
-// Yahoo Finance industry taxonomy (grouped by sector)
+// GICS industry taxonomy (grouped by sector)
 const _ALL_INDUSTRIES = [
   // Basic Materials
   'Aluminum','Building Materials','Chemicals','Coal','Copper','Gold',
@@ -9645,8 +9627,8 @@ async function saveBrokerCfg() {
 // Strategy Engineer
 // ══════════════════════════════════════════════════════════════════════════════
 
-const STRATEGY_SIGNALS = ['ovtlyr','wsb_sentiment','seekalpha_sentiment','yahoo_trending','predictor'];
-const SIGNAL_COLORS    = { ovtlyr:'blue', wsb_sentiment:'purple', seekalpha_sentiment:'teal', yahoo_trending:'coral', predictor:'green' };
+const STRATEGY_SIGNALS = ['ovtlyr','wsb_sentiment','seekalpha_sentiment','predictor'];
+const SIGNAL_COLORS    = { ovtlyr:'blue', wsb_sentiment:'purple', seekalpha_sentiment:'teal', predictor:'green' };
 
 let _strategies = [];
 
@@ -14619,7 +14601,7 @@ function _divRenderDiagnostics(acctStats, forecast) {
   el.innerHTML = `<table style="width:100%;border-collapse:collapse">
     <thead><tr style="font-size:11px;color:var(--muted)">
       <th style="text-align:left">Account</th><th>Records</th><th>18-Mo Total</th>
-      <th>Monthly Avg</th><th>yfinance Est</th><th>Date Range</th>
+      <th>Monthly Avg</th><th>History Est</th><th>Date Range</th>
     </tr></thead>
     <tbody>${rows || '<tr><td colspan="6" class="empty-state">No dividend history in DB — run Backfill</td></tr>'}</tbody>
   </table>
@@ -14632,7 +14614,7 @@ function _divRenderStats(s) {
   if (!s) return;
   const annual = s.annual_projected_income || 0;
   document.getElementById('div-stat-annual').textContent    = _divFmt$(annual);
-  // Use per-account filtered monthly avg (history-based or yfinance fallback)
+  // Use per-account filtered monthly avg (history-based)
   const moAvg = s.monthly_avg > 0 ? s.monthly_avg : (annual / 12);
   const capturedN = _divForecast?.captured_months_count || 0;
   const moSub = _divFmt$(moAvg) + '/mo' + (capturedN > 0 ? ' · ' + capturedN + ' mos history' : '');
@@ -14776,7 +14758,7 @@ function _divComputeFromAccounts(accounts) {
       );
       return { ...m, projected_income: Math.round(bd.reduce((s, b) => s + b.income, 0) * 100) / 100, breakdown: bd };
     }
-    // Current/future months: use history-based avg (or yfinance fallback), per-account filtered
+    // Current/future months: use history-based avg, per-account filtered
     return { ...m, projected_income: Math.round(projectedMonthly * 100) / 100, breakdown: [] };
   });
 

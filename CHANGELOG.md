@@ -3,6 +3,18 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.13] - 2026-05-11
+
+### Removed — Phase 5: Yahoo Finance frontend cleanup
+- Removed `scraper-yahoo`, `scraper-yahoo-sentiment`, `mcp-yahoo` from service filter dropdown
+- Removed `yahoo_trending` strategy signal entry and description from strategy config UI
+- Removed 3 Yahoo topology nodes (`scraper-yahoo`, `scraper-yahoo-sentiment`, `mcp-yahoo`) and all 7 associated edges from topology diagram
+- Removed Yahoo node saved layout coordinates from `resetTopoLayout()`
+- Removed `yahoo_trending` from `STRATEGY_SIGNALS` array and `SIGNAL_COLORS` map
+- Relabeled `// Yahoo Finance GICS sector names` and industry taxonomy comments to `// GICS` (data unchanged — used by Exclusions UI)
+- Renamed `yfinance Est` column header in dividend income table to `History Est`
+- Cleaned up stale `yfinance fallback` JS comments in dividend forecast
+
 ## [3.7.12] - 2026-05-11
 
 ### Added
