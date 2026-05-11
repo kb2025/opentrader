@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.19] - 2026-05-11
+
+### Fixed
+- Logo white background: flood-filled opaque white pixels to transparent in logo-opentrader.png
+
 ## [3.7.18] - 2026-05-11
 
 ### Changed
