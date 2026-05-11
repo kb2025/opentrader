@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.2] - 2026-05-11
+
+### Fixed
+- **CI build failure (ot-mcp-yahoo)** — `Dockerfile.http` used `uv pip install --system -e .` (editable install) which requires `server.py` to be present at build time via hatchling; replaced with direct `pip install` of the two dependencies (`mcp[cli]`, `yfinance`), eliminating the editable-install complexity entirely
+
 ## [3.7.1] - 2026-05-11
 
 ### Fixed
