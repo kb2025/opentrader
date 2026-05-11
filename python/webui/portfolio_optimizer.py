@@ -29,25 +29,28 @@ def _fetch_returns(tickers: list[str], lookback_days: int) -> pd.DataFrame:
     a DataFrame of daily log-returns.  Tickers that fail are dropped.
     """
     import os
+    import json
+    import urllib.request
     from datetime import date, timedelta as _td
-    from polygon import RESTClient
 
     api_key = os.getenv("MASSIVE_API_KEY", "")
     if not api_key:
         raise ValueError("MASSIVE_API_KEY not set — cannot fetch OHLCV")
-    client  = RESTClient(api_key)
-    to_date = date.today().isoformat()
+    to_date  = date.today().isoformat()
     frm_date = (date.today() - _td(days=lookback_days + 10)).isoformat()
 
     closes_dict: dict[str, dict[str, float]] = {}
     for ticker in tickers:
         try:
-            bars = client.get_aggs(ticker.upper(), 1, "day", frm_date, to_date,
-                                   limit=500, adjusted=True)
-            if bars:
-                for b in bars:
-                    d = date.fromtimestamp(b.timestamp / 1000).isoformat()
-                    closes_dict.setdefault(d, {})[ticker] = b.close
+            url = (
+                f"https://api.polygon.io/v2/aggs/ticker/{ticker.upper()}/range/1/day"
+                f"/{frm_date}/{to_date}?adjusted=true&limit=500&apiKey={api_key}"
+            )
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                data = json.loads(resp.read())
+            for bar in data.get("results", []):
+                d = date.fromtimestamp(bar["t"] / 1000).isoformat()
+                closes_dict.setdefault(d, {})[ticker] = bar["c"]
         except Exception as e:
             log.warning("portfolio_optimizer: polygon fetch failed for %s: %s", ticker, e)
 

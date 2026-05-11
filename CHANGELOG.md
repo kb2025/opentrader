@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.15] - 2026-05-11
+
+### Fixed
+- Portfolio Optimizer: replaced `from polygon import RESTClient` with direct `urllib.request` HTTP calls to Polygon REST API — `polygon-api-client` package was never installed in the webui container
+- Backtest Runner: same fix — replaced RESTClient with direct HTTP calls; bar fields changed from object attributes (`b.close`) to dict keys (`b["c"]`)
+
 ## [3.7.14] - 2026-05-11
 
 ### Changed — Documentation refresh

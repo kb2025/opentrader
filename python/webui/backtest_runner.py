@@ -393,8 +393,9 @@ _PERIOD_TO_DAYS = {
 
 def _fetch_ohlcv(ticker: str, period: str = "2y") -> pd.DataFrame:
     import os
+    import json
+    import urllib.request
     from datetime import date, timedelta
-    from polygon import RESTClient
 
     api_key = os.getenv("MASSIVE_API_KEY", "")
     if not api_key:
@@ -402,16 +403,20 @@ def _fetch_ohlcv(ticker: str, period: str = "2y") -> pd.DataFrame:
     days = _PERIOD_TO_DAYS.get(period, 730)
     to_date  = date.today().isoformat()
     frm_date = (date.today() - timedelta(days=days)).isoformat()
-    client = RESTClient(api_key)
-    bars = client.get_aggs(ticker.upper(), 1, "day", frm_date, to_date,
-                           limit=750, adjusted=True)
+    url = (
+        f"https://api.polygon.io/v2/aggs/ticker/{ticker.upper()}/range/1/day"
+        f"/{frm_date}/{to_date}?adjusted=true&limit=750&apiKey={api_key}"
+    )
+    with urllib.request.urlopen(url, timeout=15) as resp:
+        data = json.loads(resp.read())
+    bars = data.get("results", [])
     if not bars:
         raise ValueError(f"No OHLCV data returned for {ticker!r}")
     rows = [
         {
-            "date":   date.fromtimestamp(b.timestamp / 1000).isoformat(),
-            "open":   b.open, "high": b.high, "low": b.low,
-            "close":  b.close, "volume": b.volume,
+            "date":   date.fromtimestamp(b["t"] / 1000).isoformat(),
+            "open":   b["o"], "high": b["h"], "low": b["l"],
+            "close":  b["c"], "volume": b["v"],
         }
         for b in bars
     ]
