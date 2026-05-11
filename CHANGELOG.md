@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.21] - 2026-05-11
+
+### Fixed
+- Sidebar logo now shares the same flex row as "OpenTrader" title text so it aligns with the title baseline rather than floating between the title and subtitle
+
 ## [3.7.20] - 2026-05-11
 
 ### Changed

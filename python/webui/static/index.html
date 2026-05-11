@@ -16,11 +16,10 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;fon
 
 /* ── Sidebar ── */
 .sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
-.brand{padding:16px 16px 14px;font-size:15px;font-weight:700;color:var(--blue);border-bottom:1px solid var(--border);letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
-.brand-text{flex:1}
-.brand span{color:var(--muted);font-weight:400;font-size:11px;display:block;margin-top:2px}
-.brand-logo{flex-shrink:0}
-.brand-logo img{width:40px;height:40px;object-fit:contain;display:block}
+.brand{padding:16px 16px 14px;font-size:15px;font-weight:700;color:var(--blue);border-bottom:1px solid var(--border);letter-spacing:-.01em}
+.brand-title-row{display:flex;align-items:center;gap:8px}
+.brand span{color:var(--muted);font-weight:400;font-size:11px;display:block;margin-top:3px}
+.brand-logo img{width:28px;height:28px;object-fit:contain;display:block}
 nav{padding:8px;flex:1;overflow-y:auto}
 .nav-group{margin-bottom:8px}
 .nav-label{padding:8px 10px 4px;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
@@ -272,13 +271,11 @@ select option{background:var(--surface2)}
 <!-- ── Sidebar ── -->
 <div class="sidebar">
   <div class="brand" id="brand-title">
-    <div class="brand-text">
+    <div class="brand-title-row">
       OpenTrader
-      <span>Command Center <span id="sidebar-version">v2</span></span>
+      <div class="brand-logo"><img src="/static/logo-opentrader.png" alt="OpenTrader"></div>
     </div>
-    <div class="brand-logo">
-      <img src="/static/logo-opentrader.png" alt="OpenTrader">
-    </div>
+    <span>Command Center <span id="sidebar-version">v2</span></span>
   </div>
   <nav id="main-nav">
     <div class="nav-group" data-group="trading">
