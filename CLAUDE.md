@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Running the platform
 ```bash
 podman-compose up -d                          # start all services
-podman-compose up -d --build ot-webui         # rebuild and restart one service
+podman-compose up -d --build webui            # rebuild and restart webui (service name, not container name)
+podman-compose up -d --build scheduler        # rebuild scheduler
 podman-compose down                           # stop all services
 podman logs -f ot-webui                       # tail logs for a container
 podman exec -it ot-webui bash                 # shell into a container
@@ -118,6 +119,8 @@ Cloudflare Tunnel is the only external ingress, forwarding to `ot-webui:8080`. C
 | `config/strategies.json` | Live strategy definitions |
 | `config/assignments.json` | Strategy-to-ticker-to-account assignments |
 | `VERSION` | Single source of truth for the release version |
+| `RISK_DISCLOSURE.md` | Risk disclosure document; SHA-256 hash used by live-mode ack gate |
+| `python/webui/static/RISK_DISCLOSURE.md` | Copy shipped inside container for hash computation |
 
 ## Working Style
 
