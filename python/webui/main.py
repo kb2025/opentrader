@@ -1249,6 +1249,19 @@ async def on_startup():
             )
         except Exception:
             pass
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute("""
+                CREATE TABLE IF NOT EXISTS live_mode_ack (
+                    id              INT         PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                    acknowledged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    phrase_typed    TEXT        NOT NULL,
+                    risk_sha256     TEXT        NOT NULL
+                )
+            """)
+        except Exception:
+            pass
     # Start price alert checker background loop
     asyncio.create_task(_price_alert_loop())
     # Pre-warm caches in background so first page load is fast
@@ -4068,9 +4081,25 @@ class EnvReveal(BaseModel):
     keys:  list
 
 
+LIVE_MODE_CONFIRMATION_PHRASE = "I understand the risks and accept full responsibility"
+
+def _get_risk_disclosure_hash() -> str:
+    import hashlib
+    path = os.path.join(os.path.dirname(__file__), "static", "RISK_DISCLOSURE.md")
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        return "__unavailable__"
+
+
 class TradeModeBody(BaseModel):
     token: str
     mode:  str  # "sandbox" | "live"
+
+class LiveAckBody(BaseModel):
+    token:  str
+    phrase: str
 
 
 @app.get("/api/trade-mode")
@@ -4081,11 +4110,65 @@ async def get_trade_mode():
     return {"mode": mode}
 
 
+@app.get("/api/live-mode/ack-status")
+async def get_live_ack_status():
+    current_hash = _get_risk_disclosure_hash()
+    try:
+        pool = await _get_db_pool()
+        row  = await pool.fetchrow(
+            "SELECT acknowledged_at, risk_sha256 FROM live_mode_ack WHERE id = 1"
+        )
+    except Exception:
+        row = None
+    if not row:
+        return {"acked": False, "current": False, "acked_at": None}
+    is_current = row["risk_sha256"] == current_hash
+    return {
+        "acked":    True,
+        "current":  is_current,
+        "acked_at": row["acknowledged_at"].isoformat() if row["acknowledged_at"] else None,
+    }
+
+
+@app.post("/api/live-mode/acknowledge")
+async def post_live_acknowledge(body: LiveAckBody):
+    check_token(body.token)
+    if body.phrase != LIVE_MODE_CONFIRMATION_PHRASE:
+        raise HTTPException(status_code=400, detail="phrase_mismatch")
+    current_hash = _get_risk_disclosure_hash()
+    try:
+        pool = await _get_db_pool()
+        await pool.execute(
+            """INSERT INTO live_mode_ack (id, phrase_typed, risk_sha256)
+               VALUES (1, $1, $2)
+               ON CONFLICT (id) DO UPDATE SET
+                   acknowledged_at = NOW(),
+                   phrase_typed    = EXCLUDED.phrase_typed,
+                   risk_sha256     = EXCLUDED.risk_sha256""",
+            body.phrase, current_hash,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    acked_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return {"ok": True, "acked_at": acked_at}
+
+
 @app.post("/api/trade-mode")
 async def set_trade_mode(body: TradeModeBody):
     check_token(body.token)
     if body.mode not in ("sandbox", "live"):
         raise HTTPException(status_code=400, detail="mode must be 'sandbox' or 'live'")
+    if body.mode == "live":
+        current_hash = _get_risk_disclosure_hash()
+        try:
+            pool = await _get_db_pool()
+            row  = await pool.fetchrow(
+                "SELECT risk_sha256 FROM live_mode_ack WHERE id = 1"
+            )
+        except Exception:
+            row = None
+        if not row or row["risk_sha256"] != current_hash:
+            raise HTTPException(status_code=403, detail="acknowledgment_required")
     redis = await get_redis()
     await redis.set("config:trade_mode", body.mode)
     _write_env_file({"TRADE_MODE": body.mode})

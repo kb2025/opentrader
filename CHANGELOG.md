@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.26] - 2026-05-12
+
+### Added
+- Live mode acknowledgment gate — switching the Trade Mode toggle to "live" now requires typing `I understand the risks and accept full responsibility` exactly before any broker connection is opened
+- `live_mode_ack` DB table stores the acknowledgment with timestamp, typed phrase, and SHA-256 of `RISK_DISCLOSURE.md`; a changed disclosure invalidates the record and forces re-acknowledgment
+- `GET /api/live-mode/ack-status` and `POST /api/live-mode/acknowledge` endpoints
+- `POST /api/trade-mode` now returns 403 `acknowledgment_required` if no valid ack exists when switching to live
+- Full-screen acknowledgment modal (first-time / re-ack) with 3-attempt limit and clear error messages
+- Brief reminder modal (already acknowledged) showing the original acknowledgment date
+
 ## [3.7.25] - 2026-05-12
 
 ### Added

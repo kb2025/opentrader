@@ -1878,7 +1878,7 @@ select option{background:var(--surface2)}
       </div>
     </div>
 
-    <!-- Trade Mode Confirm Modal -->
+    <!-- Trade Mode Confirm Modal (sandbox switch + live reminder) -->
     <div id="trade-mode-modal" class="bk-modal-overlay" style="display:none" onclick="if(event.target===this)_cancelTradeMode()">
       <div class="bk-modal" style="width:420px">
         <div class="bk-modal-head">
@@ -1890,6 +1890,7 @@ select option{background:var(--surface2)}
         </div>
         <div class="bk-modal-body" style="padding:20px">
           <div id="tm-modal-desc" style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:16px"></div>
+          <div id="tm-ack-note" style="display:none;font-size:11px;color:var(--muted);margin-bottom:12px;padding:8px 12px;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);border-radius:6px"></div>
           <div id="tm-live-warning" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:12px 14px;margin-bottom:16px">
             <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:4px">&#9888; This will enable real money trading</div>
             <div style="font-size:11px;color:var(--muted);line-height:1.5">All configured live accounts will receive actual orders. Losses are real. Make sure your position sizing and risk limits are correctly configured before proceeding.</div>
@@ -1898,6 +1899,54 @@ select option{background:var(--surface2)}
         <div class="bk-footer" style="justify-content:flex-end;gap:8px">
           <button class="btn btn-ghost btn-sm" onclick="_cancelTradeMode()">Cancel</button>
           <button id="tm-confirm-btn" class="btn btn-danger btn-sm" onclick="_confirmTradeMode()">Enable Live Trading</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Mode Acknowledgment Modal (first-time / re-ack) -->
+    <div id="live-ack-overlay" class="bk-modal-overlay" style="display:none" onclick="if(event.target===this)_liveAckCancel()">
+      <div class="bk-modal" style="width:680px;max-width:96vw">
+        <div class="bk-modal-head" style="background:rgba(239,68,68,.06);border-bottom:1px solid rgba(239,68,68,.2)">
+          <span style="font-size:22px">&#9888;</span>
+          <div style="flex:1;margin-left:12px">
+            <div style="font-size:15px;font-weight:700;color:var(--text)">LIVE TRADING MODE — READ BEFORE CONTINUING</div>
+            <div id="live-ack-sub" style="font-size:11px;color:var(--muted);margin-top:2px">Acknowledge the risks to enable live trading</div>
+          </div>
+        </div>
+        <div class="bk-modal-body" style="padding:20px 24px;max-height:72vh;overflow-y:auto">
+          <p style="font-size:13px;color:#cbd5e1;line-height:1.65;margin-bottom:14px">You are about to enable <strong style="color:var(--red)">LIVE TRADING</strong>. From this point on, OpenTrader will be able to place real orders against real accounts using real money. Bugs, misconfiguration, and unexpected market conditions can — and do — cause losses, sometimes total.</p>
+          <div style="background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:14px 16px;margin-bottom:18px">
+            <div style="font-size:12px;color:#94a3b8;line-height:1.7">
+              OpenTrader is provided <strong style="color:var(--text)">AS-IS</strong>. There is:<br>
+              &nbsp;&nbsp;&#8226; <strong>NO</strong> warranty that it will work correctly<br>
+              &nbsp;&nbsp;&#8226; <strong>NO</strong> guarantee that any strategy will be profitable<br>
+              &nbsp;&nbsp;&#8226; <strong>NO</strong> support obligation from the authors or contributors<br>
+              &nbsp;&nbsp;&#8226; <strong>NO</strong> ability to reverse, recover, or compensate for losses
+            </div>
+          </div>
+          <p style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px">Before you continue, you must understand and accept that:</p>
+          <ol style="font-size:12px;color:#cbd5e1;line-height:1.75;padding-left:20px;margin-bottom:18px">
+            <li>You are <strong>solely responsible</strong> for every order this software places.</li>
+            <li>You have read the <strong>Risk Disclosure</strong> in full.</li>
+            <li>You have tested this exact configuration in <strong>paper-trading</strong> first.</li>
+            <li>You have set <strong>position-size limits, loss limits, and a kill switch</strong>.</li>
+            <li>You can afford to <strong>lose every dollar</strong> in the connected account.</li>
+            <li>The authors and contributors of OpenTrader bear <strong>no liability</strong> for any loss, damage, fee, tax, or other consequence of your trading.</li>
+          </ol>
+          <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:10px">To continue, type the following phrase <strong style="color:var(--text)">exactly</strong> (case-sensitive):</p>
+            <div style="background:#0a0e1a;border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:12px;color:var(--blue);font-family:monospace;margin-bottom:12px;user-select:all">I understand the risks and accept full responsibility</div>
+            <input id="live-ack-input" type="text" autocomplete="off" spellcheck="false"
+              placeholder="Type the phrase above…"
+              style="width:100%;background:#0a0e1a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:10px 14px;outline:none;transition:border-color .15s"
+              oninput="document.getElementById('live-ack-input').style.borderColor='var(--border)'"
+              onkeydown="if(event.key==='Enter')_liveAckSubmit()">
+            <div id="live-ack-error" style="display:none;margin-top:8px;font-size:12px;color:var(--red);line-height:1.5"></div>
+          </div>
+        </div>
+        <div class="bk-modal-foot">
+          <button class="btn btn-ghost btn-sm" onclick="_liveAckCancel()">Cancel</button>
+          <button id="live-ack-btn" class="btn btn-danger btn-sm" onclick="_liveAckSubmit()">Enable Live Trading</button>
         </div>
       </div>
     </div>
@@ -9225,36 +9274,137 @@ function _applyTradeModeBanner(mode) {
 }
 
 let _pendingTradeMode = null;
+let _liveAckAttempts  = 0;
 
 function setTradeMode(isLive) {
   if (isLive) {
     _pendingTradeMode = 'live';
-    // Show confirm modal
-    document.getElementById('tm-modal-icon').textContent = '⚠';
-    document.getElementById('tm-modal-title').textContent = 'Enable Live Trading?';
-    document.getElementById('tm-modal-sub').textContent = 'Real orders will be placed with real money';
-    document.getElementById('tm-modal-desc').textContent = 'You are about to switch from paper/sandbox mode to live trading. All broker accounts configured for live mode will receive actual market orders.';
-    document.getElementById('tm-live-warning').style.display = 'block';
-    document.getElementById('tm-confirm-btn').textContent = 'Enable Live Trading';
-    document.getElementById('tm-confirm-btn').className = 'btn btn-danger btn-sm';
-    document.getElementById('trade-mode-modal').style.display = 'flex';
+    _checkLiveAckThenPrompt();
   } else {
     _pendingTradeMode = 'sandbox';
-    // Switching back to sandbox — show a lighter confirmation
     document.getElementById('tm-modal-icon').textContent = '🔒';
     document.getElementById('tm-modal-title').textContent = 'Switch to Sandbox Mode?';
     document.getElementById('tm-modal-sub').textContent = 'No real orders will be placed';
     document.getElementById('tm-modal-desc').textContent = 'Live trading will be disabled. All orders will be routed to paper/sandbox accounts only.';
     document.getElementById('tm-live-warning').style.display = 'none';
+    document.getElementById('tm-ack-note').style.display = 'none';
     document.getElementById('tm-confirm-btn').textContent = 'Switch to Sandbox';
     document.getElementById('tm-confirm-btn').className = 'btn btn-success btn-sm';
     document.getElementById('trade-mode-modal').style.display = 'flex';
   }
 }
 
+async function _checkLiveAckThenPrompt() {
+  try {
+    const d = await apiFetch('/api/live-mode/ack-status');
+    if (d.acked && d.current) {
+      // Already acknowledged and current — show brief reminder modal
+      const ackDate = d.acked_at ? new Date(d.acked_at).toLocaleDateString() : 'previously';
+      document.getElementById('tm-modal-icon').textContent = '⚠';
+      document.getElementById('tm-modal-title').textContent = 'Enable Live Trading?';
+      document.getElementById('tm-modal-sub').textContent = 'Real orders will be placed with real money';
+      document.getElementById('tm-modal-desc').textContent = 'All broker accounts configured for live mode will receive actual market orders.';
+      const note = document.getElementById('tm-ack-note');
+      note.textContent = 'Risk acknowledged on ' + ackDate + '.';
+      note.style.display = 'block';
+      document.getElementById('tm-live-warning').style.display = 'block';
+      document.getElementById('tm-confirm-btn').textContent = 'Enable Live Trading';
+      document.getElementById('tm-confirm-btn').className = 'btn btn-danger btn-sm';
+      document.getElementById('trade-mode-modal').style.display = 'flex';
+    } else {
+      // First time or disclosure changed — full acknowledgment flow
+      const changed = d.acked && !d.current;
+      document.getElementById('live-ack-sub').textContent = changed
+        ? 'The Risk Disclosure has changed — re-acknowledgment required'
+        : 'Acknowledge the risks to enable live trading';
+      document.getElementById('live-ack-input').value = '';
+      document.getElementById('live-ack-input').style.borderColor = 'var(--border)';
+      document.getElementById('live-ack-error').style.display = 'none';
+      document.getElementById('live-ack-btn').disabled = false;
+      _liveAckAttempts = 0;
+      document.getElementById('live-ack-overlay').style.display = 'flex';
+    }
+  } catch(e) {
+    // Fallback: show full ack modal if status check fails
+    document.getElementById('live-ack-sub').textContent = 'Acknowledge the risks to enable live trading';
+    document.getElementById('live-ack-input').value = '';
+    document.getElementById('live-ack-error').style.display = 'none';
+    document.getElementById('live-ack-btn').disabled = false;
+    _liveAckAttempts = 0;
+    document.getElementById('live-ack-overlay').style.display = 'flex';
+  }
+}
+
+function _liveAckCancel() {
+  document.getElementById('live-ack-overlay').style.display = 'none';
+  document.getElementById('live-ack-input').value = '';
+  document.getElementById('live-ack-error').style.display = 'none';
+  // Revert toggle
+  const toggle = document.getElementById('trade-mode-toggle');
+  if (toggle) toggle.checked = false;
+  _pendingTradeMode = null;
+}
+
+async function _liveAckSubmit() {
+  const input = document.getElementById('live-ack-input');
+  const errEl = document.getElementById('live-ack-error');
+  const btn   = document.getElementById('live-ack-btn');
+  const phrase = input.value;
+  const correct = 'I understand the risks and accept full responsibility';
+
+  if (phrase !== correct) {
+    _liveAckAttempts++;
+    const remaining = 3 - _liveAckAttempts;
+    input.style.borderColor = 'var(--red)';
+    if (remaining <= 0) {
+      errEl.textContent = 'Too many failed attempts. Live mode has NOT been enabled. Close this dialog and try again.';
+      errEl.style.display = 'block';
+      btn.disabled = true;
+      input.disabled = true;
+    } else {
+      errEl.textContent = 'That phrase did not match — type it exactly as shown, including capitalization. (' + remaining + ' attempt' + (remaining===1?'':'s') + ' left)';
+      errEl.style.display = 'block';
+    }
+    return;
+  }
+
+  // Phrase correct — record acknowledgment then enable live mode
+  btn.disabled = true;
+  btn.textContent = 'Recording…';
+  const token = getToken();
+  try {
+    await apiFetch('/api/live-mode/acknowledge', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token, phrase }),
+    });
+  } catch(e) {
+    errEl.textContent = 'Failed to record acknowledgment: ' + e.message;
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Enable Live Trading';
+    return;
+  }
+
+  // Now switch to live mode
+  document.getElementById('live-ack-overlay').style.display = 'none';
+  try {
+    const data = await apiFetch('/api/trade-mode', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token, mode: 'live' }),
+    });
+    _applyTradeModeBanner(data.mode);
+    toast('warning', 'Live Mode Active', 'Real trades enabled — acknowledgment recorded');
+  } catch(e) {
+    toast('error', 'Mode Switch Failed', e.message);
+    _applyTradeModeBanner('sandbox');
+    const toggle = document.getElementById('trade-mode-toggle');
+    if (toggle) toggle.checked = false;
+  }
+  _pendingTradeMode = null;
+}
+
 function _cancelTradeMode() {
   document.getElementById('trade-mode-modal').style.display = 'none';
-  // Revert toggle to current state
   const toggle = document.getElementById('trade-mode-toggle');
   if (toggle) toggle.checked = (_pendingTradeMode === 'live') ? false : true;
   _pendingTradeMode = null;
@@ -9276,7 +9426,7 @@ async function _confirmTradeMode() {
       data.mode === 'live' ? 'Real trades enabled' : 'No real trades will be placed');
   } catch(e) {
     toast('error', 'Mode Switch Failed', e.message);
-    _applyTradeModeBanner(mode === 'live' ? 'sandbox' : 'live'); // revert
+    _applyTradeModeBanner(mode === 'live' ? 'sandbox' : 'live');
   }
 }
 
