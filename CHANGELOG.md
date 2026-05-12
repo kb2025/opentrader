@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.23] - 2026-05-12
+
+### Added
+- Terms of Use link on the login page — clicking opens a full-screen scrollable modal containing all 14 sections of the legal agreement (no warranties, assumption of risk, limitation of liability, governing law, etc.)
+
 ## [3.7.22] - 2026-05-11
 
 ### Added

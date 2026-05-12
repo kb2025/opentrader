@@ -126,6 +126,71 @@
     justify-content: center;
     gap: 5px;
   }
+  .terms-row {
+    text-align: center;
+    margin-top: 14px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .terms-row a {
+    color: var(--blue);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .terms-row a:hover { text-decoration: underline; }
+
+  /* Terms modal */
+  #terms-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.72);
+    z-index: 9000;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 16px;
+    overflow-y: auto;
+  }
+  #terms-overlay.open { display: flex; }
+  #terms-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 760px;
+    padding: 40px 48px;
+    position: relative;
+    box-shadow: 0 16px 60px rgba(0,0,0,.7);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.75;
+    margin: auto;
+  }
+  #terms-close {
+    position: sticky;
+    top: 0;
+    float: right;
+    margin: -8px -8px 8px 16px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 4px 10px;
+    cursor: pointer;
+    z-index: 1;
+  }
+  #terms-close:hover { color: var(--text); border-color: var(--blue); }
+  #terms-box h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  #terms-box .terms-meta { font-size: 12px; color: var(--muted); margin-bottom: 24px; }
+  #terms-box h2 { font-size: 14px; font-weight: 700; margin: 28px 0 8px; color: var(--text); }
+  #terms-box p { margin: 0 0 12px; color: #cbd5e1; }
+  #terms-box ul { margin: 0 0 12px 20px; color: #cbd5e1; }
+  #terms-box ul li { margin-bottom: 6px; }
+  #terms-box strong { color: var(--text); }
+  #terms-box .terms-hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+  #terms-box .terms-caps { font-size: 12px; color: #94a3b8; }
+  #terms-box .terms-footer { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); font-weight: 600; color: var(--text); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -158,9 +223,118 @@
     </svg>
     Secured by OpenTrader Auth
   </div>
+  <div class="terms-row">
+    <a href="#" onclick="openTerms(event)">Terms of Use</a>
+  </div>
+</div>
+
+<!-- Terms of Use modal -->
+<div id="terms-overlay" onclick="if(event.target===this)closeTerms()">
+  <div id="terms-box">
+    <button id="terms-close" onclick="closeTerms()">Close</button>
+
+    <h1>Terms of Use</h1>
+    <div class="terms-meta">Last updated: May 11, 2026</div>
+
+    <p>These Terms of Use ("Terms") govern your access to and use of the OpenTrader software, source code, documentation, and any related materials (collectively, the "Software"). By downloading, installing, accessing, running, modifying, or otherwise using the Software, you agree to be bound by these Terms. If you do not agree, do not use the Software.</p>
+    <p>The Software is open-source software licensed under the Apache License, Version 2.0 (the "License"). These Terms supplement, but do not replace or override, the License. In the event of a direct conflict between these Terms and the License, the License controls with respect to your rights to use, reproduce, and distribute the Software, and these Terms control with respect to all other matters.</p>
+
+    <hr class="terms-hr">
+
+    <h2>1. No Financial, Investment, Legal, or Tax Advice</h2>
+    <p>The Software is a general-purpose tool for automating, executing, and analyzing financial transactions. The Software, its authors, contributors, and maintainers (collectively, the "Authors") are not registered investment advisers, broker-dealers, financial planners, commodity trading advisors, or any other type of regulated financial professional in any jurisdiction.</p>
+    <p>Nothing produced by, displayed within, included in, or generated through the Software constitutes financial advice, investment advice, trading advice, legal advice, tax advice, or a recommendation to buy, sell, hold, or transact in any security, commodity, derivative, cryptocurrency, token, or other financial instrument. All strategies, indicators, backtests, signals, algorithms, sample configurations, default parameters, and documentation are provided strictly for informational, educational, and illustrative purposes. You should consult a qualified, licensed professional before making any financial decision.</p>
+
+    <h2>2. Assumption of Risk</h2>
+    <p>Trading and investing in financial markets involves substantial risk, including the risk of total loss of capital. Automated and algorithmic trading carries additional risks beyond manual trading, including but not limited to: software defects and bugs; network latency, outages, and disconnections; broker, exchange, or API failures or rejections; incorrect, delayed, or missing market data; misconfigured strategies; runaway orders; slippage; flash crashes; cascading liquidations; and unforeseen market conditions. Past performance, including any backtest, simulation, or paper-trading result, is not indicative of future results and may differ materially from live execution.</p>
+    <p>You acknowledge and agree that:</p>
+    <ul>
+      <li>You use the Software entirely at your own risk and on your own responsibility.</li>
+      <li>You alone are responsible for any and all trades, orders, transactions, transfers, or other financial actions executed by, through, or as a result of the Software, whether initiated automatically or manually.</li>
+      <li>You are responsible for reviewing, testing, monitoring, and controlling the Software's behavior before and during any connection to a live brokerage, exchange, wallet, or other account holding real assets.</li>
+      <li>You are solely responsible for any losses, damages, costs, fees, taxes, penalties, missed gains, or other financial consequences arising from your use of the Software.</li>
+    </ul>
+    <p>You are a sophisticated user capable of evaluating the risks of automated trading software, and you accept those risks fully and unconditionally.</p>
+
+    <h2>3. "AS IS" — No Warranties</h2>
+    <p class="terms-caps">THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS, IMPLIED, OR STATUTORY. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE AUTHORS DISCLAIM ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, ACCURACY, RELIABILITY, AVAILABILITY, SECURITY, AND QUIET ENJOYMENT.</p>
+    <p>Without limiting the foregoing, the Authors make no representation or warranty that:</p>
+    <ul>
+      <li>The Software will be uninterrupted, timely, secure, error-free, or free from defects, vulnerabilities, or malicious code.</li>
+      <li>The Software will produce profitable trades, accurate signals, correct calculations, or any specific outcome whatsoever.</li>
+      <li>The Software is suitable for any particular purpose, market, asset class, jurisdiction, regulatory regime, or trading style.</li>
+      <li>Defects in the Software will be corrected, or that updates, patches, or support will be provided.</li>
+      <li>The Software's output, including market data, prices, balances, fills, or order status, is accurate, complete, or current.</li>
+    </ul>
+    <p>No advice or information, whether oral or written, obtained from the Authors or through the Software, shall create any warranty not expressly stated in these Terms.</p>
+
+    <h2>4. Limitation of Liability</h2>
+    <p class="terms-caps">TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE AUTHORS BE LIABLE TO YOU OR ANY THIRD PARTY FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, INCLUDING BUT NOT LIMITED TO: LOSS OF PROFITS, LOSS OF TRADING CAPITAL, LOSS OF INVESTMENT VALUE, LOSS OF DATA, LOSS OF GOODWILL, LOSS OF BUSINESS, MISSED TRADING OPPORTUNITIES, COST OF SUBSTITUTE SOFTWARE OR SERVICES, OR ANY OTHER COMMERCIAL OR FINANCIAL LOSS, ARISING OUT OF OR IN CONNECTION WITH YOUR ACCESS TO, USE OF, INABILITY TO USE, OR RELIANCE ON THE SOFTWARE, WHETHER BASED ON WARRANTY, CONTRACT, TORT (INCLUDING NEGLIGENCE), STRICT LIABILITY, STATUTE, OR ANY OTHER LEGAL THEORY, AND WHETHER OR NOT THE AUTHORS HAVE BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.</p>
+    <p class="terms-caps">TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE AUTHORS' TOTAL CUMULATIVE LIABILITY TO YOU FOR ALL CLAIMS ARISING OUT OF OR RELATING TO THE SOFTWARE OR THESE TERMS SHALL NOT EXCEED ONE HUNDRED UNITED STATES DOLLARS (US$100.00) IN THE AGGREGATE.</p>
+    <p>The Authors provide the Software free of charge as an open-source project. The disclaimers and limitations in these Terms reflect a reasonable allocation of risk and form an essential basis of the bargain between you and the Authors; without them, the Authors would not make the Software available. These limitations apply even if any limited remedy fails of its essential purpose. Some jurisdictions do not allow the exclusion or limitation of certain damages; in those jurisdictions, the Authors' liability is limited to the smallest amount permitted by law.</p>
+
+    <h2>5. Indemnification</h2>
+    <p>You agree to indemnify, defend, and hold harmless the Authors from and against any and all claims, demands, actions, investigations, proceedings, liabilities, damages, judgments, settlements, fines, penalties, losses, costs, and expenses (including reasonable attorneys' fees and court costs) arising out of or relating to: (a) your access to or use of the Software; (b) your violation of these Terms or the License; (c) your violation of any applicable law, regulation, rule, or third-party right, including any broker, exchange, or platform terms of service; (d) any trade, order, transaction, transfer, or other action initiated by, through, or as a result of the Software in connection with your use; (e) any modification, fork, or derivative work you create from the Software; and (f) any content, data, configuration, credentials, or instructions you provide to the Software.</p>
+    <p>The Authors reserve the right, at their own expense, to assume the exclusive defense and control of any matter otherwise subject to indemnification by you, and you agree to cooperate with such defense. You shall not settle any matter affecting the Authors without the Authors' prior written consent.</p>
+
+    <h2>6. Third-Party Services and Brokers</h2>
+    <p>The Software is designed to interact with third-party brokers, exchanges, market-data providers, wallets, APIs, and other services ("Third-Party Services"). The Authors do not operate, control, endorse, or assume any responsibility for any Third-Party Service. Your use of any Third-Party Service is governed solely by that provider's own terms and policies, and you are solely responsible for complying with them, obtaining and securing any required credentials or API keys, and bearing any fees, commissions, taxes, or other charges they impose.</p>
+    <p>The Authors are not responsible for any act, omission, error, delay, outage, suspension, account closure, freeze, liquidation, security breach, data loss, miscalculation, or other failure of any Third-Party Service, or for any consequence to you arising from such failure, even if the Software relied on, transmitted to, or received data from that Third-Party Service.</p>
+
+    <h2>7. User Responsibilities</h2>
+    <p>You represent, warrant, and agree that:</p>
+    <ul>
+      <li>You are at least 18 years old (or the age of majority in your jurisdiction, if higher) and have full legal capacity to enter into and comply with these Terms.</li>
+      <li>You will comply with all laws, regulations, and rules applicable to your use of the Software, including securities laws, commodities laws, anti-money-laundering laws, sanctions laws, tax laws, and the terms of any Third-Party Service you connect to the Software.</li>
+      <li>You will not use the Software for any unlawful, fraudulent, manipulative, abusive, or deceptive purpose, including market manipulation, wash trading, spoofing, layering, front-running, insider trading, or evasion of regulatory requirements.</li>
+      <li>You are responsible for securing your own systems, credentials, API keys, private keys, configuration files, and operating environment, and for any unauthorized access or use resulting from your failure to do so.</li>
+      <li>You will independently verify all behavior of the Software — including in paper or simulated environments — before connecting it to any account holding real assets, and you will continuously monitor its behavior thereafter.</li>
+      <li>You will not represent to any third party that the Software or its output constitutes financial advice or a recommendation from the Authors.</li>
+    </ul>
+
+    <h2>8. Modifications, Forks, and Derivative Works</h2>
+    <p>The License permits you to modify, fork, and create derivative works from the Software. Any such modified or derivative version is your sole responsibility. The Authors have no obligation to support, maintain, validate, or accept liability for any modified, forked, or derivative version, and you may not represent any such version as endorsed, certified, or approved by the Authors.</p>
+
+    <h2>9. Changes to the Terms</h2>
+    <p>The Authors may revise these Terms at any time by updating this document in the Software's repository. Material changes will be indicated by updating the "Last updated" date at the top. Your continued access to or use of the Software after a revision constitutes your acceptance of the revised Terms. If you do not agree to the revised Terms, you must stop using the Software.</p>
+
+    <h2>10. Governing Law and Venue</h2>
+    <p>These Terms and any dispute arising out of or relating to these Terms or the Software shall be governed by and construed in accordance with the laws of the Commonwealth of Pennsylvania, United States, without regard to its conflict-of-laws principles. The United Nations Convention on Contracts for the International Sale of Goods does not apply.</p>
+    <p>Any dispute, claim, or controversy arising out of or relating to these Terms or the Software that is not resolved informally within thirty (30) days of written notice shall be brought exclusively in the state or federal courts located in York County, Pennsylvania, and you irrevocably consent to the personal jurisdiction and venue of such courts. You and the Authors each waive any right to a trial by jury in any such proceeding to the maximum extent permitted by applicable law.</p>
+    <p>Any claim must be filed within one (1) year after the cause of action arises, or it shall be permanently barred.</p>
+
+    <h2>11. Class Action Waiver</h2>
+    <p>To the maximum extent permitted by applicable law, you and the Authors agree that each may bring claims against the other only in an individual capacity, and not as a plaintiff or class member in any purported class, consolidated, representative, or private attorney general action.</p>
+
+    <h2>12. Severability and No Waiver</h2>
+    <p>If any provision of these Terms is held invalid, illegal, or unenforceable by a court of competent jurisdiction, that provision shall be modified to the minimum extent necessary to make it enforceable, or if it cannot be so modified, it shall be severed, and the remaining provisions shall continue in full force and effect. The Authors' failure to enforce any provision shall not constitute a waiver of that provision or any other.</p>
+
+    <h2>13. Entire Agreement</h2>
+    <p>These Terms, together with the License, constitute the entire agreement between you and the Authors with respect to the Software and supersede all prior or contemporaneous understandings, agreements, representations, and warranties, whether written or oral, with respect to the same subject matter.</p>
+
+    <h2>14. Contact</h2>
+    <p>Questions about these Terms can be raised by opening an issue in the Software's public repository.</p>
+
+    <hr class="terms-hr">
+
+    <div class="terms-footer">By using the Software, you acknowledge that you have read, understood, and agree to be bound by these Terms.</div>
+  </div>
 </div>
 
 <script>
+function openTerms(e) {
+  e.preventDefault();
+  document.getElementById('terms-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeTerms() {
+  document.getElementById('terms-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeTerms();
+});
+
 async function doLogin(e) {
   e.preventDefault();
   const btn      = document.getElementById('submit-btn');
