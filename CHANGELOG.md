@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.27] - 2026-05-12
+
+### Changed
+- Reports > Daily Report (renamed from "1pm Options Report") — schedule is now fully user-configurable with day-of-week checkboxes and hour/minute inputs
+- Added content toggles: Include Options positions, Include Stock positions, Include Earnings dates, Include Ex-dividend dates
+- Daily report config persists to `report_config` DB table; no longer lost on container restart
+- `_build_daily_report_html` replaces `_build_options_report_html`; renders optional equity section and earnings/ex-div columns based on saved config
+- Scheduler `_apply_config_overrides` now handles CronTrigger (hour/minute/days) for user-overridden report schedule
+- Preview and auto-send paths read config from DB and conditionally fetch equity positions and ex-div dates
+
 ## [3.7.26] - 2026-05-12
 
 ### Added

@@ -719,11 +719,11 @@ select option{background:var(--surface2)}
     <div class="page" id="page-platform-reports">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
 
-        <!-- 1pm Options Report card -->
+        <!-- Daily Report card -->
         <div class="card">
           <div class="card-header">
-            <span class="card-title">1pm Options Report</span>
-            <span style="font-size:11px;color:var(--muted)">Mon–Fri 1:00 PM ET</span>
+            <span class="card-title">Daily Report</span>
+            <span id="rpt-options-sched-summary" style="font-size:11px;color:var(--muted)">Mon–Fri 1:00 PM ET</span>
           </div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
             <div style="display:flex;align-items:center;justify-content:space-between">
@@ -731,30 +731,66 @@ select option{background:var(--surface2)}
               <span id="rpt-options-lastsent" style="font-size:12px;color:var(--text)">—</span>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between">
-              <span style="font-size:12px;color:var(--muted)">Channels</span>
-              <span id="rpt-options-channels" style="font-size:12px;color:var(--text)">—</span>
-            </div>
-            <div style="display:flex;align-items:center;justify-content:space-between">
               <span style="font-size:12px;color:var(--muted)">Recipient</span>
               <span id="rpt-options-recipient" style="font-size:12px;color:var(--text)">—</span>
             </div>
+            <!-- Enabled + Channels -->
             <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border)">
               <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer">
-                <input type="checkbox" id="rpt-options-enabled" onchange="reportsToggle('options_1pm',this.checked)" style="cursor:pointer">
+                <input type="checkbox" id="rpt-options-enabled" onchange="_rptSaveDaily()" style="cursor:pointer">
                 Enabled
               </label>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <span style="font-size:11px;color:var(--muted)">Deliver via</span>
               <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
-                <input type="checkbox" id="rpt-options-ch-agentmail" onchange="reportsUpdateChannels('options_1pm')"> AgentMail
+                <input type="checkbox" id="rpt-options-ch-agentmail" onchange="_rptSaveDaily()"> AgentMail
               </label>
               <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
-                <input type="checkbox" id="rpt-options-ch-telegram" onchange="reportsUpdateChannels('options_1pm')"> Telegram
+                <input type="checkbox" id="rpt-options-ch-telegram" onchange="_rptSaveDaily()"> Telegram
               </label>
               <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer">
-                <input type="checkbox" id="rpt-options-ch-discord" onchange="reportsUpdateChannels('options_1pm')"> Discord
+                <input type="checkbox" id="rpt-options-ch-discord" onchange="_rptSaveDaily()"> Discord
               </label>
+            </div>
+            <!-- Schedule -->
+            <div style="border-top:1px solid var(--border);padding-top:8px">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">Schedule</div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+                <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="rpt-day-mon" onchange="_rptSaveDaily()"> Mon</label>
+                <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="rpt-day-tue" onchange="_rptSaveDaily()"> Tue</label>
+                <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="rpt-day-wed" onchange="_rptSaveDaily()"> Wed</label>
+                <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="rpt-day-thu" onchange="_rptSaveDaily()"> Thu</label>
+                <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="rpt-day-fri" onchange="_rptSaveDaily()"> Fri</label>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:11px;color:var(--muted)">Time ET</span>
+                <input type="number" id="rpt-sched-hour" min="0" max="23" placeholder="13"
+                  style="width:52px;padding:3px 6px;font-size:12px;background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:4px"
+                  onchange="_rptSaveDaily()">
+                <span style="font-size:13px;color:var(--muted)">:</span>
+                <input type="number" id="rpt-sched-minute" min="0" max="59" placeholder="00"
+                  style="width:52px;padding:3px 6px;font-size:12px;background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:4px"
+                  onchange="_rptSaveDaily()">
+              </div>
+            </div>
+            <!-- Content options -->
+            <div style="border-top:1px solid var(--border);padding-top:8px">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">Content</div>
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:pointer">
+                  <input type="checkbox" id="rpt-content-options" onchange="_rptSaveDaily()"> Include Options positions
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:pointer">
+                  <input type="checkbox" id="rpt-content-stocks" onchange="_rptSaveDaily()"> Include Stock positions
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:pointer">
+                  <input type="checkbox" id="rpt-content-earnings" onchange="_rptSaveDaily()"> Include Earnings dates
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:pointer">
+                  <input type="checkbox" id="rpt-content-exdiv" onchange="_rptSaveDaily()"> Include Ex-dividend dates
+                </label>
+              </div>
             </div>
             <div style="display:flex;gap:8px;padding-top:4px">
               <button class="btn btn-ghost btn-sm" onclick="reportsPreview('options')">Preview</button>
@@ -815,7 +851,7 @@ select option{background:var(--surface2)}
           <div style="display:flex;align-items:center;gap:8px">
             <select id="rpt-hist-filter" class="select-input" style="width:130px;padding:4px 6px;font-size:12px" onchange="reportsLoadHistory(0)">
               <option value="">All Types</option>
-              <option value="options_1pm">Options 1pm</option>
+              <option value="options_1pm">Daily Report</option>
               <option value="eod">EOD</option>
             </select>
             <button class="btn btn-ghost btn-sm" onclick="reportsLoadHistory(0)">Refresh</button>
@@ -20945,8 +20981,42 @@ async function loadReportsPage() {
   reportsLoadHistory(0);
 }
 
+function _rptSetScheduleDays(days) {
+  const all = ['mon','tue','wed','thu','fri'];
+  const active = (!days || days === 'mon-fri')
+    ? all
+    : days.split(',').map(d => d.trim());
+  all.forEach(d => {
+    const el = document.getElementById(`rpt-day-${d}`);
+    if (el) el.checked = active.includes(d);
+  });
+}
+
+function _rptGetScheduleDays() {
+  const all = ['mon','tue','wed','thu','fri'];
+  const checked = all.filter(d => document.getElementById(`rpt-day-${d}`)?.checked);
+  if (!checked.length) return 'mon-fri';
+  if (checked.length === 5) return 'mon-fri';
+  return checked.join(',');
+}
+
+function _rptSchedSummary(days, hour, minute) {
+  const dayMap = {mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri'};
+  let dStr = 'Mon–Fri';
+  if (days && days !== 'mon-fri') {
+    const parts = days.split(',').map(d => dayMap[d.trim()] || d);
+    dStr = parts.join(', ');
+  }
+  const h = parseInt(hour ?? 13);
+  const m = parseInt(minute ?? 0);
+  const ampm = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 || 12;
+  const mStr = String(m).padStart(2, '0');
+  return `${dStr} ${h12}:${mStr} ${ampm} ET`;
+}
+
 function _rptApplyConfig(cfg) {
-  const opt = cfg.options_1pm || {};
+  const opt = cfg.daily_report || cfg.options_1pm || {};
   const eod = cfg.eod || {};
 
   document.getElementById('rpt-options-enabled').checked = !!opt.enabled;
@@ -20954,15 +21024,65 @@ function _rptApplyConfig(cfg) {
   document.getElementById('rpt-options-ch-agentmail').checked = optCh.includes('agentmail');
   document.getElementById('rpt-options-ch-telegram').checked  = optCh.includes('telegram');
   document.getElementById('rpt-options-ch-discord').checked   = optCh.includes('discord');
-  document.getElementById('rpt-options-channels').textContent = optCh.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' ·') || '—';
   if (opt.recipient) document.getElementById('rpt-options-recipient').textContent = opt.recipient;
+
+  // Schedule
+  _rptSetScheduleDays(opt.schedule_days || 'mon-fri');
+  document.getElementById('rpt-sched-hour').value   = opt.schedule_hour   ?? 13;
+  document.getElementById('rpt-sched-minute').value = opt.schedule_minute ?? 0;
+  const summary = document.getElementById('rpt-options-sched-summary');
+  if (summary) summary.textContent = _rptSchedSummary(opt.schedule_days, opt.schedule_hour, opt.schedule_minute);
+
+  // Content
+  document.getElementById('rpt-content-options').checked  = opt.include_options  !== false;
+  document.getElementById('rpt-content-stocks').checked   = !!opt.include_stocks;
+  document.getElementById('rpt-content-earnings').checked = !!opt.include_earnings;
+  document.getElementById('rpt-content-exdiv').checked    = !!opt.include_exdiv;
 
   document.getElementById('rpt-eod-enabled').checked = !!eod.enabled;
   const eodCh = eod.channels || ['agentmail'];
   document.getElementById('rpt-eod-ch-agentmail').checked = eodCh.includes('agentmail');
   document.getElementById('rpt-eod-ch-telegram').checked  = eodCh.includes('telegram');
   document.getElementById('rpt-eod-ch-discord').checked   = eodCh.includes('discord');
-  document.getElementById('rpt-eod-channels').textContent = eodCh.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' ·') || '—';
+  document.getElementById('rpt-eod-channels').textContent = eodCh.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' · ') || '—';
+}
+
+let _rptSaveTimer = null;
+async function _rptSaveDaily() {
+  // Debounce so rapid checkbox changes don't flood the API
+  clearTimeout(_rptSaveTimer);
+  _rptSaveTimer = setTimeout(async () => {
+    const channels = [];
+    if (document.getElementById('rpt-options-ch-agentmail')?.checked) channels.push('agentmail');
+    if (document.getElementById('rpt-options-ch-telegram')?.checked)  channels.push('telegram');
+    if (document.getElementById('rpt-options-ch-discord')?.checked)   channels.push('discord');
+    const hour   = parseInt(document.getElementById('rpt-sched-hour')?.value  ?? 13);
+    const minute = parseInt(document.getElementById('rpt-sched-minute')?.value ?? 0);
+    const days   = _rptGetScheduleDays();
+    const cfg = {
+      enabled:          !!document.getElementById('rpt-options-enabled')?.checked,
+      channels,
+      schedule_days:    days,
+      schedule_hour:    isNaN(hour)   ? 13 : hour,
+      schedule_minute:  isNaN(minute) ? 0  : minute,
+      include_options:  !!document.getElementById('rpt-content-options')?.checked,
+      include_stocks:   !!document.getElementById('rpt-content-stocks')?.checked,
+      include_earnings: !!document.getElementById('rpt-content-earnings')?.checked,
+      include_exdiv:    !!document.getElementById('rpt-content-exdiv')?.checked,
+    };
+    const summary = document.getElementById('rpt-options-sched-summary');
+    if (summary) summary.textContent = _rptSchedSummary(days, cfg.schedule_hour, cfg.schedule_minute);
+    try {
+      await apiFetch('/api/reports/config', {
+        method:  'POST',
+        headers: {'Content-Type':'application/json'},
+        body:    JSON.stringify({daily_report: cfg}),
+      });
+      showToast('Daily report config saved', 'success');
+    } catch(e) {
+      showToast('Config save failed: ' + e.message, 'error');
+    }
+  }, 400);
 }
 
 async function reportsLoadHistory(offset) {
@@ -20981,7 +21101,7 @@ async function reportsLoadHistory(offset) {
       tbody.innerHTML = rows.map(r => {
         const ts = new Date(r.ts);
         const dtStr = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        const typeLabel = r.report_type === 'options_1pm' ? 'Options 1pm' : 'EOD After-Market';
+        const typeLabel = r.report_type === 'options_1pm' ? 'Daily Report' : 'EOD After-Market';
         const statusHtml = r.status === 'sent'
           ? '<span style="color:var(--green)">✓ Sent</span>'
           : r.status === 'skipped'
@@ -21031,8 +21151,11 @@ async function reportsPreview(type) {
   try {
     const d = await apiFetch(`/api/reports/preview/${type}`);
     if (type === 'options') {
-      title.textContent = '1pm Options Report Preview';
-      meta.textContent = `${d.position_count ?? '?'} positions · Generated ${d.generated_at ? new Date(d.generated_at).toLocaleTimeString() : ''}`;
+      title.textContent = 'Daily Report Preview';
+      const posParts = [];
+      if ((d.position_count ?? 0) > 0) posParts.push(`${d.position_count} options`);
+      if ((d.equity_count  ?? 0) > 0) posParts.push(`${d.equity_count} stocks`);
+      meta.textContent = (posParts.join(' · ') || 'No positions') + ` · Generated ${d.generated_at ? new Date(d.generated_at).toLocaleTimeString() : ''}`;
       icon.textContent = '📋';
       iframe.srcdoc = d.html || '<em>No content</em>';
       iframe.style.display = 'block';
@@ -21075,13 +21198,13 @@ async function reportsViewEntry(id) {
     const d = await apiFetch(`/api/reports/entry/${id}`);
     const ts = d.ts ? new Date(d.ts).toLocaleString() : '';
     if (d.body_html) {
-      title.textContent = d.report_type === 'options_1pm' ? '1pm Options Report' : 'EOD Report';
+      title.textContent = d.report_type === 'options_1pm' ? 'Daily Report' : 'EOD Report';
       meta.textContent = ts;
       icon.textContent = '📋';
       iframe.srcdoc = d.body_html;
       iframe.style.display = 'block';
     } else {
-      title.textContent = d.report_type === 'options_1pm' ? '1pm Options Report' : 'EOD After-Market Report';
+      title.textContent = d.report_type === 'options_1pm' ? 'Daily Report' : 'EOD After-Market Report';
       meta.textContent = ts;
       icon.textContent = '📊';
       pre.textContent = d.body_text || '(No content)';
@@ -21095,7 +21218,7 @@ async function reportsViewEntry(id) {
 }
 
 async function reportsSendNow(type) {
-  const label = type === 'options' ? '1pm Options Report' : 'EOD After-Market Report';
+  const label = type === 'options' ? 'Daily Report' : 'EOD After-Market Report';
   if (!confirm(`Send ${label} now?\n\nThis will deliver the report to all configured channels.`)) return;
   try {
     const d = await apiFetch(`/api/reports/trigger/${type}`, {method:'POST'});
@@ -21107,21 +21230,22 @@ async function reportsSendNow(type) {
 }
 
 async function reportsToggle(type, enabled) {
+  // Only called for the EOD report toggle now; Daily Report uses _rptSaveDaily()
   try {
     await apiFetch('/api/reports/config', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({type, enabled}),
+      body: JSON.stringify({[type]: {enabled}}),
     });
-    const label = type === 'options_1pm' ? 'Options' : 'EOD';
-    showToast(`${label} report ${enabled ? 'enabled' : 'disabled'}`, 'success');
+    showToast(`EOD report ${enabled ? 'enabled' : 'disabled'}`, 'success');
   } catch(e) {
     showToast('Config update failed: ' + e.message, 'error');
   }
 }
 
 async function reportsUpdateChannels(type) {
-  const prefix = type === 'options_1pm' ? 'rpt-options' : 'rpt-eod';
+  // Only called for the EOD report now; Daily Report uses _rptSaveDaily()
+  const prefix = 'rpt-eod';
   const channels = [];
   if (document.getElementById(`${prefix}-ch-agentmail`)?.checked) channels.push('agentmail');
   if (document.getElementById(`${prefix}-ch-telegram`)?.checked)  channels.push('telegram');
@@ -21130,7 +21254,7 @@ async function reportsUpdateChannels(type) {
     await apiFetch('/api/reports/config', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({type, channels}),
+      body: JSON.stringify({eod: {channels}}),
     });
     showToast('Channels updated', 'success');
   } catch(e) {

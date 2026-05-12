@@ -1262,6 +1262,27 @@ async def on_startup():
             """)
         except Exception:
             pass
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute("""
+                CREATE TABLE IF NOT EXISTS report_config (
+                    report_type      TEXT    PRIMARY KEY,
+                    enabled          BOOLEAN NOT NULL DEFAULT true,
+                    channels         TEXT[]  NOT NULL DEFAULT ARRAY['agentmail'],
+                    recipient        TEXT    NOT NULL DEFAULT '',
+                    schedule_days    TEXT    NOT NULL DEFAULT 'mon-fri',
+                    schedule_hour    INTEGER NOT NULL DEFAULT 13,
+                    schedule_minute  INTEGER NOT NULL DEFAULT 0,
+                    include_stocks   BOOLEAN NOT NULL DEFAULT false,
+                    include_options  BOOLEAN NOT NULL DEFAULT true,
+                    include_earnings BOOLEAN NOT NULL DEFAULT false,
+                    include_exdiv    BOOLEAN NOT NULL DEFAULT false,
+                    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        except Exception:
+            pass
     # Start price alert checker background loop
     asyncio.create_task(_price_alert_loop())
     # Pre-warm caches in background so first page load is fast
@@ -9008,107 +9029,205 @@ async def _get_sgov_alert() -> dict | None:
         return None
 
 
-def _build_options_report_html(positions: list[dict], sgov_alert: dict | None = None) -> str:
-    """Build the HTML options report from a list of position dicts."""
+def _build_daily_report_html(
+    positions:       list[dict],
+    sgov_alert:      dict | None = None,
+    equity_positions: list[dict] | None = None,
+    exdiv_map:       dict | None = None,   # ticker → ex_date string
+    config:          dict | None = None,
+) -> str:
+    """Build the HTML daily report. Sections are controlled by config flags."""
     from datetime import date as _date
-    today = _date.today()
+    cfg            = config or {}
+    include_opts   = cfg.get("include_options",  True)
+    include_stocks = cfg.get("include_stocks",   False)
+    include_earn   = cfg.get("include_earnings", False)
+    include_exdiv  = cfg.get("include_exdiv",    False)
+    exdiv          = exdiv_map or {}
+
+    today    = _date.today()
     date_str = today.isoformat()
-    report_title = f"OpenTrader Daily Option Report {date_str}"
-    # Sort by broker account name then expiration date
-    sorted_pos = sorted(positions, key=lambda p: (
-        p.get("account_name") or p.get("account_label") or "",
-        p.get("expiration_date") or "",
-    ))
+    report_title = f"OpenTrader Daily Report {date_str}"
 
     def fmt(v):
         return f"${float(v):.2f}" if v is not None else "—"
 
-    rows_html = ""
-    for p in sorted_pos:
-        dte = p.get("days_to_exp")
-        dte_str = f"{dte}d" if dte is not None else "—"
-        dte_style = "color:#c0392b;font-weight:bold" if dte is not None and dte <= 7 else ""
-        earn_date = p.get("next_earnings_date") or "—"
-        price = p.get("underlying_price")
-        price_str = f"${float(price):.2f}" if price else "—"
-        sig = p.get("signal") or {}
-        direction  = (sig.get("direction") or "").lower()
-        confidence = sig.get("confidence")
-        conflict   = sig.get("conflict", False)
-        if direction == "long":
-            conf_pct = f" {round(confidence * 100)}%" if confidence else ""
-            sig_html = f'<span style="color:#1a7a3a;font-weight:bold">▲ BUY{conf_pct}</span>'
-        elif direction == "short":
-            conf_pct = f" {round(confidence * 100)}%" if confidence else ""
-            sig_html = f'<span style="color:#c0392b;font-weight:bold">▼ SELL{conf_pct}</span>'
-        else:
-            sig_html = "—"
-        if conflict:
-            pred_dir = sig.get("predictor_direction", "")
-            pred_src = sig.get("predictor_source", "predictor")
-            pred_label = "BUY" if pred_dir == "long" else "SELL" if pred_dir == "short" else pred_dir.upper()
-            sig_html += (
-                f' <span style="display:inline-block;background:#fff3cd;color:#856404;'
-                f'font-size:10px;padding:1px 5px;border-radius:3px;font-weight:600;'
-                f'border:1px solid #ffc107" title="{pred_src} signal: {pred_label} — OVTLYR overrides">'
-                f'&#9888; {pred_src}: {pred_label}</span>'
-            )
-        rows_html += f"""<tr>
-          <td>{p.get("underlying","")}</td>
-          <td>{p.get("account_name", p.get("account_label",""))}</td>
-          <td>{fmt(p.get("strike"))}</td>
-          <td>{price_str}</td>
-          <td>{p.get("expiration_date","—")}</td>
-          <td style="{dte_style}">{dte_str}</td>
-          <td>{sig_html}</td>
-          <td>{earn_date}</td>
-          <td style="color:#c0392b;font-weight:bold">{fmt(p.get("level_emergency"))}</td>
-          <td style="color:#b8860b;font-weight:bold">{fmt(p.get("level_exit_alert"))}</td>
-          <td>{fmt(p.get("level_roll_1"))}</td>
-          <td>{fmt(p.get("level_roll_2"))}</td>
-          <td>{fmt(p.get("level_roll_3"))}</td>
-        </tr>"""
+    def _exdiv_cell(ticker):
+        d = exdiv.get(ticker)
+        if not d:
+            return "—"
+        try:
+            from datetime import date as _d2
+            days = (_d2.fromisoformat(str(d)) - today).days
+            style = "color:#e67e22;font-weight:bold" if 0 <= days <= 5 else ""
+            label = f"{d} ({days}d)" if days >= 0 else str(d)
+            return f'<span style="{style}">{label}</span>'
+        except Exception:
+            return str(d)
 
-    conflicts = [p["underlying"] for p in sorted_pos if (p.get("signal") or {}).get("conflict")]
-    conflict_banner = ""
-    if conflicts:
-        tickers_str = ", ".join(conflicts)
-        conflict_banner = (
-            f'<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;'
-            f'padding:10px 14px;margin-bottom:16px;color:#856404;font-size:12px">'
-            f'<strong>&#9888; Signal Conflict</strong> &mdash; OVTLYR overrides predictor for: '
-            f'<strong>{tickers_str}</strong>. Signals verified against OVTLYR before send.</div>'
-        )
+    # ── Options section ──────────────────────────────────────────────────────
+    opts_section = ""
+    if include_opts and positions:
+        sorted_pos = sorted(positions, key=lambda p: (
+            p.get("account_name") or p.get("account_label") or "",
+            p.get("expiration_date") or "",
+        ))
+        rows_html = ""
+        for p in sorted_pos:
+            dte = p.get("days_to_exp")
+            dte_str   = f"{dte}d" if dte is not None else "—"
+            dte_style = "color:#c0392b;font-weight:bold" if dte is not None and dte <= 7 else ""
+            earn_date = p.get("next_earnings_date") or "—"
+            price     = p.get("underlying_price")
+            price_str = f"${float(price):.2f}" if price else "—"
+            sym       = p.get("underlying", "")
+            sig = p.get("signal") or {}
+            direction  = (sig.get("direction") or "").lower()
+            confidence = sig.get("confidence")
+            conflict   = sig.get("conflict", False)
+            if direction == "long":
+                cp = f" {round(confidence * 100)}%" if confidence else ""
+                sig_html = f'<span style="color:#1a7a3a;font-weight:bold">▲ BUY{cp}</span>'
+            elif direction == "short":
+                cp = f" {round(confidence * 100)}%" if confidence else ""
+                sig_html = f'<span style="color:#c0392b;font-weight:bold">▼ SELL{cp}</span>'
+            else:
+                sig_html = "—"
+            if conflict:
+                pred_dir = sig.get("predictor_direction", "")
+                pred_src = sig.get("predictor_source", "predictor")
+                pred_label = "BUY" if pred_dir == "long" else "SELL" if pred_dir == "short" else pred_dir.upper()
+                sig_html += (
+                    f' <span style="display:inline-block;background:#fff3cd;color:#856404;'
+                    f'font-size:10px;padding:1px 5px;border-radius:3px;font-weight:600;'
+                    f'border:1px solid #ffc107" title="{pred_src}: {pred_label} — OVTLYR overrides">'
+                    f'&#9888; {pred_src}: {pred_label}</span>'
+                )
+            earn_col  = f"<td>{earn_date}</td>"  if include_earn  else ""
+            exdiv_col = f"<td>{_exdiv_cell(sym)}</td>" if include_exdiv else ""
+            rows_html += f"""<tr>
+              <td>{sym}</td>
+              <td>{p.get("account_name", p.get("account_label",""))}</td>
+              <td>{fmt(p.get("strike"))}</td>
+              <td>{price_str}</td>
+              <td>{p.get("expiration_date","—")}</td>
+              <td style="{dte_style}">{dte_str}</td>
+              <td>{sig_html}</td>
+              {earn_col}{exdiv_col}
+              <td style="color:#c0392b;font-weight:bold">{fmt(p.get("level_emergency"))}</td>
+              <td style="color:#b8860b;font-weight:bold">{fmt(p.get("level_exit_alert"))}</td>
+              <td>{fmt(p.get("level_roll_1"))}</td>
+              <td>{fmt(p.get("level_roll_2"))}</td>
+              <td>{fmt(p.get("level_roll_3"))}</td>
+            </tr>"""
 
-    sgov_banner = ""
-    if sgov_alert:
-        accts_str = ", ".join(sgov_alert.get("accounts", []))
-        ex_date_str = sgov_alert.get("ex_date", "")
-        if sgov_alert.get("action") == "sell":
-            sgov_banner = (
-                f'<div style="background:#fff3cd;border:2px solid #e67e22;border-radius:6px;'
-                f'padding:12px 16px;margin-bottom:14px;color:#7d4e00;font-size:13px">'
-                f'<strong>&#9888; SGOV ACTION &mdash; SELL TODAY</strong><br>'
-                f'Ex-dividend date is tomorrow (<strong>{ex_date_str}</strong>). '
-                f'Sell SGOV in IRA accounts (<strong>{accts_str}</strong>) today to exit before '
-                f'ex-div. Buy back on ex-dividend date ({ex_date_str}).</div>'
+        conflicts = [p["underlying"] for p in sorted_pos if (p.get("signal") or {}).get("conflict")]
+        conflict_banner = ""
+        if conflicts:
+            tickers_str = ", ".join(conflicts)
+            conflict_banner = (
+                f'<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;'
+                f'padding:10px 14px;margin-bottom:16px;color:#856404;font-size:12px">'
+                f'<strong>&#9888; Signal Conflict</strong> &mdash; OVTLYR overrides predictor for: '
+                f'<strong>{tickers_str}</strong>.</div>'
             )
-        elif sgov_alert.get("action") == "buy":
-            sgov_banner = (
-                f'<div style="background:#d4edda;border:2px solid #28a745;border-radius:6px;'
-                f'padding:12px 16px;margin-bottom:14px;color:#155724;font-size:13px">'
-                f'<strong>&#10003; SGOV ACTION &mdash; BUY TODAY</strong><br>'
-                f'Today is the ex-dividend date (<strong>{ex_date_str}</strong>). '
-                f'Buy SGOV in IRA accounts (<strong>{accts_str}</strong>) today.</div>'
-            )
+
+        sgov_banner = ""
+        if sgov_alert:
+            accts_str   = ", ".join(sgov_alert.get("accounts", []))
+            ex_date_str = sgov_alert.get("ex_date", "")
+            if sgov_alert.get("action") == "sell":
+                sgov_banner = (
+                    f'<div style="background:#fff3cd;border:2px solid #e67e22;border-radius:6px;'
+                    f'padding:12px 16px;margin-bottom:14px;color:#7d4e00;font-size:13px">'
+                    f'<strong>&#9888; SGOV ACTION &mdash; SELL TODAY</strong><br>'
+                    f'Ex-dividend date is tomorrow (<strong>{ex_date_str}</strong>). '
+                    f'Sell SGOV in IRA accounts (<strong>{accts_str}</strong>) today.</div>'
+                )
+            elif sgov_alert.get("action") == "buy":
+                sgov_banner = (
+                    f'<div style="background:#d4edda;border:2px solid #28a745;border-radius:6px;'
+                    f'padding:12px 16px;margin-bottom:14px;color:#155724;font-size:13px">'
+                    f'<strong>&#10003; SGOV ACTION &mdash; BUY TODAY</strong><br>'
+                    f'Today is the ex-dividend date (<strong>{ex_date_str}</strong>). '
+                    f'Buy SGOV in IRA accounts (<strong>{accts_str}</strong>) today.</div>'
+                )
+
+        earn_th  = "<th>Earnings</th>"  if include_earn  else ""
+        exdiv_th = "<th>Ex-Div</th>"   if include_exdiv else ""
+        opts_section = f"""
+{sgov_banner}{conflict_banner}
+<h3 style="margin:0 0 8px;color:#222;font-size:14px">Options Positions &nbsp;<span style="font-weight:normal;color:#777;font-size:11px">({len(sorted_pos)})</span></h3>
+<table>
+  <thead><tr>
+    <th>Ticker</th><th>Account</th><th>Strike</th><th>Price</th>
+    <th>Expiration</th><th>DTE</th><th>Signal</th>
+    {earn_th}{exdiv_th}
+    <th class="emg">Emergency</th><th class="sl">Stop Loss</th>
+    <th class="r1">Roll 1</th><th class="r2">Roll 2</th><th class="r3">Roll 3</th>
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table>"""
+
+    # ── Equity section ───────────────────────────────────────────────────────
+    equity_section = ""
+    if include_stocks and equity_positions:
+        eq_sorted = sorted(equity_positions, key=lambda p: (
+            p.get("account_label") or "",
+            p.get("symbol") or "",
+        ))
+        eq_rows = ""
+        for p in eq_sorted:
+            sym    = (p.get("symbol") or "").upper()
+            acct   = p.get("display_name") or p.get("account_label") or ""
+            qty    = p.get("qty") or p.get("quantity") or p.get("shares") or 0
+            cost   = p.get("cost_basis") or p.get("average_cost") or p.get("avg_cost") or 0
+            price  = p.get("market_price") or p.get("last_price") or p.get("current_price") or 0
+            pnl    = p.get("unrealized_pnl") or p.get("unrealized_pl") or p.get("gain_loss") or 0
+            try:
+                pnl_f   = float(pnl)
+                pnl_pct = (pnl_f / (float(cost) * float(qty))) * 100 if cost and qty else 0
+                pnl_str = f'<span style="color:{"#1a7a3a" if pnl_f >= 0 else "#c0392b"};font-weight:bold">${pnl_f:,.2f} ({pnl_pct:+.1f}%)</span>'
+            except Exception:
+                pnl_str = "—"
+            earn_col  = f"<td>{p.get('next_earnings_date') or '—'}</td>" if include_earn  else ""
+            exdiv_col = f"<td>{_exdiv_cell(sym)}</td>"                    if include_exdiv else ""
+            eq_rows += f"""<tr>
+              <td><strong>{sym}</strong></td>
+              <td>{acct}</td>
+              <td>{qty}</td>
+              <td>{fmt(cost)}</td>
+              <td>{fmt(price)}</td>
+              <td>{pnl_str}</td>
+              {earn_col}{exdiv_col}
+            </tr>"""
+
+        earn_th  = "<th>Earnings</th>" if include_earn  else ""
+        exdiv_th = "<th>Ex-Div</th>"   if include_exdiv else ""
+        equity_section = f"""
+<h3 style="margin:24px 0 8px;color:#222;font-size:14px">Stock Positions &nbsp;<span style="font-weight:normal;color:#777;font-size:11px">({len(eq_sorted)})</span></h3>
+<table>
+  <thead><tr>
+    <th>Ticker</th><th>Account</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Unrealized P&amp;L</th>
+    {earn_th}{exdiv_th}
+  </tr></thead>
+  <tbody>{eq_rows}</tbody>
+</table>"""
+
+    n_opts = len(positions) if include_opts else 0
+    n_eq   = len(equity_positions) if (include_stocks and equity_positions) else 0
+    meta_parts = []
+    if n_opts: meta_parts.append(f"{n_opts} option position{'s' if n_opts!=1 else ''}")
+    if n_eq:   meta_parts.append(f"{n_eq} stock position{'s' if n_eq!=1 else ''}")
+    meta_str = " &middot; ".join(meta_parts) or "No positions"
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>{report_title}</title>
 <style>
   body{{font-family:Arial,sans-serif;font-size:13px;color:#222;margin:24px}}
-  h2{{margin:0 0 4px;color:#111}}
+  h2{{margin:0 0 4px;color:#111}}h3{{color:#111}}
   .meta{{color:#777;font-size:11px;margin-bottom:18px}}
-  table{{border-collapse:collapse;width:100%}}
+  table{{border-collapse:collapse;width:100%;margin-bottom:8px}}
   th{{background:#f2f2f2;border:1px solid #ccc;padding:8px 10px;text-align:left;font-size:11px;
       text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}}
   td{{border:1px solid #ddd;padding:7px 10px;white-space:nowrap}}
@@ -9118,19 +9237,15 @@ def _build_options_report_html(positions: list[dict], sgov_alert: dict | None = 
 </style></head><body>
 <h2>{report_title}</h2>
 <div class="meta">Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")} ET &nbsp;&middot;&nbsp;
-  {len(sorted_pos)} position{"s" if len(sorted_pos) != 1 else ""} &nbsp;&middot;&nbsp;
-  Signals: OVTLYR (authoritative)</div>
-{sgov_banner}{conflict_banner}
-<table>
-  <thead><tr>
-    <th>Ticker</th><th>Account</th><th>Strike</th><th>Current Price</th>
-    <th>Expiration</th><th>DTE</th><th>Signal</th><th>Earnings Date</th>
-    <th class="emg">Emergency Exit</th><th class="sl">Stop Loss</th>
-    <th class="r1">Roll 1</th><th class="r2">Roll 2</th><th class="r3">Roll 3</th>
-  </tr></thead>
-  <tbody>{rows_html}</tbody>
-</table>
+  {meta_str} &nbsp;&middot;&nbsp; Signals: OVTLYR</div>
+{opts_section}
+{equity_section}
 </body></html>"""
+
+
+def _build_options_report_html(positions: list[dict], sgov_alert: dict | None = None) -> str:
+    """Backward-compat wrapper around _build_daily_report_html."""
+    return _build_daily_report_html(positions, sgov_alert=sgov_alert)
 
 
 @app.post("/api/options/report/email/auto")
@@ -9204,23 +9319,64 @@ async def email_options_report_auto(token: str = ""):
         pass
 
     sgov_alert = await _get_sgov_alert()
-    html = _build_options_report_html(positions, sgov_alert=sgov_alert)
+    cfg = await _get_daily_report_config()
+
+    # Optionally fetch equity positions
+    equity_positions: list[dict] | None = None
+    if cfg.get("include_stocks"):
+        try:
+            broker_data = await get_broker_positions()
+            equity_positions = []
+            for acct in broker_data.get("accounts", []):
+                for p in acct.get("positions", []):
+                    if _is_equity_position(p) and float(p.get("qty") or p.get("quantity") or p.get("shares") or 0) > 0:
+                        p.setdefault("account_label", acct.get("display_name") or acct.get("label") or "")
+                        equity_positions.append(p)
+        except Exception:
+            pass
+
+    # Optionally fetch ex-div dates for all relevant tickers
+    exdiv_map: dict | None = None
+    if cfg.get("include_exdiv"):
+        try:
+            tickers = list({p.get("underlying", "") for p in positions} |
+                           {(p.get("symbol") or "").upper() for p in (equity_positions or [])})
+            tickers = [t for t in tickers if t]
+            if tickers:
+                pool_d = await _get_db_pool()
+                rows_d = await pool_d.fetch(
+                    "SELECT ticker, ex_date FROM dividend_meta WHERE ticker = ANY($1)", tickers
+                )
+                exdiv_map = {r["ticker"]: str(r["ex_date"]) for r in rows_d if r["ex_date"]}
+        except Exception:
+            pass
+
+    html = _build_daily_report_html(
+        positions, sgov_alert=sgov_alert,
+        equity_positions=equity_positions, exdiv_map=exdiv_map, config=cfg,
+    )
+    channels   = list(cfg.get("channels") or ["agentmail"])
+    recipient  = cfg.get("recipient") or ""
     body = OptionsReportBody(html=html, count=len(positions))
     result = await email_options_report(body, token=token)
     # Log to report_log
     try:
-        env = _read_env_file()
-        def _ev(k): return env.get(k) or os.getenv(k, "")
-        recipient = _ev("REPORT_RECIPIENT_EMAIL") or ""
-        date_str  = datetime.now().strftime("%Y-%m-%d")
-        subject   = f"OpenTrader Daily Option Report {date_str} ({len(positions)} positions)"
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        n_opts   = len(positions) if cfg.get("include_options", True) else 0
+        n_eq     = len(equity_positions) if equity_positions else 0
+        parts    = []
+        if n_opts: parts.append(f"{n_opts} option")
+        if n_eq:   parts.append(f"{n_eq} stock")
+        pos_summary = ", ".join(parts) or "no positions"
+        subject  = f"OpenTrader Daily Report {date_str} ({pos_summary})"
         pool = await _get_db_pool()
         await pool.execute(
             """INSERT INTO report_log
                (report_type, status, subject, channels, recipient, body_html, meta)
                VALUES ('options_1pm', 'sent', $1, $2, $3, $4, $5)""",
-            subject, ["agentmail"], recipient, html,
-            json.dumps({"position_count": len(positions), "sgov_alert": bool(sgov_alert)}),
+            subject, channels, recipient, html,
+            json.dumps({"position_count": len(positions), "sgov_alert": bool(sgov_alert),
+                        "equity_count": n_eq}),
         )
     except Exception:
         pass
@@ -9352,16 +9508,51 @@ async def get_report_entry(entry_id: str, legacy: bool = False, token: str = "")
 
 @app.get("/api/reports/preview/options")
 async def preview_options_report(token: str = ""):
-    """Build the options report HTML without sending it."""
+    """Build the daily report HTML without sending it."""
     check_token(token)
-    positions = await get_option_positions(status="active")
-    if not positions:
+    positions  = await get_option_positions(status="active")
+    sgov_alert = await _get_sgov_alert()
+    cfg        = await _get_daily_report_config()
+
+    equity_positions: list[dict] | None = None
+    if cfg.get("include_stocks"):
+        try:
+            broker_data = await get_broker_positions()
+            equity_positions = []
+            for acct in broker_data.get("accounts", []):
+                for p in acct.get("positions", []):
+                    if _is_equity_position(p) and float(p.get("qty") or p.get("quantity") or p.get("shares") or 0) > 0:
+                        p.setdefault("account_label", acct.get("display_name") or acct.get("label") or "")
+                        equity_positions.append(p)
+        except Exception:
+            pass
+
+    exdiv_map: dict | None = None
+    if cfg.get("include_exdiv"):
+        try:
+            tickers = list({p.get("underlying", "") for p in positions} |
+                           {(p.get("symbol") or "").upper() for p in (equity_positions or [])})
+            tickers = [t for t in tickers if t]
+            if tickers:
+                pool_d = await _get_db_pool()
+                rows_d = await pool_d.fetch(
+                    "SELECT ticker, ex_date FROM dividend_meta WHERE ticker = ANY($1)", tickers
+                )
+                exdiv_map = {r["ticker"]: str(r["ex_date"]) for r in rows_d if r["ex_date"]}
+        except Exception:
+            pass
+
+    if not positions and not equity_positions:
         return {"html": None, "position_count": 0,
                 "generated_at": datetime.now().isoformat(),
                 "message": "No active positions"}
-    sgov_alert = await _get_sgov_alert()
-    html = _build_options_report_html(positions, sgov_alert=sgov_alert)
+
+    html = _build_daily_report_html(
+        positions, sgov_alert=sgov_alert,
+        equity_positions=equity_positions, exdiv_map=exdiv_map, config=cfg,
+    )
     return {"html": html, "position_count": len(positions),
+            "equity_count": len(equity_positions) if equity_positions else 0,
             "generated_at": datetime.now().isoformat(), "sgov_alert": bool(sgov_alert)}
 
 
@@ -9478,55 +9669,142 @@ async def trigger_eod_report(token: str = ""):
             "message": "EOD report triggered — check Agents logs for delivery status"}
 
 
+async def _get_daily_report_config() -> dict:
+    """Read daily report config from DB, falling back to Redis then defaults."""
+    env = _read_env_file()
+    defaults: dict = {
+        "enabled":          True,
+        "channels":         ["agentmail"],
+        "recipient":        env.get("REPORT_RECIPIENT_EMAIL") or os.getenv("REPORT_RECIPIENT_EMAIL", ""),
+        "schedule_days":    "mon-fri",
+        "schedule_hour":    13,
+        "schedule_minute":  0,
+        "include_stocks":   False,
+        "include_options":  True,
+        "include_earnings": False,
+        "include_exdiv":    False,
+    }
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            row  = await pool.fetchrow(
+                "SELECT * FROM report_config WHERE report_type = 'daily_report'"
+            )
+            if row:
+                d = dict(row)
+                d.pop("report_type", None)
+                d.pop("updated_at", None)
+                if d.get("channels") is not None:
+                    d["channels"] = list(d["channels"])
+                return {**defaults, **d}
+        except Exception:
+            pass
+    # Fall back to legacy Redis key
+    try:
+        redis = await get_redis()
+        raw   = await redis.get("report_config:options_1pm")
+        if raw:
+            return {**defaults, **json.loads(raw)}
+    except Exception:
+        pass
+    return defaults
+
+
 @app.get("/api/reports/config")
 async def get_reports_config(token: str = ""):
     """Return per-report enabled state and channel config."""
     check_token(token)
-    redis = await get_redis()
-    env   = _read_env_file()
+    daily_cfg = await _get_daily_report_config()
+
+    env = _read_env_file()
     def ev(k): return env.get(k) or os.getenv(k, "")
-
-    raw_opts = await redis.get("report_config:options_1pm")
-    raw_eod  = await redis.get("report_config:eod")
-
+    redis = await get_redis()
+    raw_eod = await redis.get("report_config:eod")
+    eod_defaults = {
+        "enabled":  True,
+        "channels": ["agentmail"]
+                    + (["telegram"] if ev("TELEGRAM_BOT_TOKEN") else [])
+                    + (["discord"]  if ev("DISCORD_WEBHOOK_URL") else []),
+    }
     def _parse(raw, defaults):
         try:
             return {**defaults, **json.loads(raw)} if raw else defaults
         except Exception:
             return defaults
 
-    opt_defaults = {
-        "enabled":   True,
-        "channels":  ["agentmail"],
-        "recipient": ev("REPORT_RECIPIENT_EMAIL") or "",
-        "schedule":  "Mon–Fri 1:00 PM ET",
-    }
-    eod_defaults = {
-        "enabled":  True,
-        "channels": ["agentmail"]
-                    + (["telegram"] if ev("TELEGRAM_BOT_TOKEN") else [])
-                    + (["discord"]  if ev("DISCORD_WEBHOOK_URL") else []),
-        "schedule": "Mon–Fri 4:05 PM ET",
-    }
     return {
-        "options_1pm": _parse(raw_opts, opt_defaults),
-        "eod":         _parse(raw_eod,  eod_defaults),
+        "daily_report": daily_cfg,
+        "options_1pm":  daily_cfg,   # backward-compat alias
+        "eod":          _parse(raw_eod, eod_defaults),
     }
 
 
 @app.post("/api/reports/config")
 async def save_reports_config(body: dict, token: str = ""):
-    """Save per-report config to Redis."""
+    """Persist per-report config to DB + sync Redis scheduler key."""
     check_token(token)
     redis = await get_redis()
-    if "options_1pm" in body:
-        cfg = body["options_1pm"]
-        await redis.set("report_config:options_1pm", json.dumps(cfg))
-        # Keep scheduler job toggle in sync
-        job_rec = {"id": "options_report", "enabled": cfg.get("enabled", True)}
-        await redis.set("scheduler:job:options_report", json.dumps(job_rec))
+
+    # Accept both 'daily_report' and legacy 'options_1pm' keys
+    daily_cfg = body.get("daily_report") or body.get("options_1pm")
+    if daily_cfg:
+        if DB_URL:
+            try:
+                pool = await _get_db_pool()
+                await pool.execute(
+                    """INSERT INTO report_config
+                         (report_type, enabled, channels, recipient,
+                          schedule_days, schedule_hour, schedule_minute,
+                          include_stocks, include_options, include_earnings, include_exdiv,
+                          updated_at)
+                       VALUES ('daily_report', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+                       ON CONFLICT (report_type) DO UPDATE SET
+                         enabled=$1, channels=$2, recipient=$3,
+                         schedule_days=$4, schedule_hour=$5, schedule_minute=$6,
+                         include_stocks=$7, include_options=$8, include_earnings=$9,
+                         include_exdiv=$10, updated_at=NOW()""",
+                    bool(daily_cfg.get("enabled", True)),
+                    list(daily_cfg.get("channels", ["agentmail"])),
+                    daily_cfg.get("recipient", ""),
+                    daily_cfg.get("schedule_days", "mon-fri"),
+                    int(daily_cfg.get("schedule_hour", 13)),
+                    int(daily_cfg.get("schedule_minute", 0)),
+                    bool(daily_cfg.get("include_stocks", False)),
+                    bool(daily_cfg.get("include_options", True)),
+                    bool(daily_cfg.get("include_earnings", False)),
+                    bool(daily_cfg.get("include_exdiv", False)),
+                )
+            except Exception:
+                pass
+        # Sync Redis so scheduler picks up schedule/enabled changes
+        sched_rec = {
+            "id":          "options_report",
+            "enabled":     bool(daily_cfg.get("enabled", True)),
+            "cron_hour":   int(daily_cfg.get("schedule_hour", 13)),
+            "cron_minute": int(daily_cfg.get("schedule_minute", 0)),
+            "cron_days":   daily_cfg.get("schedule_days", "mon-fri"),
+        }
+        await redis.set("scheduler:job:options_report", json.dumps(sched_rec))
+        # Keep legacy key for older code paths
+        await redis.set("report_config:options_1pm", json.dumps(daily_cfg))
+
     if "eod" in body:
-        await redis.set("report_config:eod", json.dumps(body["eod"]))
+        cfg_eod = body["eod"]
+        if DB_URL:
+            try:
+                pool = await _get_db_pool()
+                await pool.execute(
+                    """INSERT INTO report_config (report_type, enabled, channels, updated_at)
+                       VALUES ('eod', $1, $2, NOW())
+                       ON CONFLICT (report_type) DO UPDATE SET
+                         enabled=$1, channels=$2, updated_at=NOW()""",
+                    bool(cfg_eod.get("enabled", True)),
+                    list(cfg_eod.get("channels", ["agentmail"])),
+                )
+            except Exception:
+                pass
+        await redis.set("report_config:eod", json.dumps(cfg_eod))
+
     return {"ok": True}
 
 

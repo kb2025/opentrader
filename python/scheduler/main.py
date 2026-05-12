@@ -15,7 +15,6 @@ from apscheduler.triggers.interval   import IntervalTrigger
 from apscheduler.triggers.combining  import OrTrigger
 
 from shared.base_agent   import BaseAgent
-from shared.redis_client import get_redis
 from .jobs import (
     job_scrape_ovtlyr,
     job_scrape_position_intel,
@@ -308,11 +307,22 @@ class Scheduler(BaseAgent):
                             intraday_iv    = ii.group(1)
                             intraday_end   = ui.group(1)
                             intraday_days  = di.group(1) if di else "mon-fri"
+                cron_hour   = cfg.get("cron_hour")
+                cron_minute = cfg.get("cron_minute")
+                cron_days   = cfg.get("cron_days", "mon-fri")
                 if intraday_start and intraday_end and intraday_iv:
                     sh, sm = map(int, intraday_start.split(":"))
                     eh, em = map(int, intraday_end.split(":"))
                     trigger = _build_intraday_trigger(sh, sm, eh, em, int(intraday_iv), intraday_days)
                     self.apscheduler.reschedule_job(job_id, trigger=trigger)
+                elif cron_hour is not None and cron_minute is not None:
+                    self.apscheduler.reschedule_job(
+                        job_id,
+                        trigger=CronTrigger(
+                            hour=int(cron_hour), minute=int(cron_minute),
+                            day_of_week=cron_days, timezone=TZ,
+                        ),
+                    )
                 elif minutes is not None:
                     self.apscheduler.reschedule_job(
                         job_id, trigger=IntervalTrigger(minutes=minutes, timezone=TZ)
@@ -325,7 +335,8 @@ class Scheduler(BaseAgent):
                 if job and name:
                     job.modify(name=name)
                 log.info("scheduler.override_applied", job_id=job_id,
-                         minutes=minutes, seconds=seconds, intraday=bool(intraday_start))
+                         minutes=minutes, seconds=seconds, intraday=bool(intraday_start),
+                         cron=f"{cron_hour}:{cron_minute}" if cron_hour is not None else None)
             except Exception as e:
                 log.warning("scheduler.override_failed", job_id=job_id, error=str(e))
 
