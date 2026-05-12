@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.25] - 2026-05-12
+
+### Added
+- Risk warning blockquote at the top of `README.md` linking to `RISK_DISCLOSURE.md` and `TERMS.md`
+
 ## [3.7.24] - 2026-05-12
 
 ### Added

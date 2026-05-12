@@ -1,3 +1,7 @@
+> ⚠️ **OpenTrader can lose real money.** Read the [Risk Disclosure](./RISK_DISCLOSURE.md)
+> and [Terms of Use](./TERMS.md) before connecting to a live account. By using this
+> software, you accept full responsibility for all trades it executes.
+
 # OpenTrader
 
 An AI-driven algorithmic trading platform built on a microservices architecture using Podman, Redis, and TimescaleDB. Supports multiple brokers (Tradier, Alpaca, Webull) with a real-time web dashboard, LLM-powered signals, automated trade execution, and real backtesting.
