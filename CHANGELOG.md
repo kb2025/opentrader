@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.24] - 2026-05-12
+
+### Added
+- `RISK_DISCLOSURE.md` — 10-section risk disclosure document covering capital loss, no-advice disclaimer, user responsibility, algorithmic failure modes, backtest limitations, third-party broker risk, API key security, regulatory risk, and a pre-live checklist
+
 ## [3.7.23] - 2026-05-12
 
 ### Added
