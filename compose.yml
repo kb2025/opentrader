@@ -108,7 +108,7 @@ services:
       - ./logs/python:/app/logs
       - ./config:/app/config:ro
       - ./secrets:/app/secrets:ro
-      - /run/user/1003/podman/podman.sock:/var/run/podman.sock:ro
+      - ${PODMAN_SOCK:-/run/user/1003/podman/podman.sock}:/var/run/podman.sock:ro
     networks: [trading-net]
     depends_on:
       redis:
@@ -570,6 +570,7 @@ services:
   # ── Command Center WebUI ────────────────────────────────────────────────────
 
   caddy:
+    profiles: [caddy]  # vestigial — Cloudflare Tunnel is the only ingress; start manually if needed
     image: docker.io/caddy:2-alpine
     container_name: ot-caddy
     restart: unless-stopped
@@ -615,7 +616,7 @@ services:
       CADDY_DOMAIN: ${CADDY_DOMAIN:-}
     env_file: [.env]
     volumes:
-      - /run/user/1003/podman/podman.sock:/var/run/podman.sock:ro
+      - ${PODMAN_SOCK:-/run/user/1003/podman/podman.sock}:/var/run/podman.sock:ro
       - /usr/bin/podman:/usr/bin/podman:ro
       - ./.env:/app/.env                       # writable — broker configure writes here
       - ./config:/app/config                   # writable — scheduler_jobs.json persisted here

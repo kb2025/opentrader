@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.28] - 2026-05-13
+
+### Fixed
+- Fresh-install startup errors: Caddy service moved to `profiles: [caddy]` so it no longer starts by default and no longer blocks `webui` dependency resolution on first bring-up
+- Hardcoded `/run/user/1003/podman/podman.sock` replaced with `${PODMAN_SOCK:-/run/user/1003/podman/podman.sock}` in `orchestrator` and `webui` services; set `PODMAN_SOCK` in `.env` if your UID differs
+- Added `PODMAN_SOCK` entry to `.env.sample` with instructions
+
 ## [3.7.27] - 2026-05-12
 
 ### Changed
