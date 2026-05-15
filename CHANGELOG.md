@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.33] - 2026-05-15
+
+### Fixed
+- `/api/market/bars` now falls through two extra sources when Polygon returns no data: (1) Polygon index format `I:{ticker}` (fixes VIX), (2) Yahoo Finance chart API with `{ticker}` then `^{ticker}` (fixes MMFI, MMTH, HIGN, LOWN and other breadth/volatility indices)
+
 ## [3.7.32] - 2026-05-15
 
 ### Fixed

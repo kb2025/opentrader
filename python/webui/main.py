@@ -3059,10 +3059,13 @@ async def get_sector_leaders(refresh: bool = False):
 async def get_market_bars(ticker: str = "SPY", days: int = 90):
     """
     Daily OHLCV bars for a ticker.
-    Primary: Polygon.io REST API (MASSIVE_API_KEY).
+    Primary:   Polygon.io REST API (tries plain ticker, then I:{ticker} index format).
+    Fallback:  Yahoo Finance chart API (tries plain ticker, then ^{ticker}) for breadth
+               indicators and volatility indices not covered by Polygon.
     Returns LightweightCharts-compatible format: time as Unix seconds.
     """
     import aiohttp as _aiohttp
+    import calendar as _cal
     from datetime import date as _date, timedelta
 
     sym       = ticker.upper()
@@ -3070,34 +3073,80 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
     from_date = (_date.today() - timedelta(days=days)).isoformat()
     lc_bars: list = []
 
-    # Primary: Polygon.io REST API
+    # ── Primary: Polygon.io (plain ticker, then index format) ────────────────
     api_key = os.getenv("MASSIVE_API_KEY", "")
     if api_key:
-        url = (
-            f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
-            f"/{from_date}/{to_date}?adjusted=true&sort=asc&limit=750&apiKey={api_key}"
-        )
-        try:
-            async with _aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        for b in data.get("results", []):
-                            ts_ms = b.get("t", 0)
-                            if not ts_ms:
-                                continue
-                            # Polygon timestamps are ms; convert to seconds for LightweightCharts
-                            ts = ts_ms // 1000
-                            lc_bars.append({
-                                "time":   ts,
-                                "open":   float(b.get("o") or 0),
-                                "high":   float(b.get("h") or 0),
-                                "low":    float(b.get("l") or 0),
-                                "close":  float(b.get("c") or 0),
-                                "volume": int(b.get("v")   or 0),
-                            })
-        except Exception as e:
-            log.warning("webui.market_bars.polygon_error", ticker=sym, error=str(e))
+        for poly_sym in [sym, f"I:{sym}"]:
+            url = (
+                f"https://api.polygon.io/v2/aggs/ticker/{poly_sym}/range/1/day"
+                f"/{from_date}/{to_date}?adjusted=true&sort=asc&limit=750&apiKey={api_key}"
+            )
+            try:
+                async with _aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            for b in data.get("results", []):
+                                ts_ms = b.get("t", 0)
+                                if not ts_ms:
+                                    continue
+                                ts = ts_ms // 1000
+                                lc_bars.append({
+                                    "time":   ts,
+                                    "open":   float(b.get("o") or 0),
+                                    "high":   float(b.get("h") or 0),
+                                    "low":    float(b.get("l") or 0),
+                                    "close":  float(b.get("c") or 0),
+                                    "volume": int(b.get("v")   or 0),
+                                })
+                            if lc_bars:
+                                break
+            except Exception as e:
+                log.warning("webui.market_bars.polygon_error", ticker=poly_sym, error=str(e))
+
+    # ── Fallback: Yahoo Finance chart API (breadth/vol indices) ──────────────
+    if not lc_bars:
+        period1 = int(_cal.timegm((_date.today() - timedelta(days=days)).timetuple()))
+        period2 = int(_cal.timegm(_date.today().timetuple()))
+        yf_candidates = [sym] if sym.startswith("^") else [sym, f"^{sym}"]
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; OpenTrader/1.0)"}
+        for yf_sym in yf_candidates:
+            yf_url = (
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}"
+                f"?interval=1d&period1={period1}&period2={period2}"
+            )
+            try:
+                async with _aiohttp.ClientSession() as session:
+                    async with session.get(yf_url, headers=headers,
+                                           timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status == 200:
+                            data  = await resp.json()
+                            result = (data.get("chart", {}).get("result") or [None])[0]
+                            if result:
+                                tss    = result.get("timestamp", [])
+                                q      = (result.get("indicators", {}).get("quote") or [{}])[0]
+                                opens  = q.get("open",   [])
+                                highs  = q.get("high",   [])
+                                lows   = q.get("low",    [])
+                                closes = q.get("close",  [])
+                                vols   = q.get("volume", [])
+                                for i, ts in enumerate(tss):
+                                    o = opens[i]  if i < len(opens)  else None
+                                    h = highs[i]  if i < len(highs)  else None
+                                    l = lows[i]   if i < len(lows)   else None
+                                    c = closes[i] if i < len(closes) else None
+                                    if o is None or h is None or l is None or c is None:
+                                        continue
+                                    lc_bars.append({
+                                        "time":   int(ts),
+                                        "open":   float(o), "high": float(h),
+                                        "low":    float(l), "close": float(c),
+                                        "volume": int(vols[i] or 0) if i < len(vols) else 0,
+                                    })
+                            if lc_bars:
+                                break
+            except Exception as e:
+                log.warning("webui.market_bars.yahoo_fallback_error", ticker=yf_sym, error=str(e))
 
     lc_bars.sort(key=lambda x: x["time"])
     return {"ticker": sym, "bars": lc_bars}
