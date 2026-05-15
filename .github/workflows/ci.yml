@@ -45,11 +45,9 @@ jobs:
         run: pip install pytest pytest-asyncio
 
       - name: Run tests
-        run: |
-          pytest python/ -q --tb=short 2>&1
-          status=$?
-          # exit 5 means no tests collected — acceptable until suite is built out
-          [ $status -eq 5 ] && exit 0 || exit $status
+        # exit 5 = no tests collected — acceptable until the suite is built out.
+        # Use || so bash -e doesn't abort before we can check the code.
+        run: pytest python/ -q --tb=short || [ $? -eq 5 ]
 
   build:
     name: Build ${{ matrix.name }}
