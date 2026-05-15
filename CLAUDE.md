@@ -25,7 +25,7 @@ All pushes (any branch) and PRs targeting `main` run the CI pipeline defined in 
 | Job | What it checks |
 |---|---|
 | **lint** | `ruff check python/` — syntax errors and pyflakes (undefined names, dead variables) |
-| **test** | `pytest python/` — unit/integration tests; exits 0 if no tests collected yet |
+| **test** | `pytest python/` — unit/integration tests; gracefully passes when no tests collected yet |
 | **build** | Docker build (no push) for `ot-python`, `ot-scraper`, `ot-webui` |
 
 **Branch protection (configure in GitHub → Settings → Branches → `main`):**
@@ -35,13 +35,18 @@ All pushes (any branch) and PRs targeting `main` run the CI pipeline defined in 
 
 **Development workflow:**
 1. Work on a feature branch (`git checkout -b feat/my-change`)
-2. Push — CI runs automatically
-3. Open a PR to `main` — all checks must go green
-4. Merge — the release tag (`gh release create vX.Y.Z`) triggers `release.yml` which pushes images
+2. Push — CI runs automatically on every push to any branch
+3. Open a PR to `main` — all checks must go green before merging
+4. Merge — then tag (`gh release create vX.Y.Z`) to trigger `release.yml` which builds and pushes images
 
 **Linter config:** `ruff.toml` at repo root. Rules: `E9` (syntax) + `F` (pyflakes), `F401` excluded. Line length 120.
 
 **Adding tests:** place files as `python/<package>/tests/test_*.py`. `pytest-asyncio` is pre-installed for async agent tests.
+
+**Known CI gotchas:**
+- GitHub Actions runs `run:` blocks with `bash -e` (exit-on-error). A multi-line script that captures `$?` from a failing command will abort before the capture. Use inline `||` instead: `pytest ... || [ $? -eq 5 ]`.
+- pytest exit code 5 means "no tests collected" — this is acceptable and the test step treats it as success via the `||` pattern above.
+- The `concurrency` group in `ci.yml` cancels in-progress runs on the same ref when a new push arrives, keeping CI queue short.
 
 ### Releasing
 The `scripts/release.sh` requires an interactive TTY, so use the manual process:
