@@ -21481,7 +21481,7 @@ async function _mhLoadChart(ticker) {
     candles.setData(bars);
 
     MH_EMA_DEFS.forEach(({ period, color, lineWidth, title }) => {
-      const s = chart.addLineSeries({ color, lineWidth, title, lastValueVisible: false, priceLineVisible: false });
+      const s = chart.addLineSeries({ color, lineWidth, title, lastValueVisible: true, priceLineVisible: false });
       s.setData(toSeries(_calcEMA(closes, period)));
     });
 

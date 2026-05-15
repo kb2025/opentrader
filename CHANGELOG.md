@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.31] - 2026-05-15
+
+### Fixed
+- Market Health: EMA labels now display on the right price axis of each chart
+
 ## [3.7.30] - 2026-05-15
 
 ### Added
