@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*.*.*"]  # release.yml handles version tags
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Syntax & static checks
+        run: ruff check python/ --output-format=github
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-asyncio
+
+      - name: Run tests
+        run: |
+          pytest python/ -q --tb=short 2>&1
+          status=$?
+          # exit 5 means no tests collected — acceptable until suite is built out
+          [ $status -eq 5 ] && exit 0 || exit $status
+
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ot-python
+            context: python
+            dockerfile: python/Dockerfile
+          - name: ot-scraper
+            context: python
+            dockerfile: python/Dockerfile.scraper
+          - name: ot-webui
+            context: python
+            dockerfile: python/Dockerfile.webui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy VERSION into build context
+        run: cp VERSION python/VERSION
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }} (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.name }}-ci
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-ci

@@ -1,0 +1,15 @@
+target-version = "py312"
+line-length = 120
+
+[lint]
+# E9xx = syntax errors (always fatal)
+# F    = pyflakes (undefined names, shadowed imports, etc.)
+# Excludes F401 (unused imports) — common in __init__.py re-exports
+select = ["E9", "F"]
+ignore = ["F401"]
+
+exclude = [
+    ".git",
+    "__pycache__",
+    "mcp/",
+]

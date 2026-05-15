@@ -18,6 +18,31 @@ All Python agents share one build context (`./python`) with two Dockerfiles:
 - `python/Dockerfile` — all agent containers (orchestrator, traders, scrapers, etc.)
 - `python/Dockerfile.webui` — the FastAPI WebUI container (`ot-webui`, port 8080)
 
+### CI / Branch Rules
+
+All pushes (any branch) and PRs targeting `main` run the CI pipeline defined in `.github/workflows/ci.yml`. Three jobs must pass before merging:
+
+| Job | What it checks |
+|---|---|
+| **lint** | `ruff check python/` — syntax errors and pyflakes (undefined names, dead variables) |
+| **test** | `pytest python/` — unit/integration tests; exits 0 if no tests collected yet |
+| **build** | Docker build (no push) for `ot-python`, `ot-scraper`, `ot-webui` |
+
+**Branch protection (configure in GitHub → Settings → Branches → `main`):**
+- Require status checks: `Lint`, `Tests`, `Build ot-python`, `Build ot-scraper`, `Build ot-webui`
+- Require branches to be up to date before merging
+- Do not allow force-pushes or deletions
+
+**Development workflow:**
+1. Work on a feature branch (`git checkout -b feat/my-change`)
+2. Push — CI runs automatically
+3. Open a PR to `main` — all checks must go green
+4. Merge — the release tag (`gh release create vX.Y.Z`) triggers `release.yml` which pushes images
+
+**Linter config:** `ruff.toml` at repo root. Rules: `E9` (syntax) + `F` (pyflakes), `F401` excluded. Line length 120.
+
+**Adding tests:** place files as `python/<package>/tests/test_*.py`. `pytest-asyncio` is pre-installed for async agent tests.
+
 ### Releasing
 The `scripts/release.sh` requires an interactive TTY, so use the manual process:
 ```bash
