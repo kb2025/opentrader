@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.32] - 2026-05-15
+
+### Fixed
+- Market Health: EMA labels (name + last value) now pinned to the right edge of each chart via HTML overlay; removed from crosshair top-left legend
+
 ## [3.7.31] - 2026-05-15
 
 ### Fixed

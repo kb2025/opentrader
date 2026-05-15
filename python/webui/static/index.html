@@ -21454,6 +21454,7 @@ async function _mhLoadChart(ticker) {
       chartEl.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px">No data — ${ticker}</div>`;
       return;
     }
+    chartEl.style.position = 'relative';
     chartEl.innerHTML = '';
 
     const closes  = bars.map(b => b.close);
@@ -21480,12 +21481,25 @@ async function _mhLoadChart(ticker) {
     });
     candles.setData(bars);
 
-    MH_EMA_DEFS.forEach(({ period, color, lineWidth, title }) => {
-      const s = chart.addLineSeries({ color, lineWidth, title, lastValueVisible: true, priceLineVisible: false });
+    MH_EMA_DEFS.forEach(({ period, color, lineWidth }) => {
+      const s = chart.addLineSeries({ color, lineWidth, lastValueVisible: false, priceLineVisible: false });
       s.setData(toSeries(_calcEMA(closes, period)));
     });
 
     chart.timeScale().fitContent();
+
+    // pinned right-side EMA label overlay
+    const labelOverlay = document.createElement('div');
+    labelOverlay.style.cssText = 'position:absolute;top:6px;right:6px;display:flex;flex-direction:column;align-items:flex-end;gap:1px;pointer-events:none;z-index:1000';
+    MH_EMA_DEFS.forEach(({ period, color, title }) => {
+      const vals = _calcEMA(closes, period);
+      const last = vals.filter(v => v != null).pop();
+      const row  = document.createElement('div');
+      row.style.cssText = `font-size:10px;font-weight:700;color:${color};font-family:monospace;line-height:1.5;text-shadow:0 0 6px #000,0 1px 4px #000`;
+      row.textContent   = last != null ? `${title} ${last.toFixed(2)}` : title;
+      labelOverlay.appendChild(row);
+    });
+    chartEl.appendChild(labelOverlay);
 
     if (metaEl && bars.length >= 2) {
       const last = bars[bars.length - 1];
