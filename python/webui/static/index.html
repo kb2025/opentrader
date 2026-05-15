@@ -380,6 +380,9 @@ select option{background:var(--surface2)}
         <div class="nav-subitem" draggable="true" onclick="navigate('page-equities-sector-leaders')" data-page="page-equities-sector-leaders">
           <span class="nav-dot" style="background:#f59e0b;width:6px;height:6px"></span>Sector Leaders
         </div>
+        <div class="nav-subitem" draggable="true" onclick="navigate('page-si-market-health')" data-page="page-si-market-health">
+          <span class="nav-dot" style="background:#f43f5e;width:6px;height:6px"></span>Market Health
+        </div>
         <div style="padding:4px 10px 2px 28px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)">Sector Map</div>
         <div class="nav-subitem" id="nav-si-sectormap" data-sm-index="sp500" onclick="_smNavSelect('sp500')">
           <span class="nav-dot" style="background:#38bdf8;width:6px;height:6px"></span>S&amp;P 500
@@ -3841,6 +3844,34 @@ select option{background:var(--surface2)}
     </div><!-- /page-equities-sector-leaders -->
 
 
+    <!-- ── page-si-market-health ── -->
+    <div class="page" id="page-si-market-health">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--fg)">Market Health</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">EMA 10 · 20 · 50 · 200 &nbsp;·&nbsp; drag cards to reorder</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="mh-ticker-input" type="text" placeholder="Add ticker…" maxlength="12"
+            style="width:110px;padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:12px;outline:none;text-transform:uppercase;letter-spacing:.05em"
+            oninput="this.value=this.value.toUpperCase()"
+            onkeydown="if(event.key==='Enter')_mhAddTicker()">
+          <button onclick="_mhAddTicker()" style="padding:5px 14px;background:var(--blue);border:none;border-radius:6px;color:#fff;font-size:12px;cursor:pointer;font-weight:600">Add</button>
+          <button onclick="_mhRefresh()" style="padding:5px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:12px;cursor:pointer">↻ Refresh</button>
+        </div>
+      </div>
+      <!-- EMA legend -->
+      <div style="display:flex;gap:18px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+        <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">EMA</span>
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#ffffff"><span style="width:20px;height:2px;background:#ffffff;display:inline-block;border-radius:1px"></span>10</span>
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#3b82f6"><span style="width:20px;height:2px;background:#3b82f6;display:inline-block;border-radius:1px"></span>20</span>
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#22c55e"><span style="width:20px;height:2px;background:#22c55e;display:inline-block;border-radius:1px"></span>50</span>
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#ef4444"><span style="width:20px;height:2px;background:#ef4444;display:inline-block;border-radius:1px"></span>200</span>
+      </div>
+      <!-- chart grid — 2 wide -->
+      <div id="mh-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px"></div>
+    </div><!-- /page-si-market-health -->
+
 
     <!-- ══════════════════════════════════���═════
          PAGE: Library
@@ -4435,6 +4466,7 @@ const PAGE_TITLES = {
   'page-plan-assignment':    'Strategy Assignment',
   'page-plan-optimizer':    'Portfolio Optimizer',
   'page-equities-sector-leaders': 'Sector Leaders',
+  'page-si-market-health':        'Market Health',
   'page-shadow-account':    'Trading Hindsights',
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
@@ -4571,6 +4603,7 @@ function navigate(pageId) {
     case 'page-plan-assignment':    loadAssignmentPage();   break;
     case 'page-plan-optimizer':    loadOptimizerPage();    break;
     case 'page-equities-sector-leaders': loadSectorLeadersPage(); break;
+    case 'page-si-market-health':        loadMarketHealthPage();  break;
     case 'page-shadow-account':    loadShadowPage(); loadReviewRecommendations(); break;
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
@@ -21261,6 +21294,235 @@ async function reportsUpdateChannels(type) {
     showToast('Config update failed: ' + e.message, 'error');
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Market Health — draggable EMA dashboard  (Sector Insight)
+// ══════════════════════════════════════════════════════════════════════════════
+const MH_DEFAULT_TICKERS = ['PCL','MMFI','MMTH','HIGN','LOWN','VIX'];
+const MH_EMA_DEFS = [
+  { period: 10,  color: '#ffffff', lineWidth: 1,   title: 'EMA10'  },
+  { period: 20,  color: '#3b82f6', lineWidth: 1,   title: 'EMA20'  },
+  { period: 50,  color: '#22c55e', lineWidth: 1.5, title: 'EMA50'  },
+  { period: 200, color: '#ef4444', lineWidth: 2,   title: 'EMA200' },
+];
+const MH_TICKERS_KEY = 'mh_tickers_v1';
+const MH_ORDER_KEY   = 'mh_order_v1';
+
+let _mhCharts  = {};
+let _mhDragSrc = null;
+
+function _mhGetTickers() {
+  try { const s = JSON.parse(localStorage.getItem(MH_TICKERS_KEY)); if (Array.isArray(s) && s.length) return s; } catch(_){}
+  return [...MH_DEFAULT_TICKERS];
+}
+function _mhSaveTickers(list) { localStorage.setItem(MH_TICKERS_KEY, JSON.stringify(list)); }
+
+function _mhGetOrder() {
+  try { const s = JSON.parse(localStorage.getItem(MH_ORDER_KEY)); if (Array.isArray(s)) return s; } catch(_){}
+  return null;
+}
+function _mhSaveOrder() {
+  const g = document.getElementById('mh-grid');
+  if (!g) return;
+  localStorage.setItem(MH_ORDER_KEY, JSON.stringify([...g.querySelectorAll('.mh-card')].map(c => c.dataset.ticker)));
+}
+
+async function loadMarketHealthPage() {
+  await new Promise(r => _ensureLwc(r));
+  _mhRenderGrid();
+}
+
+function _mhRenderGrid() {
+  const grid = document.getElementById('mh-grid');
+  if (!grid) return;
+  Object.values(_mhCharts).forEach(c => { try { c.remove(); } catch(_){} });
+  _mhCharts = {};
+  grid.innerHTML = '';
+
+  let tickers = _mhGetTickers();
+  const saved = _mhGetOrder();
+  if (saved && saved.length) {
+    const validSaved = saved.filter(t => tickers.includes(t));
+    const rest = tickers.filter(t => !validSaved.includes(t));
+    tickers = [...validSaved, ...rest];
+  }
+  _mhSaveTickers(tickers);
+  tickers.forEach(t => _mhAppendCard(grid, t));
+}
+
+function _mhAppendCard(grid, ticker) {
+  const card = document.createElement('div');
+  card.className = 'mh-card';
+  card.dataset.ticker = ticker;
+  card.draggable = true;
+  card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:grab;user-select:none;transition:box-shadow .15s,opacity .15s,border-color .15s';
+
+  // ── header ──
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px';
+
+  const left = document.createElement('div');
+  left.style.cssText = 'display:flex;align-items:center;gap:6px';
+
+  const grip = document.createElement('span');
+  grip.innerHTML = '&#8942;&#8942;';
+  grip.style.cssText = 'color:var(--dim);font-size:11px;letter-spacing:-2px;cursor:grab;line-height:1;margin-right:1px';
+
+  const tickerEl = document.createElement('span');
+  tickerEl.style.cssText = 'font-size:13px;font-weight:700;color:var(--fg)';
+  tickerEl.textContent = ticker;
+
+  const metaEl = document.createElement('span');
+  metaEl.id = `mh-meta-${ticker}`;
+  metaEl.style.cssText = 'font-size:11px;color:var(--muted)';
+
+  left.append(grip, tickerEl, metaEl);
+
+  const rmBtn = document.createElement('button');
+  rmBtn.innerHTML = '&#x2715;';
+  rmBtn.title = 'Remove';
+  rmBtn.style.cssText = 'background:none;border:none;color:var(--dim);font-size:13px;cursor:pointer;padding:0 2px;line-height:1;transition:color .1s';
+  rmBtn.onmouseenter = () => rmBtn.style.color = 'var(--fg)';
+  rmBtn.onmouseleave = () => rmBtn.style.color = 'var(--dim)';
+  rmBtn.onclick = e => { e.stopPropagation(); _mhRemoveTicker(ticker); };
+
+  hdr.append(left, rmBtn);
+  card.appendChild(hdr);
+
+  // ── chart container ──
+  const chartEl = document.createElement('div');
+  chartEl.id = `mh-chart-${ticker}`;
+  chartEl.style.cssText = 'width:100%;height:220px';
+  card.appendChild(chartEl);
+
+  // ── drag events ──
+  card.addEventListener('dragstart', e => {
+    _mhDragSrc = card;
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => { card.style.opacity = '0.35'; card.style.borderColor = 'var(--blue)'; }, 0);
+  });
+  card.addEventListener('dragend', () => {
+    card.style.opacity = '';
+    card.style.borderColor = 'var(--border)';
+    _mhDragSrc = null;
+    document.querySelectorAll('.mh-card').forEach(c => {
+      c.style.boxShadow = '';
+      c.style.borderColor = 'var(--border)';
+    });
+  });
+  card.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (_mhDragSrc && _mhDragSrc !== card) {
+      card.style.boxShadow = 'inset 0 0 0 2px var(--blue)';
+      card.style.borderColor = 'var(--blue)';
+    }
+  });
+  card.addEventListener('dragleave', () => {
+    card.style.boxShadow = '';
+    card.style.borderColor = 'var(--border)';
+  });
+  card.addEventListener('drop', e => {
+    e.preventDefault();
+    card.style.boxShadow = '';
+    card.style.borderColor = 'var(--border)';
+    if (!_mhDragSrc || _mhDragSrc === card) return;
+    const g    = card.parentNode;
+    const all  = [...g.children];
+    const from = all.indexOf(_mhDragSrc);
+    const to   = all.indexOf(card);
+    g.insertBefore(_mhDragSrc, from < to ? card.nextSibling : card);
+    _mhSaveOrder();
+  });
+
+  grid.appendChild(card);
+  _mhLoadChart(ticker);
+}
+
+async function _mhLoadChart(ticker) {
+  const chartEl = document.getElementById(`mh-chart-${ticker}`);
+  const metaEl  = document.getElementById(`mh-meta-${ticker}`);
+  if (!chartEl) return;
+
+  if (_mhCharts[ticker]) { try { _mhCharts[ticker].remove(); } catch(_){} delete _mhCharts[ticker]; }
+  chartEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px">Loading…</div>';
+
+  try {
+    const data = await apiFetch(`/api/market/bars?ticker=${encodeURIComponent(ticker)}&days=500`);
+    const bars  = (data.bars || []).filter(b => b.open && b.close);
+    if (!bars.length) {
+      chartEl.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px">No data — ${ticker}</div>`;
+      return;
+    }
+    chartEl.innerHTML = '';
+
+    const closes  = bars.map(b => b.close);
+    const times   = bars.map(b => b.time);
+    const toSeries = vals => vals.map((v, i) => v != null ? { time: times[i], value: v } : null).filter(Boolean);
+
+    const LC    = LightweightCharts;
+    const chart = LC.createChart(chartEl, {
+      layout:    { background: { color: '#0a0e1a' }, textColor: '#94a3b8' },
+      grid:      { vertLines: { color: '#1e2a4a' }, horzLines: { color: '#1e2a4a' } },
+      crosshair: { mode: LC.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: '#1e2a4a' },
+      timeScale: { borderColor: '#1e2a4a', timeVisible: false, secondsVisible: false },
+      width:  chartEl.clientWidth,
+      height: 220,
+    });
+    _mhCharts[ticker] = chart;
+    new ResizeObserver(() => { if (_mhCharts[ticker]) chart.applyOptions({ width: chartEl.clientWidth }); }).observe(chartEl);
+
+    const candles = chart.addCandlestickSeries({
+      upColor: '#22c55e', downColor: '#ef4444',
+      borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+      wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+    });
+    candles.setData(bars);
+
+    MH_EMA_DEFS.forEach(({ period, color, lineWidth, title }) => {
+      const s = chart.addLineSeries({ color, lineWidth, title, lastValueVisible: false, priceLineVisible: false });
+      s.setData(toSeries(_calcEMA(closes, period)));
+    });
+
+    chart.timeScale().fitContent();
+
+    if (metaEl && bars.length >= 2) {
+      const last = bars[bars.length - 1];
+      const prev = bars[bars.length - 2];
+      const chg  = last.close - prev.close;
+      const pct  = (chg / prev.close * 100).toFixed(2);
+      const clr  = chg >= 0 ? '#22c55e' : '#ef4444';
+      metaEl.innerHTML = `&nbsp;<span style="color:${clr};font-weight:600">${chg >= 0 ? '+' : ''}${pct}%</span> <span style="color:var(--dim)">$${last.close.toFixed(2)}</span>`;
+    }
+  } catch(e) {
+    chartEl.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ef4444;font-size:12px">Error: ${e.message}</div>`;
+  }
+}
+
+function _mhAddTicker() {
+  const inp = document.getElementById('mh-ticker-input');
+  if (!inp) return;
+  const ticker = inp.value.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g, '');
+  inp.value = '';
+  if (!ticker) return;
+  const tickers = _mhGetTickers();
+  if (tickers.includes(ticker)) { showToast(`${ticker} already on dashboard`, 'info'); return; }
+  tickers.push(ticker);
+  _mhSaveTickers(tickers);
+  const grid = document.getElementById('mh-grid');
+  if (grid) { _mhAppendCard(grid, ticker); _mhSaveOrder(); }
+}
+
+function _mhRemoveTicker(ticker) {
+  _mhSaveTickers(_mhGetTickers().filter(t => t !== ticker));
+  const card = document.querySelector(`.mh-card[data-ticker="${CSS.escape(ticker)}"]`);
+  if (card) card.remove();
+  if (_mhCharts[ticker]) { try { _mhCharts[ticker].remove(); } catch(_){} delete _mhCharts[ticker]; }
+  _mhSaveOrder();
+}
+
+function _mhRefresh() { _mhRenderGrid(); }
 
 
 </script>

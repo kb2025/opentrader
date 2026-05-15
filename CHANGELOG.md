@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.30] - 2026-05-15
+
+### Added
+- **Market Health** dashboard under Sector Insight: 2-wide draggable chart grid for PCL, MMFI, MMTH, HIGN, LOWN, VIX with EMA 10 (white) / 20 (blue) / 50 (green) / 200 (red) overlaid on candlestick bars
+- Ticker add/remove controls — new tickers persist via localStorage; card order also persisted and restored across sessions
+- Bumped Polygon.io `limit` from 365→750 bars to fully warm up EMA200 (needs ~200+ trading days of history)
+
 ## [3.7.29] - 2026-05-15
 
 ### Added

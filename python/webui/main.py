@@ -3075,7 +3075,7 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
     if api_key:
         url = (
             f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
-            f"/{from_date}/{to_date}?adjusted=true&sort=asc&limit=365&apiKey={api_key}"
+            f"/{from_date}/{to_date}?adjusted=true&sort=asc&limit=750&apiKey={api_key}"
         )
         try:
             async with _aiohttp.ClientSession() as session:
