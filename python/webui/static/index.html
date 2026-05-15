@@ -21384,7 +21384,8 @@ function _mhAppendCard(grid, ticker) {
   rmBtn.style.cssText = 'background:none;border:none;color:var(--dim);font-size:13px;cursor:pointer;padding:0 2px;line-height:1;transition:color .1s';
   rmBtn.onmouseenter = () => rmBtn.style.color = 'var(--fg)';
   rmBtn.onmouseleave = () => rmBtn.style.color = 'var(--dim)';
-  rmBtn.onclick = e => { e.stopPropagation(); _mhRemoveTicker(ticker); };
+  rmBtn.onclick  = e => { e.stopPropagation(); _mhRemoveTicker(ticker); };
+  rmBtn.ondblclick = e => e.stopPropagation();
 
   hdr.append(left, rmBtn);
   card.appendChild(hdr);
@@ -21434,6 +21435,7 @@ function _mhAppendCard(grid, ticker) {
     g.insertBefore(_mhDragSrc, from < to ? card.nextSibling : card);
     _mhSaveOrder();
   });
+  card.addEventListener('dblclick', () => _mhOpenFullscreen(ticker));
 
   grid.appendChild(card);
   _mhLoadChart(ticker);
@@ -21537,6 +21539,147 @@ function _mhRemoveTicker(ticker) {
 }
 
 function _mhRefresh() { _mhRenderGrid(); }
+
+// ── Market Health fullscreen overlay ─────────────────────────────────────────
+let _mhFsChart = null;
+
+async function _mhOpenFullscreen(ticker) {
+  const existing = document.getElementById('mh-fs-overlay');
+  if (existing) _mhCloseFullscreen();
+
+  await new Promise(r => _ensureLwc(r));
+
+  // ── build overlay shell ──
+  const overlay = document.createElement('div');
+  overlay.id = 'mh-fs-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9500;background:#0a0e1a;display:flex;flex-direction:column';
+
+  // header
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid #1e2a4a;flex-shrink:0';
+
+  const titleEl = document.createElement('span');
+  titleEl.style.cssText = 'font-size:15px;font-weight:700;color:#f1f5f9';
+  titleEl.textContent = ticker;
+
+  const metaEl = document.createElement('span');
+  metaEl.id = 'mh-fs-meta';
+  metaEl.style.cssText = 'font-size:12px;color:#94a3b8';
+
+  const legend = document.createElement('div');
+  legend.style.cssText = 'display:flex;align-items:center;gap:14px;margin-left:auto';
+  MH_EMA_DEFS.forEach(({ color, title }) => {
+    const s = document.createElement('span');
+    s.style.cssText = `display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:${color}`;
+    s.innerHTML = `<span style="width:16px;height:2px;background:${color};display:inline-block;border-radius:1px"></span>${title}`;
+    legend.appendChild(s);
+  });
+
+  const hint = document.createElement('span');
+  hint.style.cssText = 'font-size:10px;color:#475569;margin-left:8px';
+  hint.textContent = 'Esc to close';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '&#x2715;';
+  closeBtn.style.cssText = 'background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;padding:0 4px;line-height:1;margin-left:4px';
+  closeBtn.onmouseenter = () => closeBtn.style.color = '#f1f5f9';
+  closeBtn.onmouseleave = () => closeBtn.style.color = '#64748b';
+  closeBtn.onclick = _mhCloseFullscreen;
+
+  hdr.append(titleEl, metaEl, legend, hint, closeBtn);
+
+  // chart wrapper — fills remaining space
+  const chartWrap = document.createElement('div');
+  chartWrap.style.cssText = 'flex:1;position:relative;min-height:0;overflow:hidden';
+
+  const loadingEl = document.createElement('div');
+  loadingEl.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:14px';
+  loadingEl.textContent = 'Loading…';
+  chartWrap.appendChild(loadingEl);
+
+  overlay.append(hdr, chartWrap);
+  document.body.appendChild(overlay);
+
+  // Escape key handler
+  const onKey = e => { if (e.key === 'Escape') _mhCloseFullscreen(); };
+  overlay._onKey = onKey;
+  document.addEventListener('keydown', onKey);
+
+  // ── load data & render chart ──
+  try {
+    const data = await apiFetch(`/api/market/bars?ticker=${encodeURIComponent(ticker)}&days=500`);
+    const bars  = (data.bars || []).filter(b => b.open && b.close);
+    if (!bars.length) { loadingEl.textContent = `No data — ${ticker}`; return; }
+
+    chartWrap.innerHTML = '';
+
+    const closes   = bars.map(b => b.close);
+    const times    = bars.map(b => b.time);
+    const toSeries = vals => vals.map((v, i) => v != null ? { time: times[i], value: v } : null).filter(Boolean);
+
+    const LC    = LightweightCharts;
+    const chart = LC.createChart(chartWrap, {
+      layout:    { background: { color: '#0a0e1a' }, textColor: '#94a3b8' },
+      grid:      { vertLines: { color: '#1e2a4a' }, horzLines: { color: '#1e2a4a' } },
+      crosshair: { mode: LC.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: '#1e2a4a' },
+      timeScale: { borderColor: '#1e2a4a', timeVisible: true, secondsVisible: false },
+      width:  chartWrap.clientWidth,
+      height: chartWrap.clientHeight,
+    });
+    _mhFsChart = chart;
+    new ResizeObserver(() => {
+      if (_mhFsChart) chart.applyOptions({ width: chartWrap.clientWidth, height: chartWrap.clientHeight });
+    }).observe(chartWrap);
+
+    const candles = chart.addCandlestickSeries({
+      upColor: '#22c55e', downColor: '#ef4444',
+      borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+      wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+    });
+    candles.setData(bars);
+
+    MH_EMA_DEFS.forEach(({ period, color, lineWidth }) => {
+      const s = chart.addLineSeries({ color, lineWidth: lineWidth + 0.5, lastValueVisible: false, priceLineVisible: false });
+      s.setData(toSeries(_calcEMA(closes, period)));
+    });
+
+    chart.timeScale().fitContent();
+
+    // right-side EMA label overlay
+    const lblOverlay = document.createElement('div');
+    lblOverlay.style.cssText = 'position:absolute;top:8px;right:8px;display:flex;flex-direction:column;align-items:flex-end;gap:2px;pointer-events:none;z-index:1000';
+    MH_EMA_DEFS.forEach(({ period, color, title }) => {
+      const vals = _calcEMA(closes, period);
+      const last = vals.filter(v => v != null).pop();
+      const row  = document.createElement('div');
+      row.style.cssText = `font-size:11px;font-weight:700;color:${color};font-family:monospace;line-height:1.6;text-shadow:0 0 6px #000,0 1px 4px #000`;
+      row.textContent = last != null ? `${title} ${last.toFixed(2)}` : title;
+      lblOverlay.appendChild(row);
+    });
+    chartWrap.appendChild(lblOverlay);
+
+    // meta: last price + change
+    if (bars.length >= 2) {
+      const last = bars[bars.length - 1], prev = bars[bars.length - 2];
+      const chg  = last.close - prev.close;
+      const pct  = (chg / prev.close * 100).toFixed(2);
+      const clr  = chg >= 0 ? '#22c55e' : '#ef4444';
+      metaEl.innerHTML = `&nbsp;<span style="color:${clr};font-weight:600">${chg >= 0 ? '+' : ''}${pct}%</span> <span style="color:#475569">$${last.close.toFixed(2)}</span>`;
+    }
+  } catch(e) {
+    chartWrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ef4444;font-size:14px">Error: ${e.message}</div>`;
+  }
+}
+
+function _mhCloseFullscreen() {
+  const overlay = document.getElementById('mh-fs-overlay');
+  if (overlay) {
+    if (overlay._onKey) document.removeEventListener('keydown', overlay._onKey);
+    overlay.remove();
+  }
+  if (_mhFsChart) { try { _mhFsChart.remove(); } catch(_){} _mhFsChart = null; }
+}
 
 
 </script>

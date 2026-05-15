@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.34] - 2026-05-15
+
+### Added
+- Market Health: double-click any chart card to open it fullscreen; EMA lines, right-side labels, and price meta all render at full viewport size; close with Esc or the × button
+
 ## [3.7.33] - 2026-05-15
 
 ### Fixed
