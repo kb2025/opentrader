@@ -3059,9 +3059,9 @@ async def get_sector_leaders(refresh: bool = False):
 async def get_market_bars(ticker: str = "SPY", days: int = 90):
     """
     Daily OHLCV bars for a ticker.
-    Primary:   Polygon.io REST API (tries plain ticker, then I:{ticker} index format).
-    Fallback:  Yahoo Finance chart API (tries plain ticker, then ^{ticker}) for breadth
-               indicators and volatility indices not covered by Polygon.
+    Priority:  1) Polygon.io (plain ticker, then I:{ticker} index format)
+               2) Tradier /markets/history (breadth indicators: MMFI, MMTH, HIGHN, LOWN, etc.)
+               3) Yahoo Finance chart API (plain ticker, then ^{ticker})
     Returns LightweightCharts-compatible format: time as Unix seconds.
     """
     import aiohttp as _aiohttp
@@ -3104,7 +3104,50 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
             except Exception as e:
                 log.warning("webui.market_bars.polygon_error", ticker=poly_sym, error=str(e))
 
-    # ── Fallback: Yahoo Finance chart API (breadth/vol indices) ──────────────
+    # ── Fallback 1: Tradier /markets/history (breadth indicators + equities) ──
+    if not lc_bars:
+        t_key, t_base = _tradier_keys()
+        if t_key:
+            t_url = f"{t_base}/markets/history"
+            t_params = {
+                "symbol":   sym,
+                "interval": "daily",
+                "start":    from_date,
+                "end":      to_date,
+            }
+            t_headers = {"Authorization": f"Bearer {t_key}", "Accept": "application/json"}
+            try:
+                async with _aiohttp.ClientSession() as session:
+                    async with session.get(
+                        t_url, params=t_params, headers=t_headers,
+                        timeout=_aiohttp.ClientTimeout(total=15),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json(content_type=None)
+                            days_data = (data.get("history") or {}).get("day") or []
+                            if isinstance(days_data, dict):
+                                days_data = [days_data]
+                            for d in days_data:
+                                date_str = d.get("date", "")
+                                if not date_str:
+                                    continue
+                                try:
+                                    dt = _date.fromisoformat(date_str)
+                                    ts = int(_cal.timegm(dt.timetuple()))
+                                except ValueError:
+                                    continue
+                                lc_bars.append({
+                                    "time":   ts,
+                                    "open":   float(d.get("open")   or 0),
+                                    "high":   float(d.get("high")   or 0),
+                                    "low":    float(d.get("low")    or 0),
+                                    "close":  float(d.get("close")  or 0),
+                                    "volume": int(d.get("volume")   or 0),
+                                })
+            except Exception as e:
+                log.warning("webui.market_bars.tradier_error", ticker=sym, error=str(e))
+
+    # ── Fallback 2: Yahoo Finance chart API (breadth/vol indices) ─────────────
     if not lc_bars:
         period1 = int(_cal.timegm((_date.today() - timedelta(days=days)).timetuple()))
         period2 = int(_cal.timegm(_date.today().timetuple()))
