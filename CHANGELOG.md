@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.36] - 2026-05-17
+
+### Changed
+- Market Health bars: replace Tradier fallback (doesn't carry breadth symbols) with Stooq CSV fallback; Stooq carries MMFI, MMTH, HIGHN, LOWN natively — activate by adding `STOOQ_API_KEY` to `.env`
+
 ## [3.7.35] - 2026-05-17
 
 ### Changed

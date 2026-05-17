@@ -3060,7 +3060,7 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
     """
     Daily OHLCV bars for a ticker.
     Priority:  1) Polygon.io (plain ticker, then I:{ticker} index format)
-               2) Tradier /markets/history (breadth indicators: MMFI, MMTH, HIGHN, LOWN, etc.)
+               2) Stooq CSV (breadth indicators: MMFI, MMTH, HIGHN, LOWN, etc. — requires STOOQ_API_KEY)
                3) Yahoo Finance chart API (plain ticker, then ^{ticker})
     Returns LightweightCharts-compatible format: time as Unix seconds.
     """
@@ -3104,48 +3104,39 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
             except Exception as e:
                 log.warning("webui.market_bars.polygon_error", ticker=poly_sym, error=str(e))
 
-    # ── Fallback 1: Tradier /markets/history (breadth indicators + equities) ──
+    # ── Fallback 1: Stooq CSV (breadth indicators — needs STOOQ_API_KEY in .env) ──
     if not lc_bars:
-        t_key, t_base = _tradier_keys()
-        if t_key:
-            t_url = f"{t_base}/markets/history"
-            t_params = {
-                "symbol":   sym,
-                "interval": "daily",
-                "start":    from_date,
-                "end":      to_date,
-            }
-            t_headers = {"Authorization": f"Bearer {t_key}", "Accept": "application/json"}
+        stooq_key = os.getenv("STOOQ_API_KEY", "")
+        if stooq_key:
+            stooq_sym = sym.lower()
+            stooq_d1  = from_date.replace("-", "")
+            stooq_d2  = to_date.replace("-", "")
+            stooq_url = (
+                f"https://stooq.com/q/d/l/?s={stooq_sym}&d1={stooq_d1}&d2={stooq_d2}&i=d&k={stooq_key}"
+            )
             try:
                 async with _aiohttp.ClientSession() as session:
-                    async with session.get(
-                        t_url, params=t_params, headers=t_headers,
-                        timeout=_aiohttp.ClientTimeout(total=15),
-                    ) as resp:
+                    async with session.get(stooq_url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
                         if resp.status == 200:
-                            data = await resp.json(content_type=None)
-                            days_data = (data.get("history") or {}).get("day") or []
-                            if isinstance(days_data, dict):
-                                days_data = [days_data]
-                            for d in days_data:
-                                date_str = d.get("date", "")
-                                if not date_str:
+                            text = await resp.text()
+                            # CSV: Date,Open,High,Low,Close,Volume
+                            for line in text.splitlines()[1:]:
+                                parts = line.split(",")
+                                if len(parts) < 5:
                                     continue
                                 try:
-                                    dt = _date.fromisoformat(date_str)
-                                    ts = int(_cal.timegm(dt.timetuple()))
-                                except ValueError:
+                                    dt  = _date.fromisoformat(parts[0].strip())
+                                    ts  = int(_cal.timegm(dt.timetuple()))
+                                    o   = float(parts[1])
+                                    h   = float(parts[2])
+                                    l   = float(parts[3])
+                                    c   = float(parts[4])
+                                    vol = int(float(parts[5])) if len(parts) > 5 else 0
+                                    lc_bars.append({"time": ts, "open": o, "high": h, "low": l, "close": c, "volume": vol})
+                                except (ValueError, IndexError):
                                     continue
-                                lc_bars.append({
-                                    "time":   ts,
-                                    "open":   float(d.get("open")   or 0),
-                                    "high":   float(d.get("high")   or 0),
-                                    "low":    float(d.get("low")    or 0),
-                                    "close":  float(d.get("close")  or 0),
-                                    "volume": int(d.get("volume")   or 0),
-                                })
             except Exception as e:
-                log.warning("webui.market_bars.tradier_error", ticker=sym, error=str(e))
+                log.warning("webui.market_bars.stooq_error", ticker=sym, error=str(e))
 
     # ── Fallback 2: Yahoo Finance chart API (breadth/vol indices) ─────────────
     if not lc_bars:
