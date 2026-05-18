@@ -13,7 +13,6 @@ Market breadth filter:
   breadth_pct > 60%  → skip short signals (bullish regime)
   40–60%             → neutral, all signals allowed
 """
-import math
 from typing import Optional
 from dataclasses import dataclass, field
 

@@ -3,10 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.39] - 2026-05-18
+
+### Fixed
+- Market Health breadth charts (MMFI, MMTH, HIGHN, LOWN): all four now reliably populate on simultaneous page load; EODData requests are serialized via asyncio semaphore and cached 15 min to prevent rate-limit drops
+- EODData integration uses `EODDATA_API_KEY` (not username/password); HIGHN mapped to `MAHN` (52-Week Highs NYSE); history clamped to 2026-01-01 to match plan limitations
+
 ## [3.7.38] - 2026-05-18
 
 ### Changed
-- Market Health bars: replace Barchart fallback with EODData.com as second-priority source; EODData carries MMFI, MMTH, HIGHN, LOWN on NYSE exchange — activate by adding `EODDATA_USERNAME` + `EODDATA_PASSWORD` to `.env`
+- Market Health bars: replace Barchart fallback with EODData.com (`api.eoddata.com`) as second-priority source; EODData carries MMFI, MMTH, HIGHN (→MAHN), LOWN on INDEX exchange — activate by adding `EODDATA_API_KEY` to `.env`
 
 ## [3.7.37] - 2026-05-17
 

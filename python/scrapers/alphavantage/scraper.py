@@ -4,7 +4,6 @@ Fetches categorized financial news with sentiment scores.
 """
 import asyncio
 import logging
-from datetime import datetime, timezone
 
 import aiohttp
 

@@ -13,7 +13,6 @@ in the agent code.
 import json
 import logging
 import os
-from typing import Optional
 
 log = logging.getLogger(__name__)
 

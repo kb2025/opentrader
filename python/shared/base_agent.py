@@ -5,7 +5,6 @@ Provides: heartbeat publishing, Redis connection, circuit breaker check,
 structured logging, and graceful shutdown.
 """
 import asyncio
-import logging
 import os
 import time
 import signal

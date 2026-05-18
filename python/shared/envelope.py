@@ -4,7 +4,7 @@ Standard schema for all Redis Stream messages across every agent.
 """
 import uuid
 import time
-from typing import Any, Optional
+from typing import Optional
 from pydantic import BaseModel, Field
 
 

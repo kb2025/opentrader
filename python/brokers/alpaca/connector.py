@@ -105,8 +105,7 @@ class AlpacaConnector(BrokerConnector):
         Fetch options chain via Alpaca's v1beta1 options snapshots API.
         Returns up to 8 nearest expirations with full Greeks.
         """
-        import asyncio as _asyncio
-        from datetime import date as _date, timedelta as _td
+        from datetime import date as _date
         sym = symbol.upper()
 
         # ── Current quote ─────────────────────────────────────────────────────

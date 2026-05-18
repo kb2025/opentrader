@@ -26,7 +26,7 @@ from shared.exclusions import is_excluded
 from shared.assignments import load_active_assignments
 from shared.risk_controls import (
     get_risk_controls, check_slippage, check_liquidity,
-    check_daily_loss, record_trade_pnl,
+    check_daily_loss,
 )
 from scheduler.calendar import is_market_open, is_trading_day
 

@@ -5,7 +5,7 @@ Extracts ticker mentions and scores sentiment with VADER.
 """
 import re
 import time
-from typing import List, Tuple
+from typing import List
 import aiohttp
 import structlog
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer

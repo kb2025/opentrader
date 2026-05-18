@@ -10,7 +10,6 @@ Prerequisites (Discord Developer Portal):
   - Bot > "Message Content Intent" must be ENABLED
   - Bot > "Server Members Intent" is optional
 """
-import asyncio
 import structlog
 import discord
 

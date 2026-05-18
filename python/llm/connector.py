@@ -140,7 +140,8 @@ class LLMConnector:
         Like complete() but instructs the model to return JSON
         and parses the response automatically.
         """
-        import json, re
+        import json
+        import re
 
         json_system = (system or "") + "\nRespond ONLY with valid JSON. No markdown, no backticks, no explanation."
         raw = await self.complete(

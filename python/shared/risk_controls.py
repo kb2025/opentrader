@@ -10,7 +10,6 @@ Fails open on missing/invalid data so risk controls never silently
 block all trades due to a data-source outage.
 """
 import json
-import os
 import structlog
 
 log = structlog.get_logger("shared.risk_controls")

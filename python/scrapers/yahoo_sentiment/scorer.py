@@ -8,7 +8,6 @@ Computes a 0-100 composite score from price history alone.
  80–100  Extreme Greed  (ride but tighten stops)
 """
 import math
-from typing import Optional
 
 
 def _rsi(closes: list[float], period: int = 14) -> float:

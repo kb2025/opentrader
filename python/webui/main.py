@@ -3055,23 +3055,33 @@ async def get_sector_leaders(refresh: bool = False):
 
 # ── API — Market bars (Massive MCP) ──────────────────────────────────────────
 
+_market_bars_cache: dict = {}  # {cache_key: (expires_at, bars)}
+_MARKET_BARS_TTL = 900         # 15-minute cache; avoids EODData rate-limit on simultaneous breadth requests
+_eoddata_sem: asyncio.Semaphore | None = None  # serializes EODData requests to avoid rate-limits
+
 @app.get("/api/market/bars")
 async def get_market_bars(ticker: str = "SPY", days: int = 90):
     """
     Daily OHLCV bars for a ticker.
     Priority:  1) Polygon.io (plain ticker, then I:{ticker} index format)
-               2) Stooq CSV (breadth indicators: MMFI, MMTH, HIGHN, LOWN, etc. — requires STOOQ_API_KEY)
+               2) EODData api.eoddata.com (breadth indicators — needs EODDATA_API_KEY)
                3) Yahoo Finance chart API (plain ticker, then ^{ticker})
     Returns LightweightCharts-compatible format: time as Unix seconds.
     """
     import aiohttp as _aiohttp
     import calendar as _cal
+    import time as _time
     from datetime import date as _date, timedelta
 
     sym       = ticker.upper()
     to_date   = _date.today().isoformat()
     from_date = (_date.today() - timedelta(days=days)).isoformat()
     lc_bars: list = []
+
+    cache_key = f"{sym}:{days}"
+    cached = _market_bars_cache.get(cache_key)
+    if cached and _time.monotonic() < cached[0]:
+        return {"ticker": sym, "bars": cached[1]}
 
     # ── Primary: Polygon.io (plain ticker, then index format) ────────────────
     api_key = os.getenv("MASSIVE_API_KEY", "")
@@ -3104,57 +3114,52 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
             except Exception as e:
                 log.warning("webui.market_bars.polygon_error", ticker=poly_sym, error=str(e))
 
-    # ── Fallback 1: EODData.com (breadth indicators — needs EODDATA_USERNAME + EODDATA_PASSWORD) ──
-    # Login obtains a session token; token is then used for SymbolHistory calls.
-    # NYSE exchange carries MMFI, MMTH, HIGHN, LOWN.
+    # ── Fallback 1: EODData api.eoddata.com (breadth indicators — needs EODDATA_API_KEY) ──
+    # Exchange INDEX carries MMFI, MMTH, LOWN directly.
+    # HIGHN has no direct match — mapped to MAHN (52-Week Highs NYSE).
+    # Semaphore serializes concurrent requests to avoid EODData rate-limits.
     if not lc_bars:
-        eod_user = os.getenv("EODDATA_USERNAME", "")
-        eod_pass = os.getenv("EODDATA_PASSWORD", "")
-        if eod_user and eod_pass:
-            try:
-                import re as _re
-                async with _aiohttp.ClientSession() as session:
-                    # Step 1: login → session token
-                    async with session.get(
-                        "https://ws.eoddata.com/data.asmx/Login",
-                        params={"Username": eod_user, "Password": eod_pass},
-                        timeout=_aiohttp.ClientTimeout(total=10),
-                    ) as lr:
-                        login_xml = await lr.text()
-                    tok_match = _re.search(r'Token="([^"]+)"', login_xml)
-                    if tok_match:
-                        eod_token = tok_match.group(1)
-                        # Step 2: fetch daily history
+        eod_key = _read_env_file().get("EODDATA_API_KEY") or os.getenv("EODDATA_API_KEY", "")
+        if eod_key:
+            global _eoddata_sem
+            if _eoddata_sem is None:
+                _eoddata_sem = asyncio.Semaphore(1)
+            _EOD_ALIAS = {"HIGHN": "MAHN"}
+            eod_sym = _EOD_ALIAS.get(sym, sym)
+            # EODData history starts ~2026-01-01; clamp so older requests still return data
+            eod_from = max(from_date, "2026-01-01")
+            async with _eoddata_sem:
+                try:
+                    async with _aiohttp.ClientSession() as session:
                         async with session.get(
-                            "https://ws.eoddata.com/data.asmx/SymbolHistory",
-                            params={"Exchange": "NYSE", "Symbol": sym,
-                                    "StartDate": from_date, "Token": eod_token},
+                            f"https://api.eoddata.com/Quote/List/INDEX/{eod_sym}",
+                            params={
+                                "Interval":      "d",
+                                "FromDateStamp": eod_from,
+                                "ToDateStamp":   to_date,
+                                "ApiKey":        eod_key,
+                            },
                             timeout=_aiohttp.ClientTimeout(total=15),
-                        ) as hr:
-                            hist_xml = await hr.text()
-                        # XML: <QUOTE DateTime="2026-01-02T00:00:00" Open="45.2" High="46.1"
-                        #              Low="44.8" Close="45.9" Volume="0" ... />
-                        def _eod_attr(tag: str, attr: str) -> str:
-                            m2 = _re.search(rf'\b{attr}="([^"]*)"', tag)
-                            return m2.group(1) if m2 else ""
-                        for q in _re.finditer(r'<QUOTE\s[^>]+/>', hist_xml):
-                            tag = q.group(0)
-                            try:
-                                date_str = _eod_attr(tag, "DateTime")[:10]
-                                dt = _date.fromisoformat(date_str)
-                                ts = int(_cal.timegm(dt.timetuple()))
-                                lc_bars.append({
-                                    "time":   ts,
-                                    "open":   float(_eod_attr(tag, "Open")  or 0),
-                                    "high":   float(_eod_attr(tag, "High")  or 0),
-                                    "low":    float(_eod_attr(tag, "Low")   or 0),
-                                    "close":  float(_eod_attr(tag, "Close") or 0),
-                                    "volume": int(float(_eod_attr(tag, "Volume") or 0)),
-                                })
-                            except (ValueError, IndexError):
-                                continue
-            except Exception as e:
-                log.warning("webui.market_bars.eoddata_error", ticker=sym, error=str(e))
+                        ) as resp:
+                            if resp.status == 200:
+                                rows = await resp.json(content_type=None)
+                                if isinstance(rows, list):
+                                    for d in rows:
+                                        try:
+                                            dt = _date.fromisoformat(d["dateStamp"][:10])
+                                            ts = int(_cal.timegm(dt.timetuple()))
+                                            lc_bars.append({
+                                                "time":   ts,
+                                                "open":   float(d.get("open")   or 0),
+                                                "high":   float(d.get("high")   or 0),
+                                                "low":    float(d.get("low")    or 0),
+                                                "close":  float(d.get("close")  or 0),
+                                                "volume": int(d.get("volume")   or 0),
+                                            })
+                                        except (ValueError, KeyError):
+                                            continue
+                except Exception as e:
+                    log.warning("webui.market_bars.eoddata_error", ticker=sym, error=str(e))
 
     # ── Fallback 2: Yahoo Finance chart API (breadth/vol indices) ─────────────
     if not lc_bars:
@@ -3201,6 +3206,8 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
                 log.warning("webui.market_bars.yahoo_fallback_error", ticker=yf_sym, error=str(e))
 
     lc_bars.sort(key=lambda x: x["time"])
+    if lc_bars:
+        _market_bars_cache[cache_key] = (_time.monotonic() + _MARKET_BARS_TTL, lc_bars)
     return {"ticker": sym, "bars": lc_bars}
 
 

@@ -4,10 +4,8 @@ Tracks last-seen timestamps for every agent.
 Classifies faults and dispatches recovery actions.
 """
 import asyncio
-import logging
 import time
 import os
-from typing import Optional
 
 import redis.asyncio as aioredis
 import structlog

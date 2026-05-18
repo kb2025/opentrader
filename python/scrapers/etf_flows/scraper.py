@@ -3,10 +3,8 @@ ETF Capital Flow Scraper
 Uses Massive.com (Polygon.io-compatible) API to fetch daily aggregates for
 key ETFs and compute dollar-volume flow relative to 30-day average.
 """
-import os
 import logging
 from datetime import date, timedelta
-from typing import Optional
 
 import aiohttp
 

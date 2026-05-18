@@ -6,7 +6,7 @@ v1 endpoint (/account/positions)         — minimal fields, no option contract 
 v2 endpoint (/openapi/assets/positions)  — returns legs[] with strikePrice, expiryDate, right
 """
 import logging
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from .client import WebullClient, APP_KEY
 
 log = logging.getLogger(__name__)

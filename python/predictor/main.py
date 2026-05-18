@@ -12,7 +12,7 @@ from typing import Optional
 
 import asyncpg
 import structlog
-from urllib.parse import urlparse, urlunparse, quote
+from urllib.parse import quote
 
 from shared.base_agent import BaseAgent
 from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
