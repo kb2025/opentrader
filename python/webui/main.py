@@ -2478,9 +2478,11 @@ async def get_market_sector_map(index: str = "sp500"):
     all_tickers = [t for stocks in SECTOR_STOCKS.values() for t, _, _, _ in stocks]
     changes: dict[str, tuple[float, float]] = {}  # ticker -> (change_pct, price)
 
+    is_futures = index == "futures"  # futures tickers use =F suffix, incompatible with Polygon stock API
+
     api_key = os.getenv("MASSIVE_API_KEY", "")
-    if api_key:
-        # Polygon.io snapshot: single async request for all tickers
+    if api_key and not is_futures:
+        # Polygon.io snapshot: single async request for all tickers (stocks only)
         tickers_str = ",".join(all_tickers)
         url = (
             f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
@@ -2500,8 +2502,27 @@ async def get_market_sector_map(index: str = "sp500"):
         except Exception as e:
             log.warning("sector_map.polygon_error", error=str(e))
 
-    if not changes:
-        pass  # No fallback — Polygon/Massive is the only source for sector heatmap prices
+    # Yahoo Finance fallback: used for futures (=F tickers) and any map that got no Polygon data
+    missing = [t for t in all_tickers if t not in changes]
+    if missing:
+        yf_url = (
+            "https://query1.finance.yahoo.com/v7/finance/quote"
+            f"?symbols={','.join(missing)}"
+            "&fields=regularMarketPrice,regularMarketChangePercent"
+        )
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            async with _aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(yf_url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for q in (data.get("quoteResponse") or {}).get("result") or []:
+                            sym   = q.get("symbol", "")
+                            chg   = round(float(q.get("regularMarketChangePercent") or 0), 2)
+                            price = round(float(q.get("regularMarketPrice") or 0), 2)
+                            changes[sym] = (chg, price)
+        except Exception as e:
+            log.warning("sector_map.yfinance_error", error=str(e))
 
     sectors = []
     for sname, stocks in SECTOR_STOCKS.items():
@@ -2583,6 +2604,37 @@ async def get_market_sparklines(tickers: str = ""):
 
         for tkr, closes in fetched:
             results[tkr] = closes
+
+        # Yahoo Finance fallback for tickers Polygon couldn't serve (e.g. futures =F format)
+        yf_missing = [tkr for tkr, closes in fetched if not closes]
+        if yf_missing:
+            async def _yf_fetch(session, ticker):
+                url = (
+                    f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+                    f"?interval=1d&range=10d"
+                )
+                try:
+                    async with session.get(url, timeout=_aiohttp.ClientTimeout(total=10),
+                                           headers={"User-Agent": "Mozilla/5.0"}) as resp:
+                        if resp.status == 200:
+                            d = await resp.json()
+                            res = ((d.get("chart") or {}).get("result") or [None])[0]
+                            if res:
+                                closes = [round(float(c), 2) for c in
+                                          (res.get("indicators", {}).get("quote", [{}])[0].get("close") or [])
+                                          if c is not None][-6:]
+                                return ticker, closes
+                except Exception:
+                    pass
+                return ticker, []
+
+            async with _aiohttp.ClientSession() as session:
+                yf_fetched = await asyncio.gather(*[_yf_fetch(session, t) for t in yf_missing])
+            for tkr, closes in yf_fetched:
+                if closes:
+                    results[tkr] = closes
+
+        for tkr, closes in results.items():
             try:
                 await _redis.setex(f"sparkline:{tkr}", 300, json.dumps(closes))
             except Exception:

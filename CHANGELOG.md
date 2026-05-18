@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.43] - 2026-05-18
+
+### Fixed
+- Futures sector map (Futures Market Map) now shows live prices and change % via Yahoo Finance quote API; previously all tiles showed 0% because Polygon's stock snapshot endpoint doesn't accept `=F`-format futures tickers
+- Sector map sparklines now fall back to Yahoo Finance chart API for any ticker Polygon can't serve (including all futures)
+
 ## [3.7.39] - 2026-05-18
 
 ### Fixed
