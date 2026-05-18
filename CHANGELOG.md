@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.37] - 2026-05-17
+
+### Changed
+- Market Health bars: replace Stooq fallback with Barchart OnDemand as second-priority source; Barchart natively carries $MMFI, $MMTH, $HIGHN, $LOWN — activate by adding `BARCHART_API_KEY` to `.env` (free account at barchart.com)
+
 ## [3.7.36] - 2026-05-17
 
 ### Changed

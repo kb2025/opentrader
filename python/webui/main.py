@@ -3104,39 +3104,47 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
             except Exception as e:
                 log.warning("webui.market_bars.polygon_error", ticker=poly_sym, error=str(e))
 
-    # ── Fallback 1: Stooq CSV (breadth indicators — needs STOOQ_API_KEY in .env) ──
+    # ── Fallback 1: Barchart OnDemand (breadth indicators — needs BARCHART_API_KEY in .env) ──
+    # Free key: register at barchart.com → My Account → Download Data.
+    # Symbols: use bare name (MMFI, MMTH, HIGHN, LOWN) — prepend $ internally.
     if not lc_bars:
-        stooq_key = os.getenv("STOOQ_API_KEY", "")
-        if stooq_key:
-            stooq_sym = sym.lower()
-            stooq_d1  = from_date.replace("-", "")
-            stooq_d2  = to_date.replace("-", "")
-            stooq_url = (
-                f"https://stooq.com/q/d/l/?s={stooq_sym}&d1={stooq_d1}&d2={stooq_d2}&i=d&k={stooq_key}"
-            )
+        bc_key = os.getenv("BARCHART_API_KEY", "")
+        if bc_key:
+            bc_sym  = f"${sym}" if not sym.startswith("$") else sym
+            bc_url  = "https://ondemand.websol.barchart.com/getHistory.json"
+            bc_params = {
+                "apikey":    bc_key,
+                "symbol":    bc_sym,
+                "type":      "daily",
+                "startDate": from_date.replace("-", ""),
+                "endDate":   to_date.replace("-", ""),
+                "maxRecords": str(days + 10),
+            }
             try:
                 async with _aiohttp.ClientSession() as session:
-                    async with session.get(stooq_url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                    async with session.get(bc_url, params=bc_params,
+                                           timeout=_aiohttp.ClientTimeout(total=15)) as resp:
                         if resp.status == 200:
-                            text = await resp.text()
-                            # CSV: Date,Open,High,Low,Close,Volume
-                            for line in text.splitlines()[1:]:
-                                parts = line.split(",")
-                                if len(parts) < 5:
+                            data = await resp.json(content_type=None)
+                            for d in data.get("results") or []:
+                                date_str = d.get("tradingDay", "")
+                                if not date_str:
                                     continue
                                 try:
-                                    dt  = _date.fromisoformat(parts[0].strip())
+                                    dt  = _date.fromisoformat(date_str[:10])
                                     ts  = int(_cal.timegm(dt.timetuple()))
-                                    o   = float(parts[1])
-                                    h   = float(parts[2])
-                                    l   = float(parts[3])
-                                    c   = float(parts[4])
-                                    vol = int(float(parts[5])) if len(parts) > 5 else 0
-                                    lc_bars.append({"time": ts, "open": o, "high": h, "low": l, "close": c, "volume": vol})
-                                except (ValueError, IndexError):
+                                except ValueError:
                                     continue
+                                lc_bars.append({
+                                    "time":   ts,
+                                    "open":   float(d.get("open")   or 0),
+                                    "high":   float(d.get("high")   or 0),
+                                    "low":    float(d.get("low")    or 0),
+                                    "close":  float(d.get("close")  or 0),
+                                    "volume": int(d.get("volume")   or 0),
+                                })
             except Exception as e:
-                log.warning("webui.market_bars.stooq_error", ticker=sym, error=str(e))
+                log.warning("webui.market_bars.barchart_error", ticker=sym, error=str(e))
 
     # ── Fallback 2: Yahoo Finance chart API (breadth/vol indices) ─────────────
     if not lc_bars:
