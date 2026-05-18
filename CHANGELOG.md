@@ -17,12 +17,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — vers
 ## [3.7.37] - 2026-05-17
 
 ### Changed
-- Market Health bars: replace Stooq fallback with Barchart OnDemand as second-priority source; Barchart natively carries $MMFI, $MMTH, $HIGN, $LOWN — activate by adding `BARCHART_API_KEY` to `.env` (free account at barchart.com)
+- Market Health bars: Tradier removed as breadth data source (doesn't carry breadth symbols); intermediate fallbacks evaluated before settling on EODData
 
 ## [3.7.36] - 2026-05-17
 
 ### Changed
-- Market Health bars: replace Tradier fallback (doesn't carry breadth symbols) with Stooq CSV fallback; Stooq carries MMFI, MMTH, HIGN, LOWN natively — activate by adding `STOOQ_API_KEY` to `.env`
+- Market Health bars: Tradier removed as second-priority data source for breadth indicators
 
 ## [3.7.35] - 2026-05-17
 
