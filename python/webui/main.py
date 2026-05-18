@@ -3104,47 +3104,57 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
             except Exception as e:
                 log.warning("webui.market_bars.polygon_error", ticker=poly_sym, error=str(e))
 
-    # ── Fallback 1: Barchart OnDemand (breadth indicators — needs BARCHART_API_KEY in .env) ──
-    # Free key: register at barchart.com → My Account → Download Data.
-    # Symbols: use bare name (MMFI, MMTH, HIGHN, LOWN) — prepend $ internally.
+    # ── Fallback 1: EODData.com (breadth indicators — needs EODDATA_USERNAME + EODDATA_PASSWORD) ──
+    # Login obtains a session token; token is then used for SymbolHistory calls.
+    # NYSE exchange carries MMFI, MMTH, HIGHN, LOWN.
     if not lc_bars:
-        bc_key = os.getenv("BARCHART_API_KEY", "")
-        if bc_key:
-            bc_sym  = f"${sym}" if not sym.startswith("$") else sym
-            bc_url  = "https://ondemand.websol.barchart.com/getHistory.json"
-            bc_params = {
-                "apikey":    bc_key,
-                "symbol":    bc_sym,
-                "type":      "daily",
-                "startDate": from_date.replace("-", ""),
-                "endDate":   to_date.replace("-", ""),
-                "maxRecords": str(days + 10),
-            }
+        eod_user = os.getenv("EODDATA_USERNAME", "")
+        eod_pass = os.getenv("EODDATA_PASSWORD", "")
+        if eod_user and eod_pass:
             try:
+                import re as _re
                 async with _aiohttp.ClientSession() as session:
-                    async with session.get(bc_url, params=bc_params,
-                                           timeout=_aiohttp.ClientTimeout(total=15)) as resp:
-                        if resp.status == 200:
-                            data = await resp.json(content_type=None)
-                            for d in data.get("results") or []:
-                                date_str = d.get("tradingDay", "")
-                                if not date_str:
-                                    continue
-                                try:
-                                    dt  = _date.fromisoformat(date_str[:10])
-                                    ts  = int(_cal.timegm(dt.timetuple()))
-                                except ValueError:
-                                    continue
+                    # Step 1: login → session token
+                    async with session.get(
+                        "https://ws.eoddata.com/data.asmx/Login",
+                        params={"Username": eod_user, "Password": eod_pass},
+                        timeout=_aiohttp.ClientTimeout(total=10),
+                    ) as lr:
+                        login_xml = await lr.text()
+                    tok_match = _re.search(r'Token="([^"]+)"', login_xml)
+                    if tok_match:
+                        eod_token = tok_match.group(1)
+                        # Step 2: fetch daily history
+                        async with session.get(
+                            "https://ws.eoddata.com/data.asmx/SymbolHistory",
+                            params={"Exchange": "NYSE", "Symbol": sym,
+                                    "StartDate": from_date, "Token": eod_token},
+                            timeout=_aiohttp.ClientTimeout(total=15),
+                        ) as hr:
+                            hist_xml = await hr.text()
+                        # XML: <QUOTE DateTime="2026-01-02T00:00:00" Open="45.2" High="46.1"
+                        #              Low="44.8" Close="45.9" Volume="0" ... />
+                        def _eod_attr(tag: str, attr: str) -> str:
+                            m2 = _re.search(rf'\b{attr}="([^"]*)"', tag)
+                            return m2.group(1) if m2 else ""
+                        for q in _re.finditer(r'<QUOTE\s[^>]+/>', hist_xml):
+                            tag = q.group(0)
+                            try:
+                                date_str = _eod_attr(tag, "DateTime")[:10]
+                                dt = _date.fromisoformat(date_str)
+                                ts = int(_cal.timegm(dt.timetuple()))
                                 lc_bars.append({
                                     "time":   ts,
-                                    "open":   float(d.get("open")   or 0),
-                                    "high":   float(d.get("high")   or 0),
-                                    "low":    float(d.get("low")    or 0),
-                                    "close":  float(d.get("close")  or 0),
-                                    "volume": int(d.get("volume")   or 0),
+                                    "open":   float(_eod_attr(tag, "Open")  or 0),
+                                    "high":   float(_eod_attr(tag, "High")  or 0),
+                                    "low":    float(_eod_attr(tag, "Low")   or 0),
+                                    "close":  float(_eod_attr(tag, "Close") or 0),
+                                    "volume": int(float(_eod_attr(tag, "Volume") or 0)),
                                 })
+                            except (ValueError, IndexError):
+                                continue
             except Exception as e:
-                log.warning("webui.market_bars.barchart_error", ticker=sym, error=str(e))
+                log.warning("webui.market_bars.eoddata_error", ticker=sym, error=str(e))
 
     # ── Fallback 2: Yahoo Finance chart API (breadth/vol indices) ─────────────
     if not lc_bars:

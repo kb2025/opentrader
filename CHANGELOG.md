@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.38] - 2026-05-18
+
+### Changed
+- Market Health bars: replace Barchart fallback with EODData.com as second-priority source; EODData carries MMFI, MMTH, HIGHN, LOWN on NYSE exchange — activate by adding `EODDATA_USERNAME` + `EODDATA_PASSWORD` to `.env`
+
 ## [3.7.37] - 2026-05-17
 
 ### Changed
