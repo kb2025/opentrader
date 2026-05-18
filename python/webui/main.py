@@ -3116,7 +3116,7 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
 
     # ── Fallback 1: EODData api.eoddata.com (breadth indicators — needs EODDATA_API_KEY) ──
     # Exchange INDEX carries MMFI, MMTH, LOWN directly.
-    # HIGHN has no direct match — mapped to MAHN (52-Week Highs NYSE).
+    # HIGN (52-week highs) has no direct match — mapped to MAHN on EODData.
     # Semaphore serializes concurrent requests to avoid EODData rate-limits.
     if not lc_bars:
         eod_key = _read_env_file().get("EODDATA_API_KEY") or os.getenv("EODDATA_API_KEY", "")
@@ -3124,7 +3124,7 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
             global _eoddata_sem
             if _eoddata_sem is None:
                 _eoddata_sem = asyncio.Semaphore(1)
-            _EOD_ALIAS = {"HIGHN": "MAHN"}
+            _EOD_ALIAS = {"HIGN": "MAHN"}
             eod_sym = _EOD_ALIAS.get(sym, sym)
             # EODData history starts ~2026-01-01; clamp so older requests still return data
             eod_from = max(from_date, "2026-01-01")
@@ -3158,6 +3158,8 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
                                             })
                                         except (ValueError, KeyError):
                                             continue
+                    # Pace EODData calls — free tier rate-limits burst requests
+                    await asyncio.sleep(3)
                 except Exception as e:
                     log.warning("webui.market_bars.eoddata_error", ticker=sym, error=str(e))
 

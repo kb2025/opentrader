@@ -6,28 +6,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — vers
 ## [3.7.39] - 2026-05-18
 
 ### Fixed
-- Market Health breadth charts (MMFI, MMTH, HIGHN, LOWN): all four now reliably populate on simultaneous page load; EODData requests are serialized via asyncio semaphore and cached 15 min to prevent rate-limit drops
-- EODData integration uses `EODDATA_API_KEY` (not username/password); HIGHN mapped to `MAHN` (52-Week Highs NYSE); history clamped to 2026-01-01 to match plan limitations
+- Market Health breadth charts (MMFI, MMTH, HIGN, LOWN): all four now reliably populate on simultaneous page load; EODData requests are serialized via asyncio semaphore and cached 15 min to prevent rate-limit drops
+- EODData integration uses `EODDATA_API_KEY` (not username/password); HIGN mapped to `MAHN` (52-Week Highs NYSE); history clamped to 2026-01-01 to match plan limitations
 
 ## [3.7.38] - 2026-05-18
 
 ### Changed
-- Market Health bars: replace Barchart fallback with EODData.com (`api.eoddata.com`) as second-priority source; EODData carries MMFI, MMTH, HIGHN (→MAHN), LOWN on INDEX exchange — activate by adding `EODDATA_API_KEY` to `.env`
+- Market Health bars: replace Barchart fallback with EODData.com (`api.eoddata.com`) as second-priority source; EODData carries MMFI, MMTH, HIGN (→MAHN), LOWN on INDEX exchange — activate by adding `EODDATA_API_KEY` to `.env`
 
 ## [3.7.37] - 2026-05-17
 
 ### Changed
-- Market Health bars: replace Stooq fallback with Barchart OnDemand as second-priority source; Barchart natively carries $MMFI, $MMTH, $HIGHN, $LOWN — activate by adding `BARCHART_API_KEY` to `.env` (free account at barchart.com)
+- Market Health bars: replace Stooq fallback with Barchart OnDemand as second-priority source; Barchart natively carries $MMFI, $MMTH, $HIGN, $LOWN — activate by adding `BARCHART_API_KEY` to `.env` (free account at barchart.com)
 
 ## [3.7.36] - 2026-05-17
 
 ### Changed
-- Market Health bars: replace Tradier fallback (doesn't carry breadth symbols) with Stooq CSV fallback; Stooq carries MMFI, MMTH, HIGHN, LOWN natively — activate by adding `STOOQ_API_KEY` to `.env`
+- Market Health bars: replace Tradier fallback (doesn't carry breadth symbols) with Stooq CSV fallback; Stooq carries MMFI, MMTH, HIGN, LOWN natively — activate by adding `STOOQ_API_KEY` to `.env`
 
 ## [3.7.35] - 2026-05-17
 
 ### Changed
-- Market Health charts: Tradier `/markets/history` added as second-priority data source (after Polygon, before Yahoo Finance), enabling breadth indicators MMFI, MMTH, HIGHN, LOWN to populate from Tradier
+- Market Health charts: Tradier `/markets/history` added as second-priority data source (after Polygon, before Yahoo Finance), enabling breadth indicators MMFI, MMTH, HIGN, LOWN to populate from Tradier
 
 ### Fixed
 - WebUI session persistence: added stable `SECRET_KEY` to `.env` so session cookies survive container restarts
