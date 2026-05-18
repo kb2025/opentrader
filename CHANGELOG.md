@@ -12,7 +12,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — vers
 ## [3.7.38] - 2026-05-18
 
 ### Changed
-- Market Health bars: replace Barchart fallback with EODData.com (`api.eoddata.com`) as second-priority source; EODData carries MMFI, MMTH, HIGN (→MAHN), LOWN on INDEX exchange — activate by adding `EODDATA_API_KEY` to `.env`
+- Market Health bars: EODData.com (`api.eoddata.com`) added as second-priority source; carries MMFI, MMTH, HIGN (→MAHN), LOWN on INDEX exchange — activate by adding `EODDATA_API_KEY` to `.env`
 
 ## [3.7.37] - 2026-05-17
 
