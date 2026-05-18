@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.44] - 2026-05-18
+
+### Fixed
+- Futures Market Map currencies: `DX=F` replaced with `DX-Y.NYB` (Yahoo Finance's correct Dollar Index ticker); `DX=F` returned no data
+- Futures Market Map: change % now computed from unrounded raw price to avoid precision loss on small-priced futures like `6J=F` (Japanese Yen at ~0.0063 — previously rounded to 0.01, producing a spurious +58% change)
+
 ## [3.7.43] - 2026-05-18
 
 ### Fixed

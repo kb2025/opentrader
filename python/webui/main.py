@@ -2345,7 +2345,7 @@ async def get_market_sector_map(index: str = "sp500"):
             ("SB=F","Sugar",70,"Soft"),("CT=F","Cotton",60,"Soft"),
         ],
         "Currencies": [
-            ("DX=F","Dollar Index",250,"Major"),("6E=F","Euro FX",400,"Major"),
+            ("DX-Y.NYB","Dollar Index",250,"Major"),("6E=F","Euro FX",400,"Major"),
             ("6J=F","Japanese Yen",300,"Major"),("6B=F","British Pound",200,"Major"),
             ("6C=F","Canadian Dollar",150,"Major"),("6A=F","Australian Dollar",120,"Major"),
         ],
@@ -2502,25 +2502,42 @@ async def get_market_sector_map(index: str = "sp500"):
         except Exception as e:
             log.warning("sector_map.polygon_error", error=str(e))
 
-    # Yahoo Finance fallback: used for futures (=F tickers) and any map that got no Polygon data
+    # Yahoo Finance fallback via v8/finance/chart (per-ticker, concurrent).
+    # Used for futures (=F tickers Polygon doesn't serve) and any stocks Polygon missed.
     missing = [t for t in all_tickers if t not in changes]
     if missing:
-        yf_url = (
-            "https://query1.finance.yahoo.com/v7/finance/quote"
-            f"?symbols={','.join(missing)}"
-            "&fields=regularMarketPrice,regularMarketChangePercent"
-        )
+        sem = asyncio.Semaphore(10)
+
+        async def _yf_chart(session, ticker):
+            async with sem:
+                url = (
+                    f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+                    f"?interval=1d&range=2d"
+                )
+                try:
+                    async with session.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            d = await resp.json()
+                            res = ((d.get("chart") or {}).get("result") or [None])[0]
+                            if res:
+                                meta  = res.get("meta", {})
+                                raw_price = float(meta.get("regularMarketPrice") or 0)
+                                prev      = float(meta.get("chartPreviousClose") or 0)
+                                # Use unrounded values for % calc to avoid precision loss on small-priced futures (e.g. 6J=F)
+                                chg   = round((raw_price / prev - 1) * 100, 2) if prev else 0.0
+                                price = round(raw_price, 4)
+                                return ticker, (chg, price)
+                except Exception:
+                    pass
+                return ticker, None
+
         try:
             headers = {"User-Agent": "Mozilla/5.0"}
             async with _aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(yf_url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        for q in (data.get("quoteResponse") or {}).get("result") or []:
-                            sym   = q.get("symbol", "")
-                            chg   = round(float(q.get("regularMarketChangePercent") or 0), 2)
-                            price = round(float(q.get("regularMarketPrice") or 0), 2)
-                            changes[sym] = (chg, price)
+                results = await asyncio.gather(*[_yf_chart(session, t) for t in missing])
+            for tkr, val in results:
+                if val:
+                    changes[tkr] = val
         except Exception as e:
             log.warning("sector_map.yfinance_error", error=str(e))
 
