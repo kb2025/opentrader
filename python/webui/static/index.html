@@ -21298,15 +21298,15 @@ async function reportsUpdateChannels(type) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Market Health — draggable EMA dashboard  (Sector Insight)
 // ══════════════════════════════════════════════════════════════════════════════
-const MH_DEFAULT_TICKERS = ['PCL','MMFI','MMTH','HIGN','LOWN','VIX'];
+const MH_DEFAULT_TICKERS = ['PCL','MMFI','MMTH','HIGN','MAHQ','LOWN','LOWQ','TRIN'];
 const MH_EMA_DEFS = [
   { period: 10,  color: '#ffffff', lineWidth: 1,   title: 'EMA10'  },
   { period: 20,  color: '#3b82f6', lineWidth: 1,   title: 'EMA20'  },
   { period: 50,  color: '#22c55e', lineWidth: 1.5, title: 'EMA50'  },
   { period: 200, color: '#ef4444', lineWidth: 2,   title: 'EMA200' },
 ];
-const MH_TICKERS_KEY = 'mh_tickers_v1';
-const MH_ORDER_KEY   = 'mh_order_v1';
+const MH_TICKERS_KEY = 'mh_tickers_v2';
+const MH_ORDER_KEY   = 'mh_order_v2';
 
 let _mhCharts  = {};
 let _mhDragSrc = null;

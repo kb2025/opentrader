@@ -3,6 +3,18 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.45] - 2026-05-19
+
+### Changed
+- Market Health dashboard default tickers updated to include Nasdaq breadth companions and TRIN:
+  `PCL, MMFI, MMTH, HIGN, MAHQ, LOWN, LOWQ, TRIN`
+  - Added `MAHQ` (52-Week Highs Nasdaq) — pairs with `HIGN` (NYSE) to show both exchange new-high counts
+  - Added `LOWQ` (Nasdaq New Lows) — pairs with `LOWN` (NYSE) to show both exchange new-low counts
+  - Added `TRIN` (NYSE Arms Index) — volume-weighted advance/decline ratio; <0.7 bullish, >1.2 bearish
+  - Removed `VIX` from defaults (already visible on Trading Dashboard macro panel)
+  - All three new symbols served by existing EODData fallback; no backend changes required
+- Storage keys bumped to `mh_tickers_v2` / `mh_order_v2` so existing users receive the new defaults
+
 ## [3.7.44] - 2026-05-18
 
 ### Fixed
