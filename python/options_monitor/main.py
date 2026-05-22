@@ -255,7 +255,7 @@ async def _fetch_option_chain_details(
 ) -> Optional[dict]:
     """
     Look up option contract details (strike, type, expiry, delta) via Polygon.io snapshots.
-    - Uses list_snapshot_options_chain which returns all live contracts with Greeks.
+    Uses the v3/snapshot/options REST endpoint directly via aiohttp (no polygon SDK required).
     - When current_option_price > 0, matches by bid/ask midpoint proximity.
     - When current_option_price == 0, matches by nearest-ATM strike.
     - entry_date: if provided, skips expiry dates that would have been < 14 DTE when
@@ -263,7 +263,7 @@ async def _fetch_option_chain_details(
     Returns dict with strike, option_type, expiration_date, delta — or None.
     """
     import os
-    from polygon import RESTClient
+    import aiohttp as _aiohttp
 
     api_key = os.getenv("MASSIVE_API_KEY", "")
     if not api_key:
@@ -271,14 +271,25 @@ async def _fetch_option_chain_details(
 
     opt_type_filter = hint_option_type if hint_option_type in ("call", "put") else "call"
     MAX_ENTRY_TO_EXPIRY_DAYS = 90
+    contracts: list = []
 
     try:
-        client = RESTClient(api_key)
-        contracts = list(client.list_snapshot_options_chain(
-            underlying_asset=underlying.upper(),
-            contract_type=opt_type_filter,
-            limit=250,
-        ))
+        async with _aiohttp.ClientSession() as session:
+            url    = f"https://api.polygon.io/v3/snapshot/options/{underlying.upper()}"
+            params = {"contract_type": opt_type_filter, "limit": 250, "apiKey": api_key}
+            while len(contracts) < 500:
+                async with session.get(url, params=params,
+                                       timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
+                        break
+                    data     = await resp.json()
+                    results  = data.get("results") or []
+                    contracts.extend(results)
+                    next_url = data.get("next_url")
+                    if not next_url or not results:
+                        break
+                    url    = next_url
+                    params = {"apiKey": api_key}
     except Exception as e:
         log.warning("options_monitor.polygon_chain_error", ticker=underlying, error=str(e))
         return None
@@ -290,11 +301,11 @@ async def _fetch_option_chain_details(
     best_score = float("inf")
 
     for snap in contracts:
-        details = getattr(snap, "details", None)
+        details = snap.get("details") or {}
         if not details:
             continue
         try:
-            exp_d = date.fromisoformat(str(details.expiration_date)[:10])
+            exp_d = date.fromisoformat(str(details.get("expiration_date", ""))[:10])
         except Exception:
             continue
 
@@ -304,19 +315,19 @@ async def _fetch_option_chain_details(
         if entry_date and (exp_d - entry_date).days < 14:
             continue
 
-        contract_strike = float(details.strike_price or 0)
-        opt_type        = details.contract_type or opt_type_filter
+        contract_strike = float(details.get("strike_price") or 0)
+        opt_type        = details.get("contract_type") or opt_type_filter
 
         # Greeks from Polygon snapshot
-        greeks_snap = getattr(snap, "greeks", None)
-        delta = float(greeks_snap.delta) if greeks_snap and greeks_snap.delta is not None else None
-        gamma = float(greeks_snap.gamma) if greeks_snap and greeks_snap.gamma is not None else None
-        theta = float(greeks_snap.theta) if greeks_snap and greeks_snap.theta is not None else None
-        vega  = float(greeks_snap.vega)  if greeks_snap and greeks_snap.vega  is not None else None
+        greeks_snap = snap.get("greeks") or {}
+        delta = float(greeks_snap["delta"]) if greeks_snap.get("delta") is not None else None
+        gamma = float(greeks_snap["gamma"]) if greeks_snap.get("gamma") is not None else None
+        theta = float(greeks_snap["theta"]) if greeks_snap.get("theta") is not None else None
+        vega  = float(greeks_snap["vega"])  if greeks_snap.get("vega")  is not None else None
 
         # Fallback: compute B-S Greeks from IV if Polygon didn't return them
         if delta is None and current_underlying_price > 0 and contract_strike > 0:
-            iv = float(getattr(snap, "implied_volatility", None) or 0)
+            iv = float(snap.get("implied_volatility") or 0)
             if iv > 0:
                 T = max((exp_d - date.today()).days, 1) / 365.0
                 g = _bs_greeks(current_underlying_price, contract_strike, T, iv,
@@ -324,12 +335,12 @@ async def _fetch_option_chain_details(
                 delta, gamma, theta, vega = g["delta"], g["gamma"], g["theta"], g["vega"]
 
         # Scoring
-        day_snap = getattr(snap, "day", None)
-        quote    = getattr(snap, "last_quote", None)
+        day_snap = snap.get("day") or {}
+        quote    = snap.get("last_quote") or {}
         if current_option_price > 0:
-            bid  = float(quote.bid_price if quote else 0) if quote else 0
-            ask  = float(quote.ask_price if quote else 0) if quote else 0
-            last = float(day_snap.close if day_snap else 0) if day_snap else 0
+            bid  = float(quote.get("bid_price") or 0)
+            ask  = float(quote.get("ask_price") or 0)
+            last = float(day_snap.get("close") or 0)
             if bid > 0 and ask > 0:
                 ref = (bid + ask) / 2.0
             elif bid > 0:
@@ -344,7 +355,7 @@ async def _fetch_option_chain_details(
             score = abs(contract_strike - current_underlying_price) / current_underlying_price
             threshold = 0.25
         else:
-            oi = float(getattr(snap, "open_interest", None) or 1)
+            oi = float(snap.get("open_interest") or 1)
             score = 1.0 / max(oi, 1)
             threshold = 1.0
 

@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.46] - 2026-05-22
+
+### Fixed
+- Options dashboard: Webull positions no longer listed — `_fetch_option_chain_details` used the `polygon` Python SDK (`from polygon import RESTClient`) which is not installed in the container; replaced with a direct `aiohttp` call to Polygon's v3/snapshot/options REST endpoint, matching the pattern used elsewhere in the codebase
+
 ## [3.7.45] - 2026-05-19
 
 ### Changed
