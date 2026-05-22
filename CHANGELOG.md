@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.66] - 2026-05-22
+
+### Changed
+- API Configuration connector modal: button renamed "Save to .env" → "Save"; subtitle updated to "Credentials saved to your profile"
+- Broker Configuration modal: same renames — "Save to .env" → "Save", subtitle updated
+- Broker Configuration page subtitle: updated from ".env restart" note to profile/agent sync message
+
 ## [3.7.65] - 2026-05-22
 
 ### Changed
