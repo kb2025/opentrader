@@ -13347,7 +13347,8 @@ async def shadow_run(body: dict):
     try:
         result = await _shadow_run(pool, d_from, d_to, acct, openrouter_key)
     except Exception as e:
-        log.error("shadow_run.error", error=str(e))
+        import traceback
+        log.error("shadow_run.error", error=str(e), traceback=traceback.format_exc())
         raise HTTPException(500, f"Shadow analysis failed: {e}")
 
     if "error" in result:

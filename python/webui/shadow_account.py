@@ -48,7 +48,6 @@ async def _fetch_trades(pool, date_from: date, date_to: date,
         FROM trades
         WHERE ts::date BETWEEN $1 AND $2
           AND entry_price IS NOT NULL
-          AND entry_price ~ '^[0-9]+(\.[0-9]*)?$'
           AND status IN ('closed', 'fill')
     """
     eq_args: list = [date_from, date_to]
@@ -127,32 +126,34 @@ async def _fetch_signals(pool, date_from: date, date_to: date) -> dict:
     return result
 
 
-def _fetch_ohlcv(ticker: str, start: date, end: date) -> pd.DataFrame:
-    """Fetch OHLCV via Polygon.io REST — returns DataFrame with date index."""
-    import os
-    from polygon import RESTClient
-
-    api_key = os.getenv("MASSIVE_API_KEY", "")
-    if not api_key:
+async def _fetch_ohlcv(ticker: str, start: date, end: date) -> pd.DataFrame:
+    """Fetch OHLCV via Massive MCP — returns DataFrame with date index."""
+    try:
+        from shared.mcp_client import get_massive_daily_bars
+        bars = await get_massive_daily_bars(ticker, str(start), str(end))
+        if not bars:
+            return pd.DataFrame()
+        rows = {}
+        for b in bars:
+            try:
+                d = date.fromisoformat(str(b["date"])[:10])
+                rows[d] = {
+                    "Open":   float(b.get("open",   0) or 0),
+                    "High":   float(b.get("high",   0) or 0),
+                    "Low":    float(b.get("low",    0) or 0),
+                    "Close":  float(b.get("close",  0) or 0),
+                    "Volume": float(b.get("volume", 0) or 0),
+                }
+            except Exception:
+                continue
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame.from_dict(rows, orient="index")
+        df.index.name = None
+        return df
+    except Exception as e:
+        log.warning("shadow.ohlcv_fail", ticker=ticker, error=str(e))
         return pd.DataFrame()
-    client = RESTClient(api_key)
-    bars = client.get_aggs(
-        ticker.upper(), 1, "day",
-        str(start), str(end + timedelta(days=1)),
-        limit=500, adjusted=True,
-    )
-    if not bars:
-        return pd.DataFrame()
-    rows = {
-        date.fromtimestamp(b.timestamp / 1000): {
-            "Open": b.open, "High": b.high, "Low": b.low,
-            "Close": b.close, "Volume": b.volume,
-        }
-        for b in bars
-    }
-    df = pd.DataFrame.from_dict(rows, orient="index")
-    df.index.name = None
-    return df
 
 
 # ── Trade analysis ────────────────────────────────────────────────────────────
@@ -422,7 +423,7 @@ Return raw JSON only, no markdown fences.
 def _backtest_rule(rule: dict, scored: list[dict]) -> dict:
     f      = rule.get("filter") or {}
     f_type = f.get("type", "")
-    f_val  = float(f.get("value", 0))
+    f_val  = _safe_float(f.get("value", 0))
 
     affected = 0
     gain     = 0.0
@@ -479,16 +480,11 @@ async def run_analysis(
 
     ohlcv_cache: dict[str, Optional[pd.DataFrame]] = {}
     results = await asyncio.gather(
-        *[
-            asyncio.get_event_loop().run_in_executor(
-                None, _fetch_ohlcv, ticker, ohlcv_start, ohlcv_end
-            )
-            for ticker in tickers
-        ],
+        *[_fetch_ohlcv(ticker, ohlcv_start, ohlcv_end) for ticker in tickers],
         return_exceptions=True,
     )
     for ticker, res in zip(tickers, results):
-        ohlcv_cache[ticker] = None if isinstance(res, Exception) else res
+        ohlcv_cache[ticker] = None if isinstance(res, Exception) or (isinstance(res, pd.DataFrame) and res.empty) else res
 
     # Score each trade and detect overtrading
     scored = [_analyze_trade(t, ohlcv_cache.get(t["ticker"])) for t in trades]

@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.74] - 2026-05-22
+
+### Fixed
+- Trading Hindsights: discipline categories (noise trades, early exits, late exits) showed hyphens because OHLCV was fetched via polygon-api-client (not installed); replaced with async `get_massive_daily_bars` MCP call
+- `_backtest_rule`: `float()` on LLM filter value crashed when LLM returned a ticker name instead of a number; changed to `_safe_float()`
+- Added full traceback to `shadow_run.error` log for easier future debugging
+
 ## [3.7.73] - 2026-05-22
 
 ### Fixed
