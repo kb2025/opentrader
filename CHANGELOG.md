@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.75] - 2026-05-22
+
+### Fixed
+- Trading Hindsights: OHLCV fetch now uses Polygon REST API directly via aiohttp (shared.mcp_client requires `mcp` package not installed in webui); discipline categories now populate correctly
+
 ## [3.7.74] - 2026-05-22
 
 ### Fixed

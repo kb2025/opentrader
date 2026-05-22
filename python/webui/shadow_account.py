@@ -127,25 +127,35 @@ async def _fetch_signals(pool, date_from: date, date_to: date) -> dict:
 
 
 async def _fetch_ohlcv(ticker: str, start: date, end: date) -> pd.DataFrame:
-    """Fetch OHLCV via Massive MCP — returns DataFrame with date index."""
+    """Fetch OHLCV via Polygon REST API (MASSIVE_API_KEY) — returns DataFrame with date index."""
+    import aiohttp as _aiohttp
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return pd.DataFrame()
+    url = (
+        f"https://api.polygon.io/v2/aggs/ticker/{ticker.upper()}/range/1/day"
+        f"/{start}/{end}?adjusted=true&sort=asc&limit=750&apiKey={api_key}"
+    )
     try:
-        from shared.mcp_client import get_massive_daily_bars
-        bars = await get_massive_daily_bars(ticker, str(start), str(end))
-        if not bars:
-            return pd.DataFrame()
+        async with _aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status != 200:
+                    log.warning("shadow.ohlcv_http_error", ticker=ticker, status=resp.status)
+                    return pd.DataFrame()
+                data = await resp.json()
         rows = {}
-        for b in bars:
-            try:
-                d = date.fromisoformat(str(b["date"])[:10])
-                rows[d] = {
-                    "Open":   float(b.get("open",   0) or 0),
-                    "High":   float(b.get("high",   0) or 0),
-                    "Low":    float(b.get("low",    0) or 0),
-                    "Close":  float(b.get("close",  0) or 0),
-                    "Volume": float(b.get("volume", 0) or 0),
-                }
-            except Exception:
+        for b in data.get("results", []):
+            ts_ms = b.get("t", 0)
+            if not ts_ms:
                 continue
+            d = date.fromtimestamp(ts_ms / 1000)
+            rows[d] = {
+                "Open":   float(b.get("o") or 0),
+                "High":   float(b.get("h") or 0),
+                "Low":    float(b.get("l") or 0),
+                "Close":  float(b.get("c") or 0),
+                "Volume": float(b.get("v") or 0),
+            }
         if not rows:
             return pd.DataFrame()
         df = pd.DataFrame.from_dict(rows, orient="index")
