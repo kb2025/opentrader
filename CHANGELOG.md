@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.73] - 2026-05-22
+
+### Fixed
+- Trading Hindsights: `shadow_run` 500 error when `trades.entry_price` column contains ticker symbols instead of numeric values — SQL now filters rows via `entry_price ~ '^[0-9]+(\.[0-9]*)?$'` and casts to numeric; `_safe_float()` helper guards all remaining `float()` conversions in `_analyze_trade`; performance metrics row now renders correctly after analysis
+
 ## [3.7.72] - 2026-05-22
 
 ### Added

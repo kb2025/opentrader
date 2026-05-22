@@ -38,12 +38,17 @@ async def _fetch_trades(pool, date_from: date, date_to: date,
     (option_trade_log JOIN option_positions) so all broker accounts have data.
     """
     eq_q = """
-        SELECT id, ts, account_id, broker, ticker, direction, qty,
-               entry_price, exit_price, pnl, strategy, status,
+        SELECT id, ts, account_id, broker, ticker, direction,
+               qty::numeric                                    AS qty,
+               entry_price::numeric                           AS entry_price,
+               exit_price::numeric                            AS exit_price,
+               pnl::numeric                                   AS pnl,
+               strategy, status,
                FALSE AS _is_option
         FROM trades
         WHERE ts::date BETWEEN $1 AND $2
           AND entry_price IS NOT NULL
+          AND entry_price ~ '^[0-9]+(\.[0-9]*)?$'
           AND status IN ('closed', 'fill')
     """
     eq_args: list = [date_from, date_to]
@@ -159,18 +164,25 @@ def _entry_date(trade: dict) -> date:
     return date.fromisoformat(str(ts)[:10])
 
 
+def _safe_float(val, default: float = 0.0) -> float:
+    try:
+        return float(val) if val is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
 def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
     is_option   = bool(trade.get("_is_option", False))
-    entry_price = float(trade.get("entry_price") or 0)
-    qty         = float(trade.get("qty") or 0)
+    entry_price = _safe_float(trade.get("entry_price"))
+    qty         = _safe_float(trade.get("qty"))
     direction   = trade.get("direction", "long")
     signal      = trade.get("signal") or {}
-    confidence  = float(signal.get("confidence") or 0)
+    confidence  = _safe_float(signal.get("confidence"))
     is_open     = trade.get("status") == "fill" and not trade.get("exit_price")
 
     # Compute actual P&L: use DB value if closed, else estimate from latest OHLCV close
-    exit_price  = float(trade.get("exit_price") or 0)
-    actual_pnl  = float(trade.get("pnl") or 0)
+    exit_price  = _safe_float(trade.get("exit_price"))
+    actual_pnl  = _safe_float(trade.get("pnl"))
     if is_open and not is_option and ohlcv is not None and not ohlcv.empty and entry_price > 0 and qty > 0:
         if "Close" in ohlcv.columns and len(ohlcv) > 0:
             last_close = ohlcv["Close"].iloc[-1]
@@ -241,7 +253,7 @@ def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
         "account_id":        trade.get("account_id", ""),
         "trade_type":        "option" if is_option else "equity",
         "opt_type":          str(trade.get("_opt_type") or ""),
-        "opt_strike":        float(trade.get("_opt_strike") or 0) if trade.get("_opt_strike") else None,
+        "opt_strike":        _safe_float(trade.get("_opt_strike")) if trade.get("_opt_strike") else None,
         "opt_expiry":        str(trade.get("_opt_expiry") or "")[:10] if trade.get("_opt_expiry") else None,
     }
 
