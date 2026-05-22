@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.69] - 2026-05-22
+
+### Added
+- API Configuration: dedicated Alpha Vantage service connector (was embedded inside the Massive connector)
+- Test endpoint for Alpha Vantage (`/api/config/test/alpha_vantage`) — validates key and returns AAPL last price
+- Test endpoint for Massive now returns result count in success message
+
+### Verified
+- Massive.com API returning live data (AAPL OHLCV confirmed)
+
 ## [3.7.68] - 2026-05-22
 
 ### Removed

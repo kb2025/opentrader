@@ -4655,6 +4655,28 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                     return {"ok": True, "message": f"API key valid — {count} models available"}
                 raise HTTPException(status_code=400, detail=f"OpenRouter returned HTTP {resp.status}")
 
+            elif service == "alpha_vantage":
+                api_key = ev("ALPHA_VANTAGE_API_KEY")
+                if not api_key:
+                    raise HTTPException(status_code=400, detail="ALPHA_VANTAGE_API_KEY is required")
+                resp = await s.get(
+                    "https://www.alphavantage.co/query",
+                    params={"function": "GLOBAL_QUOTE", "symbol": "AAPL", "apikey": api_key},
+                    timeout=_aiohttp.ClientTimeout(total=10),
+                )
+                if resp.status != 200:
+                    raise HTTPException(status_code=400, detail=f"Alpha Vantage returned HTTP {resp.status}")
+                data = await resp.json()
+                if "Error Message" in data:
+                    raise HTTPException(status_code=400, detail=f"Alpha Vantage error: {data['Error Message']}")
+                if "Information" in data:
+                    raise HTTPException(status_code=400, detail="Alpha Vantage API limit reached or invalid key")
+                quote = data.get("Global Quote", {})
+                price = quote.get("05. price", "")
+                if not price:
+                    raise HTTPException(status_code=400, detail="Alpha Vantage returned no data — check API key")
+                return {"ok": True, "message": f"Alpha Vantage key valid — AAPL last price ${float(price):.2f}"}
+
             elif service == "massive":
                 api_key = ev("MASSIVE_API_KEY")
                 if not api_key:
@@ -4669,7 +4691,9 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                 if resp.status == 401:
                     raise HTTPException(status_code=400, detail="Invalid Massive API key — unauthorized")
                 if resp.status == 200:
-                    return {"ok": True, "message": "Massive API key valid — market data accessible"}
+                    data = await resp.json()
+                    count = data.get("resultsCount", 0)
+                    return {"ok": True, "message": f"Massive API key valid — {count} bar(s) returned for AAPL"}
                 raise HTTPException(status_code=400, detail=f"Massive API returned HTTP {resp.status}")
 
             elif service == "alpaca_mcp":

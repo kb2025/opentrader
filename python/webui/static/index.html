@@ -8120,14 +8120,19 @@ const CFG_META = {
       { key: 'LLM_FALLBACK_MODEL',     label: 'Fallback',     type: 'text', hint: 'Default: openai/gpt-4o' },
     ],
   },
+  alpha_vantage: {
+    label: 'Alpha Vantage', letter: 'A', bg: '#1a6b3c', fg: '#fff',
+    fields: [
+      { key: 'ALPHA_VANTAGE_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
+        hint: 'Get a free key at alphavantage.co — required for news sentiment scraper (ot-scraper-news)' },
+    ],
+  },
   massive: {
     label: 'Massive', letter: 'M', bg: '#0ea5e9', fg: '#fff',
     fields: [
       { key: 'MASSIVE_API_KEY', label: 'API Key', type: 'password', required: true, mono: true, hint: 'Your Massive.com (formerly Polygon.io) API key from massive.com/dashboard' },
       { type: 'separator', label: 'MCP Server' },
       { key: 'MASSIVE_MCP_URL', label: 'MCP URL', type: 'text', hint: 'Default: http://ot-mcp-massive:8000/mcp (auto-set)' },
-      { type: 'separator', label: 'Alpha Vantage' },
-      { key: 'ALPHA_VANTAGE_API_KEY', label: 'API Key', type: 'password', mono: true, hint: 'Free key at alphavantage.co — required for news sentiment scraper (ot-scraper-news)' },
     ],
   },
   google_books: {
