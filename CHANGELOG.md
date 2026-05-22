@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.50] - 2026-05-22
+
+### Changed
+- Nav: renamed "Configuration" to "System Configuration"
+- Nav: Broker dashboard now enforced in Platform section via guaranteed DOM placement (survives saved nav_order from old position in Trading)
+- System Configuration page: added EODData connector card (EODDATA_API_KEY — breadth indicator fallback source)
+
 ## [3.7.49] - 2026-05-22
 
 ### Changed

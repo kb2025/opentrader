@@ -409,7 +409,7 @@ select option{background:var(--surface2)}
       </div>
       <div class="nav-item" draggable="true" onclick="navigate('page-platform-config')" data-page="page-platform-config">
         <span class="nav-dot" style="background:var(--teal)"></span>
-        Configuration
+        System Configuration
       </div>
       <div class="nav-item" draggable="true" onclick="navigate('page-platform-logs')" data-page="page-platform-logs">
         <span class="nav-dot" style="background:var(--muted)"></span>
@@ -4447,7 +4447,7 @@ const PAGE_TITLES = {
   'page-platform-system':    'System',
   'page-platform-ssl':       'SSL / TLS',
   'page-platform-profile':   'User Configuration',
-  'page-platform-config':    'Configuration',
+  'page-platform-config':    'System Configuration',
   'page-trading-dashboard':  'Trading Dashboard',
   'page-trading-unified':    'Equity Dashboard',
 
@@ -8163,6 +8163,13 @@ const CFG_META = {
       { type: 'separator', label: 'MCP Server' },
       { key: 'ALPACA_MCP_URL', label: 'MCP URL', type: 'text',
         hint: 'Default: http://ot-mcp-alpaca:8000/mcp (auto-set)' },
+    ],
+  },
+  eoddata: {
+    label: 'EODData', letter: 'E', bg: '#1e3a5f', fg: '#fff',
+    fields: [
+      { key: 'EODDATA_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
+        hint: 'Get your key at eoddata.com — used as a fallback source for Market Health breadth indicators (MMFI, MMTH, HIGN, LOWN, etc.)' },
     ],
   },
 };
@@ -13494,6 +13501,16 @@ async function _loadNavOrder() {
     const macroEl = resourcesGroup.querySelector('.nav-item[data-page="page-macro-hub"]');
     if (macroEl) resourcesGroup.insertBefore(hindsightEl, macroEl.nextSibling);
     else resourcesGroup.appendChild(hindsightEl);
+    _saveNavOrder();
+  }
+
+  // Guaranteed: Broker must always be in the Platform group.
+  const brokerNavEl    = document.querySelector('#main-nav .nav-item[data-page="page-trading-broker"]');
+  const platformGroup  = document.querySelector('#main-nav .nav-group[data-group="platform"]');
+  if (brokerNavEl && platformGroup && brokerNavEl.closest('.nav-group') !== platformGroup) {
+    const profileEl = platformGroup.querySelector('.nav-item[data-page="page-platform-profile"]');
+    if (profileEl) platformGroup.insertBefore(brokerNavEl, profileEl);
+    else platformGroup.appendChild(brokerNavEl);
     _saveNavOrder();
   }
 }
