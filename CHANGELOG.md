@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.70] - 2026-05-22
+
+### Added
+- Yahoo Finance MCP (`ot-mcp-yahoo`): new `get_analyst_consensus` tool — returns consensus rating, price target (mean/high/low), buy/hold/sell counts, analyst count, and upside %, sourced from Yahoo Finance
+- `shared/mcp_client.py`: `YAHOO_MCP_URL` constant + `get_analyst_consensus()` async function routing to Yahoo MCP
+- Aggregator: fetches analyst consensus per ticker via Yahoo MCP (4-hour Redis cache), passes to `build_intelligence()` which now populates `analyst_consensus`, `analyst_buy_pct`, `analyst_upside_pct` fields that were previously always zero
+
+### Verified
+- AAPL: buy consensus, 48 analysts, \$308.65 price target, 30 buy / 16 hold / 2 sell
+
 ## [3.7.69] - 2026-05-22
 
 ### Added

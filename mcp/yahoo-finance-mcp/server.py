@@ -443,6 +443,78 @@ async def get_avg_volume(ticker: str, period: str = "3mo") -> str:
         return f"Error: getting average volume for {ticker}: {e}"
 
 
+@yfinance_server.tool(
+    name="get_analyst_consensus",
+    description="""Get analyst consensus rating, price target, and buy/hold/sell counts for a ticker from Yahoo Finance.
+
+Args:
+    ticker: str
+        The ticker symbol, e.g. "AAPL"
+""",
+)
+async def get_analyst_consensus(ticker: str) -> str:
+    """Get analyst consensus rating and price targets from Yahoo Finance."""
+    _KEY_MAP = {
+        "strong_buy":     "strong_buy",
+        "buy":            "buy",
+        "hold":           "hold",
+        "sell":           "sell",
+        "strong_sell":    "strong_sell",
+        "underperform":   "sell",
+        "outperform":     "buy",
+        "market_perform": "hold",
+        "overweight":     "buy",
+        "underweight":    "sell",
+        "neutral":        "hold",
+    }
+    try:
+        company = yf.Ticker(ticker.upper())
+        info = company.info or {}
+    except Exception as e:
+        return json.dumps({"ticker": ticker.upper(), "error": str(e)})
+
+    rec_key = (info.get("recommendationKey") or "").lower().replace(" ", "_")
+    if not rec_key:
+        return json.dumps({"ticker": ticker.upper(), "error": "No consensus data available"})
+
+    consensus = _KEY_MAP.get(rec_key, "hold")
+
+    buy_count = hold_count = sell_count = 0
+    try:
+        recs = company.recommendations
+        if recs is not None and not recs.empty:
+            row = recs.iloc[0]
+            buy_count  = int(row.get("strongBuy", 0) or 0) + int(row.get("buy", 0) or 0)
+            hold_count = int(row.get("hold", 0) or 0)
+            sell_count = int(row.get("sell", 0) or 0) + int(row.get("strongSell", 0) or 0)
+    except Exception:
+        pass
+
+    total = buy_count + hold_count + sell_count
+    if total == 0:
+        total = int(info.get("numberOfAnalystOpinions") or 0)
+
+    current_price = float(info.get("currentPrice") or info.get("regularMarketPrice") or 0)
+    target_mean   = float(info.get("targetMeanPrice") or 0)
+    target_high   = float(info.get("targetHighPrice") or 0)
+    target_low    = float(info.get("targetLowPrice")  or 0)
+    upside_pct    = round((target_mean - current_price) / current_price * 100, 1) if current_price and target_mean else 0.0
+
+    return json.dumps({
+        "ticker":                 ticker.upper(),
+        "consensus_rating":       consensus,
+        "consensus_price_target": target_mean,
+        "high_price_target":      target_high,
+        "low_price_target":       target_low,
+        "buy_ratings":            buy_count,
+        "hold_ratings":           hold_count,
+        "sell_ratings":           sell_count,
+        "total_analysts":         total,
+        "upside_pct":             upside_pct,
+        "current_price":          current_price,
+    })
+
+
 def main() -> None:
     # Initialize and run the server
     print("Starting Yahoo Finance MCP server...")

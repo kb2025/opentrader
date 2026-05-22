@@ -29,6 +29,7 @@ def build_intelligence(
     current_price:  float = 0.0,
     uw_flow:        dict | None = None,    # from get_uw_ticker_flow()
     uw_darkpool:    dict | None = None,    # from get_uw_darkpool()
+    analyst_data:   dict | None = None,   # from get_analyst_consensus()
 ) -> TickerIntelligence:
     """Combine all sources into a single TickerIntelligence object."""
     intel = TickerIntelligence(ticker=ticker)
@@ -103,6 +104,14 @@ def build_intelligence(
         intel.uw_dp_print_count    = uw_darkpool.get("print_count",    0)
         intel.uw_dp_total_shares   = uw_darkpool.get("total_shares",   0)
         intel.uw_dp_total_notional = uw_darkpool.get("total_notional", 0.0)
+
+    # ── Analyst consensus (Yahoo Finance) ────────────────────────────────────
+    if analyst_data:
+        total = int(analyst_data.get("total_analysts") or 0)
+        buys  = int(analyst_data.get("buy_ratings")   or 0)
+        intel.analyst_consensus  = analyst_data.get("consensus_rating", "none") or "none"
+        intel.analyst_buy_pct    = round(buys / total, 4) if total else 0.0
+        intel.analyst_upside_pct = float(analyst_data.get("upside_pct") or 0.0)
 
     # ── Confidence delta ──────────────────────────────────────────────────────
     intel.confidence_delta = _compute_delta(intel)

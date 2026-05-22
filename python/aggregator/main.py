@@ -14,7 +14,7 @@ import structlog
 
 from shared.base_agent import BaseAgent
 from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
-from shared.mcp_client import get_uw_ticker_flow, get_uw_darkpool
+from shared.mcp_client import get_uw_ticker_flow, get_uw_darkpool, get_analyst_consensus
 from .combiner import build_intelligence, fetch_massive_fundamentals
 
 log = structlog.get_logger("aggregator")
@@ -24,10 +24,11 @@ SCANNER_STREAM = STREAMS["scanner"]
 AGG_GROUP      = GROUPS["aggregator"]
 CONSUMER_NAME  = os.getenv("HOSTNAME", "aggregator-0")
 
-INTEL_TTL      = int(os.getenv("INTEL_TTL_SEC",      "7200"))   # 2 hours
-SENTIMENT_TTL  = int(os.getenv("SENTIMENT_TTL_SEC",  "7200"))
+INTEL_TTL         = int(os.getenv("INTEL_TTL_SEC",         "7200"))  # 2 hours
+SENTIMENT_TTL     = int(os.getenv("SENTIMENT_TTL_SEC",     "7200"))
 MASSIVE_CACHE_TTL = int(os.getenv("MASSIVE_CACHE_TTL_SEC", "3600"))  # 1 hour
-UW_CACHE_TTL   = int(os.getenv("UW_CACHE_TTL_SEC",   "1800"))   # 30 min — flow is time-sensitive
+UW_CACHE_TTL      = int(os.getenv("UW_CACHE_TTL_SEC",      "1800"))  # 30 min — flow is time-sensitive
+ANALYST_CACHE_TTL = int(os.getenv("ANALYST_CACHE_TTL_SEC", "14400")) # 4 hours — consensus moves slowly
 
 
 class AggregatorAgent(BaseAgent):
@@ -169,16 +170,19 @@ class AggregatorAgent(BaseAgent):
         # Fetch Massive fundamentals (with short Redis cache to avoid hammering)
         yf_data = await self._get_massive_cached(ticker)
 
-        # Fetch Unusual Whales options flow + dark pool (cached, non-blocking)
-        uw_flow, uw_darkpool = await asyncio.gather(
+        # Fetch Unusual Whales, dark pool, and analyst consensus (cached, non-blocking)
+        uw_flow, uw_darkpool, analyst_data = await asyncio.gather(
             self._get_uw_flow_cached(ticker),
             self._get_uw_dp_cached(ticker),
+            self._get_analyst_cached(ticker),
             return_exceptions=True,
         )
         if isinstance(uw_flow, Exception):
             uw_flow = None
         if isinstance(uw_darkpool, Exception):
             uw_darkpool = None
+        if isinstance(analyst_data, Exception):
+            analyst_data = None
 
         # Build standardized TickerIntelligence
         intel = build_intelligence(
@@ -188,6 +192,7 @@ class AggregatorAgent(BaseAgent):
             current_price=current_price,
             uw_flow=uw_flow,
             uw_darkpool=uw_darkpool,
+            analyst_data=analyst_data,
         )
 
         # Cache the result
@@ -245,6 +250,21 @@ class AggregatorAgent(BaseAgent):
         if dp_data:
             await self.redis.set(cache_key, json.dumps(dp_data), ex=UW_CACHE_TTL)
         return dp_data
+
+    async def _get_analyst_cached(self, ticker: str) -> dict | None:
+        """Return cached analyst consensus, or fetch fresh from Yahoo MCP if expired."""
+        cache_key = f"aggregator:analyst:{ticker}"
+        cached = await self.redis.get(cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass
+
+        data = await get_analyst_consensus(ticker)
+        if data:
+            await self.redis.set(cache_key, json.dumps(data), ex=ANALYST_CACHE_TTL)
+        return data
 
     async def shutdown(self):
         self._running = False

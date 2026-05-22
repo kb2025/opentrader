@@ -19,6 +19,9 @@ MASSIVE_MCP_URL = os.getenv(
 UNUSUALWHALES_MCP_URL = os.getenv(
     "UNUSUALWHALES_MCP_URL", "http://ot-mcp-unusualwhales:8000/mcp"
 )
+YAHOO_MCP_URL = os.getenv(
+    "YAHOO_MCP_URL", "http://ot-mcp-yahoo:8000/mcp"
+)
 
 
 async def call_mcp_tool(url: str, tool_name: str, arguments: dict) -> str | None:
@@ -233,6 +236,27 @@ async def get_uw_market_tide() -> dict | None:
         data = json.loads(raw)
         return None if "error" in data else data
     except Exception:
+        return None
+
+
+async def get_analyst_consensus(ticker: str) -> dict | None:
+    """
+    Fetch analyst consensus from Yahoo Finance MCP.
+    Returns dict with: consensus_rating, consensus_price_target, high_price_target,
+    low_price_target, buy_ratings, hold_ratings, sell_ratings, total_analysts,
+    upside_pct, current_price — or None on failure.
+    """
+    raw = await call_mcp_tool(YAHOO_MCP_URL, "get_analyst_consensus", {"ticker": ticker})
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        if "error" in data:
+            log.warning("mcp_client.analyst_consensus_error", ticker=ticker, error=data["error"])
+            return None
+        return data
+    except Exception as e:
+        log.warning("mcp_client.analyst_consensus_parse_failed", ticker=ticker, error=str(e))
         return None
 
 
