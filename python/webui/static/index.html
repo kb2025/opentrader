@@ -19472,7 +19472,7 @@ function _shadowRenderResults(r) {
     return `<div class="card" style="padding:14px 18px;text-align:center;border-top:3px solid ${d.color}33">
       <div style="font-size:18px;margin-bottom:4px">${d.icon}</div>
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${d.label}</div>
-      <div style="font-size:22px;font-weight:700;color:${v > 0 ? d.color : 'var(--muted)'}">${v > 0 ? '-' + _fmtUsd(v) : '—'}</div>
+      <div style="font-size:22px;font-weight:700;color:${v > 0 ? d.color : 'var(--green)'}">${v > 0 ? '-$' + v.toFixed(2) : '$0.00'}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px">${d.desc}</div>
     </div>`;
   }).join('');

@@ -73,7 +73,10 @@ async def _fetch_trades(pool, date_from: date, date_to: date,
             TRUE                           AS _is_option,
             op.option_type                 AS _opt_type,
             op.strike                      AS _opt_strike,
-            op.expiration_date             AS _opt_expiry
+            op.expiration_date             AS _opt_expiry,
+            op.underlying_entry            AS _underlying_entry,
+            op.entry_date                  AS _opt_entry_date,
+            otl.underlying_price           AS _underlying_exit
         FROM option_trade_log otl
         JOIN option_positions op ON op.id = otl.position_id
         WHERE otl.event_type = 'closed'
@@ -203,14 +206,17 @@ def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
                 else (entry_price - exit_price) * qty
             )
 
-    entry_dt = _entry_date(trade)
+    # For options, use op.entry_date (not otl.ts which is the close date)
+    if is_option and trade.get("_opt_entry_date"):
+        _oed = trade["_opt_entry_date"]
+        entry_dt = _oed if isinstance(_oed, date) else date.fromisoformat(str(_oed)[:10])
+    else:
+        entry_dt = _entry_date(trade)
 
     ideal_pnl        = actual_pnl
     ideal_price       = exit_price
     had_profit_window = False
 
-    # For options, don't compute OHLCV-based ideal: option premium ≠ underlying price.
-    # early_exit/late_exit categories are skipped; noise_trade and overtrading still apply.
     if not is_option and ohlcv is not None and not ohlcv.empty and entry_price > 0 and qty > 0:
         window = ohlcv[ohlcv.index >= entry_dt].head(_HOLD_WINDOW_DAYS)
 
@@ -230,10 +236,46 @@ def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
             ideal_pnl  = min(raw_ideal, cap)
             ideal_price = round(best_price, 4)
 
+    # For options: use underlying OHLCV as proxy for profit window and ideal pnl.
+    elif is_option and ohlcv is not None and not ohlcv.empty:
+        opt_type         = str(trade.get("_opt_type") or "").lower()
+        underlying_entry = _safe_float(trade.get("_underlying_entry"))
+        underlying_exit  = _safe_float(trade.get("_underlying_exit"))
+        window = ohlcv[ohlcv.index >= entry_dt].head(_HOLD_WINDOW_DAYS)
+        if not window.empty and underlying_entry > 0:
+            if opt_type == "call" and "High" in window.columns:
+                best_ul = float(window["High"].to_numpy().max())
+                # Late exit: underlying went up then reversed into a loss
+                had_profit_window = best_ul > underlying_entry * 1.01
+                # Early exit: underlying kept rising after we closed a winning position
+                if actual_pnl > 0 and underlying_exit > underlying_entry:
+                    ul_gain_captured = underlying_exit - underlying_entry
+                    ul_peak_gain     = best_ul - underlying_entry
+                    if ul_peak_gain > ul_gain_captured * (1 + _EARLY_DELTA_PCT):
+                        ideal_pnl = round(actual_pnl * (ul_peak_gain / max(ul_gain_captured, 0.01)), 2)
+                        cap       = max(abs(actual_pnl) * 5 + 100, 200)
+                        ideal_pnl = min(ideal_pnl, cap)
+            elif opt_type == "put" and "Low" in window.columns:
+                best_ul = float(window["Low"].to_numpy().min())
+                had_profit_window = best_ul < underlying_entry * 0.99
+                if actual_pnl > 0 and underlying_exit < underlying_entry:
+                    ul_gain_captured = underlying_entry - underlying_exit
+                    ul_peak_gain     = underlying_entry - best_ul
+                    if ul_peak_gain > ul_gain_captured * (1 + _EARLY_DELTA_PCT):
+                        ideal_pnl = round(actual_pnl * (ul_peak_gain / max(ul_gain_captured, 0.01)), 2)
+                        cap       = max(abs(actual_pnl) * 5 + 100, 200)
+                        ideal_pnl = min(ideal_pnl, cap)
+
     category        = "clean"
     discipline_cost = 0.0
 
-    if confidence > 0 and confidence < _NOISE_THRESHOLD and actual_pnl < 0:
+    # late_exit takes priority: underlying moved favorably then reversed into loss
+    if actual_pnl < 0 and had_profit_window:
+        category        = "late_exit"
+        discipline_cost = abs(actual_pnl)
+
+    # noise_trade: lost money with no signal backing (confidence=0) or low-confidence signal
+    elif confidence < _NOISE_THRESHOLD and actual_pnl < 0:
         category        = "noise_trade"
         discipline_cost = abs(actual_pnl)
 
@@ -241,13 +283,10 @@ def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
         category        = "early_exit"
         discipline_cost = ideal_pnl - actual_pnl
 
-    elif actual_pnl < 0 and had_profit_window:
-        category        = "late_exit"
-        discipline_cost = abs(actual_pnl)
-
     return {
         "id":                str(trade.get("id", "")),
         "ts":                str(trade.get("ts", ""))[:19],
+        "entry_date":        str(entry_dt),
         "ticker":            trade.get("ticker", ""),
         "direction":         direction,
         "qty":               float(qty),
@@ -341,12 +380,15 @@ def _compute_perf_stats(scored: list[dict], date_from: date, date_to: date) -> d
 
 
 def _detect_overtrading(scored: list[dict]) -> list[dict]:
-    """Second pass: flag duplicate ticker entries on the same day as overtrading."""
-    seen: dict = defaultdict(int)
+    """Second pass: flag duplicate ticker entries on the same close date OR entry date as overtrading."""
+    seen_close: dict = defaultdict(int)
+    seen_entry: dict = defaultdict(int)
     for st in scored:
-        key = (st["ticker"], st["ts"][:10])
-        seen[key] += 1
-        if seen[key] > 1 and st["category"] == "clean" and st["actual_pnl"] < 0:
+        seen_close[(st["ticker"], st["ts"][:10])] += 1
+        seen_entry[(st["ticker"], st["entry_date"][:10])] += 1
+        is_dup = (seen_close[(st["ticker"], st["ts"][:10])] > 1 or
+                  seen_entry[(st["ticker"], st["entry_date"][:10])] > 1)
+        if is_dup and st["category"] == "clean" and st["actual_pnl"] < 0:
             st["category"]        = "overtrading"
             st["discipline_cost"] = abs(st["actual_pnl"])
     return scored

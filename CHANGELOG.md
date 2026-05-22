@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.76] - 2026-05-22
+
+### Fixed
+- Trading Hindsights: noise_trade now fires for losing trades with no signal backing (confidence=0); late_exit takes priority over noise_trade in categorisation order
+- Trading Hindsights: early_exit now computed for option positions using underlying OHLCV peak vs exit underlying price
+- Trading Hindsights: option entry date (`op.entry_date`) used for profit-window window calculation instead of close date; also adds `underlying_price` at exit for early-exit detection
+- Trading Hindsights: overtrading detection checks both close date and entry date for duplicates
+- Trading Hindsights: category cards show `$0.00` (green) instead of `—` when no discipline cost found, making it clear the analysis ran successfully
+
 ## [3.7.75] - 2026-05-22
 
 ### Fixed
