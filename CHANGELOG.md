@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.48] - 2026-05-22
+
+### Changed
+- Webull broker setup: API Keys row now has a blue `?` help balloon that opens the Webull Individual Application API authentication docs
+
 ## [3.7.47] - 2026-05-22
 
 ### Fixed

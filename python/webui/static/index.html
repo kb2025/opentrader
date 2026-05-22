@@ -9297,7 +9297,7 @@ const BROKER_META = {
     name: 'Webull', letter: 'W', bg: '#E82F3E', fg: '#fff',
     docs: 'https://app.webull.com/',
     fields: [
-      { type:'profile_link', text:'API keys are managed in User Configuration → API Keys &amp; Secrets' },
+      { type:'profile_link', text:'API keys are managed in User Configuration → API Keys &amp; Secrets', help_url:'https://developer.webull.com/apis/docs/authentication/IndividualApplicationAPI' },
       { type:'note', text:'<strong>Two key pairs are required.</strong> <em>API Key + Secret</em> (v1) authenticate account/position/order calls. <em>App Key + App Secret</em> (v2) are needed for options chains and enriched position data. Both pairs come from the Webull Developer Portal. If you see auth errors, verify both pairs are from the same app. If you see "endpoint not found" errors, your API subscription may be Market Data only — contact Webull to enable trading API access.' },
       { type:'webull_discover' },
       { type:'separator', label:'Live Accounts' },
@@ -9650,9 +9650,12 @@ async function openBrokerCfg(broker) {
 
   for (const f of m.fields) {
     if (f.type === 'profile_link') {
+      const helpBtn = f.help_url
+        ? ` <a href="${f.help_url}" target="_blank" rel="noopener" title="Open API documentation" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--blue);color:#fff;font-size:9px;font-weight:700;text-decoration:none;flex-shrink:0;vertical-align:middle">?</a>`
+        : '';
       html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:color-mix(in srgb,var(--blue) 8%,transparent);border:1px solid color-mix(in srgb,var(--blue) 25%,transparent);border-radius:7px;font-size:11px;color:var(--muted)">
         <span style="color:var(--blue);font-size:14px">&#128274;</span>
-        <span>${f.text} — <a href="#" onclick="closeBrokerCfg();navigate('page-platform-profile')" style="color:var(--blue);text-decoration:none">Go to My Profile</a></span>
+        <span>${f.text} — <a href="#" onclick="closeBrokerCfg();navigate('page-platform-profile')" style="color:var(--blue);text-decoration:none">Go to My Profile</a>${helpBtn}</span>
       </div>`;
       continue;
     }
