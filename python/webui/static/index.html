@@ -8637,11 +8637,10 @@ async function loadConfigPage() {
   const allKeys = [...SYS_KEYS, ...Object.values(CFG_META).flatMap(m => m.fields.filter(f => f.key).map(f => f.key))];
   let env = {};
   try {
-    const r = await fetch('/api/broker/env/reveal', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ token, keys: allKeys }),
+    env = await apiFetch('/api/user/secrets/batch-reveal', {
+      method: 'POST',
+      body: JSON.stringify({ keys: allKeys }),
     });
-    if (r.ok) env = await r.json();
   } catch(_) {}
 
   // ── System settings panel ──────────────────────────────────────────────────
@@ -9130,11 +9129,10 @@ async function openCfgModal(svc) {
 
   let vals = {};
   try {
-    const r = await fetch('/api/broker/env/reveal', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ token, keys }),
+    vals = await apiFetch('/api/user/secrets/batch-reveal', {
+      method: 'POST',
+      body: JSON.stringify({ keys }),
     });
-    if (r.ok) vals = await r.json();
   } catch(_) {}
 
   const body = document.getElementById('cfg-modal-body');
@@ -9180,26 +9178,24 @@ function closeCfgModal() {
 async function saveCfgConnector() {
   if (!_cfgCurrentService) return;
   const m = CFG_META[_cfgCurrentService];
-  const token = getToken();
   const vars = {};
   m.fields.forEach(f => {
     if (!f.key) return;
     const el = document.getElementById(`cfg_${f.key}`);
-    if (el) vars[f.key] = el.value;
+    if (el && el.value.trim() !== '') vars[f.key] = el.value.trim();
   });
+  if (!Object.keys(vars).length) {
+    toast('info', 'No Changes', 'No values entered — nothing saved');
+    return;
+  }
   try {
-    const r = await fetch('/api/broker/env', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ token, vars }),
+    await apiFetch('/api/user/secrets/batch', {
+      method: 'POST',
+      body: JSON.stringify({ vars }),
     });
-    const data = await r.json();
-    if (r.ok) {
-      toast('success', `${m.label} Saved`, 'Settings written to .env');
-      closeCfgModal();
-      loadConfigPage();
-    } else {
-      toast('error', 'Save Failed', data.detail || 'Unknown error');
-    }
+    toast('success', `${m.label} Saved`, 'Credentials stored in your profile');
+    closeCfgModal();
+    loadConfigPage();
   } catch(e) {
     toast('error', 'Save Failed', e.message);
   }

@@ -326,28 +326,11 @@ KNOWN_SECRETS = [
     ("WEBULL_API_KEY",             "Webull — API Key"),
     ("WEBULL_SECRET_KEY",          "Webull — Secret Key"),
     # ── Market Data ───────────────────────────────────────────────────────────
+    # Note: MASSIVE_API_KEY, ALPHA_VANTAGE_API_KEY, UNUSUAL_WHALES_API_KEY managed via API Configuration connectors
     ("---", "Market Data"),
     ("POLYGON_API_KEY",            "Polygon.io — API Key"),
-    ("MASSIVE_API_KEY",            "Massive.com — API Key"),
-    ("ALPHA_VANTAGE_API_KEY",      "Alpha Vantage — API Key"),
-    ("UNUSUAL_WHALES_API_KEY",     "Unusual Whales — API Key"),
-    # ── AI / LLM ──────────────────────────────────────────────────────────────
-    ("---", "AI / LLM"),
-    ("OPENROUTER_API_KEY",         "OpenRouter — API Key"),
-    # ── Notifications ─────────────────────────────────────────────────────────
-    ("---", "Notifications"),
-    ("TELEGRAM_BOT_TOKEN",         "Telegram — Bot Token"),
-    ("TELEGRAM_CHAT_ID",           "Telegram — Chat ID"),
-    ("DISCORD_BOT_TOKEN",          "Discord — Bot Token"),
-    ("DISCORD_CHANNEL_ID",         "Discord — Channel ID"),
-    ("AGENTMAIL_API_KEY",          "AgentMail — API Key"),
-    ("REPORT_RECIPIENT_EMAIL",     "Report Recipient Email"),
-    # ── Data Sources ──────────────────────────────────────────────────────────
-    ("---", "Data Sources"),
-    ("OVTLYR_EMAIL",               "OVTLYR — Login Email"),
-    ("OVTLYR_PASSWORD",            "OVTLYR — Login Password"),
-    ("GOOGLE_BOOKS_API_KEY",       "Google Books — API Key"),
     # ── Infrastructure ────────────────────────────────────────────────────────
+    # Note: OPENROUTER, Telegram, Discord, AgentMail, OVTLYR, Google Books managed via API Configuration connectors
     ("---", "Infrastructure"),
     ("CLOUDFLARE_TUNNEL_TOKEN",    "Cloudflare Tunnel — Token"),
 ]

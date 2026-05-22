@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.59] - 2026-05-22
+
+### Changed
+- User Configuration / API Keys & Secrets: removed all keys that have a dedicated connector in API Configuration (Massive, Alpha Vantage, Unusual Whales, OpenRouter, Telegram, Discord, AgentMail, OVTLYR, Google Books); only `POLYGON_API_KEY` and `CLOUDFLARE_TUNNEL_TOKEN` remain as profile-level keys
+- API Configuration: connector Configure modal now loads values from `user_secrets` DB via `/api/user/secrets/batch-reveal`; Save writes to `user_secrets` DB via `/api/user/secrets/batch` (same path as all other credential saves); connector status cards also load from DB
+- API Configuration: Save toast updated from "Settings written to .env" to "Credentials stored in your profile"
+
 ## [3.7.58] - 2026-05-22
 
 ### Changed
