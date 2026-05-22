@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.58] - 2026-05-22
+
+### Changed
+- Nav: renamed "System Configuration" to "API Configuration"; updated page subtitle from "saved to .env" to "saved to your profile and synced to agents"
+
 ## [3.7.57] - 2026-05-22
 
 ### Changed

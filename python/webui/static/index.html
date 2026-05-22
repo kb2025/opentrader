@@ -417,7 +417,7 @@ select option{background:var(--surface2)}
           <span class="nav-dot" style="background:var(--blue);width:6px;height:6px"></span>Broker Configuration
         </div>
         <div class="nav-subitem" onclick="navigate('page-platform-config')" data-page="page-platform-config">
-          <span class="nav-dot" style="background:var(--teal);width:6px;height:6px"></span>System Configuration
+          <span class="nav-dot" style="background:var(--teal);width:6px;height:6px"></span>API Configuration
         </div>
         <div class="nav-subitem" onclick="navigate('page-platform-profile')" data-page="page-platform-profile">
           <span class="nav-dot" style="background:var(--purple);width:6px;height:6px"></span>User Configuration
@@ -1337,7 +1337,7 @@ select option{background:var(--surface2)}
     ════════════════════════════════════════ -->
     <div class="page" id="page-platform-config">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="font-size:11px;color:var(--muted)">Changes are saved to .env on disk.</div>
+        <div style="font-size:11px;color:var(--muted)">Changes are saved to your profile and synced to agents.</div>
         <button class="btn btn-ghost btn-sm" onclick="loadConfigPage()">Refresh</button>
       </div>
 
@@ -4451,7 +4451,7 @@ const PAGE_TITLES = {
   'page-platform-system':    'System',
   'page-platform-ssl':       'SSL / TLS',
   'page-platform-profile':   'User Configuration',
-  'page-platform-config':    'System Configuration',
+  'page-platform-config':    'API Configuration',
   'page-trading-dashboard':  'Trading Dashboard',
   'page-trading-unified':    'Equity Dashboard',
 
