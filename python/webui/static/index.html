@@ -8681,9 +8681,9 @@ async function loadConfigPage() {
       <tr style="border-bottom:1px solid var(--border)">
         <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px;width:36px"></th>
         <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px">Service</th>
+        <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px"></th>
         <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px">Status</th>
         <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px">Required Fields</th>
-        <th style="text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px">Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -8705,12 +8705,12 @@ async function loadConfigPage() {
             </div>
           </td>
           <td style="padding:8px 10px;font-size:13px;font-weight:600;color:var(--text);white-space:nowrap">${m.label}</td>
+          <td style="padding:8px 10px;white-space:nowrap">
+            <button class="btn btn-ghost btn-xs" onclick="openCfgModal('${svc}')">&#9881; Configure</button>
+            <button class="btn btn-ghost btn-xs" onclick="testCfgConnector('${svc}')" style="margin-left:4px">&#9654; Test</button>
+          </td>
           <td style="padding:8px 10px"><span class="chip ${statusCls}" style="font-size:10px">${statusTxt}</span></td>
           <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fieldsSummary || '<span style="color:var(--dim);font-size:11px">—</span>'}</td>
-          <td style="padding:8px 10px;text-align:right;white-space:nowrap">
-            <button class="btn btn-ghost btn-xs" onclick="openCfgModal('${svc}')" style="margin-left:6px">&#9881; Configure</button>
-            <button class="btn btn-ghost btn-xs" onclick="testCfgConnector('${svc}')" style="margin-left:6px">&#9654; Test</button>
-          </td>
         </tr>`;
       }).join('')}
     </tbody>

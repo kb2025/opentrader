@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.65] - 2026-05-22
+
+### Changed
+- API Configuration: moved Configure/Test action buttons to immediately right of the Service name column
+
 ## [3.7.64] - 2026-05-22
 
 ### Changed
