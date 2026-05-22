@@ -333,6 +333,8 @@ KNOWN_SECRETS = [
     ("UNUSUAL_WHALES_API_KEY",     "Unusual Whales — API Key"),
     ("UNUSUAL_WHALES_MCP_URL",     "Unusual Whales — MCP URL"),
     ("EODDATA_API_KEY",            "EODData — API Key"),
+    ("EODHD_API_KEY",              "EODHD — API Key"),
+    ("EODHD_MCP_URL",              "EODHD — MCP URL"),
     ("GOOGLE_BOOKS_API_KEY",       "Google Books — API Key"),
     # ── AI / LLM ──────────────────────────────────────────────────────────────
     ("---", "AI / LLM"),
@@ -4654,6 +4656,27 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                     count = len(data.get("data", []))
                     return {"ok": True, "message": f"API key valid — {count} models available"}
                 raise HTTPException(status_code=400, detail=f"OpenRouter returned HTTP {resp.status}")
+
+            elif service == "eodhd":
+                api_key = ev("EODHD_API_KEY")
+                if not api_key:
+                    raise HTTPException(status_code=400, detail="EODHD_API_KEY is required")
+                resp = await s.get(
+                    "https://eodhd.com/api/real-time/AAPL.US",
+                    params={"api_token": api_key, "fmt": "json"},
+                    timeout=_aiohttp.ClientTimeout(total=10),
+                )
+                if resp.status == 401:
+                    raise HTTPException(status_code=400, detail="Invalid EODHD API key")
+                if resp.status == 402:
+                    raise HTTPException(status_code=400, detail="EODHD subscription does not cover this endpoint")
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list):
+                        data = data[0] if data else {}
+                    price = data.get("close") or data.get("previousClose", "")
+                    return {"ok": True, "message": f"EODHD key valid — AAPL last price ${float(price):.2f}"}
+                raise HTTPException(status_code=400, detail=f"EODHD returned HTTP {resp.status}")
 
             elif service == "alpha_vantage":
                 api_key = ev("ALPHA_VANTAGE_API_KEY")

@@ -22,6 +22,9 @@ UNUSUALWHALES_MCP_URL = os.getenv(
 YAHOO_MCP_URL = os.getenv(
     "YAHOO_MCP_URL", "http://ot-mcp-yahoo:8000/mcp"
 )
+EODHD_MCP_URL = os.getenv(
+    "EODHD_MCP_URL", "http://ot-mcp-eodhd:8000/mcp"
+)
 
 
 async def call_mcp_tool(url: str, tool_name: str, arguments: dict) -> str | None:

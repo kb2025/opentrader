@@ -351,6 +351,18 @@ services:
       MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
     networks: [trading-net]
 
+  mcp-eodhd:
+    build:
+      context: ./mcp/eodhd-mcp
+      dockerfile: Dockerfile
+    container_name: ot-mcp-eodhd
+    restart: unless-stopped
+    environment:
+      FASTMCP_HOST: "0.0.0.0"
+      FASTMCP_PORT: "8000"
+      EODHD_API_KEY: ${EODHD_API_KEY:-}
+    networks: [trading-net]
+
 
   scraper-etf-flows:
     build:

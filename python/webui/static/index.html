@@ -8175,6 +8175,16 @@ const CFG_META = {
         hint: 'Get your key at eoddata.com — used as a fallback source for Market Health breadth indicators (MMFI, MMTH, HIGN, LOWN, etc.)' },
     ],
   },
+  eodhd: {
+    label: 'EODHD', letter: 'E', bg: '#0f4c81', fg: '#fff',
+    fields: [
+      { key: 'EODHD_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
+        hint: 'Get your All-in-One key at eodhd.com — covers quotes, fundamentals, analyst ratings, insider transactions, earnings, dividends, news, macro indicators, and breadth indicators' },
+      { type: 'separator', label: 'MCP Server' },
+      { key: 'EODHD_MCP_URL', label: 'MCP URL', type: 'text',
+        hint: 'Default: http://ot-mcp-eodhd:8000/mcp (auto-set)' },
+    ],
+  },
 };
 
 let _cfgCurrentService = null;

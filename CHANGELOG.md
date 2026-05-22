@@ -3,6 +3,19 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.71] - 2026-05-22
+
+### Added
+- EODHD MCP server (`ot-mcp-eodhd`): new container with 10 tools — `get_quote`, `get_eod_bars`, `get_fundamentals`, `get_analyst_consensus`, `get_earnings`, `get_dividends`, `get_insider_transactions`, `get_news`, `get_macro_indicator`, `get_breadth_indicators` (MMFI, MMTH, HIGN, LOWN via `.INDX` exchange suffix)
+- `compose.yml`: `mcp-eodhd` service block (builds from `mcp/eodhd-mcp`, injects `EODHD_API_KEY`)
+- `shared/mcp_client.py`: `EODHD_MCP_URL` constant
+- API Configuration: dedicated EODHD service connector with API Key + MCP URL fields; hint text documents All-in-One package coverage
+- Test endpoint `/api/config/test/eodhd` — validates key with live AAPL quote
+- `EODHD_API_KEY` and `EODHD_MCP_URL` added to `KNOWN_SECRETS` for import-env migration
+
+### Verified
+- EODHD demo key returns live AAPL EOD bar data (breadth indicators require paid subscription)
+
 ## [3.7.70] - 2026-05-22
 
 ### Added
