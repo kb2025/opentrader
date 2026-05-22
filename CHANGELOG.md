@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.52] - 2026-05-22
+
+### Changed
+- Nav: added "Configuration" collapsible parent menu in Platform section containing Broker Configuration, System Configuration, and User Configuration as sub-items; auto-opens when any of the three pages is navigated to
+- Broker Configuration page: broker cards now stack vertically (single column, max 860px wide) so all account text is readable
+- Broker Configuration: fixed Configure button — was silently no-op because `getToken()` returns empty string (session-cookie auth); removed the now-incorrect `if (!token) return` guard
+
 ## [3.7.51] - 2026-05-22
 
 ### Changed

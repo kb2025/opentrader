@@ -407,9 +407,21 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:var(--green)"></span>
         Agents
       </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-platform-config')" data-page="page-platform-config">
+      <div class="nav-parent" id="nav-parent-cfg" onclick="_cfgNavToggle()">
         <span class="nav-dot" style="background:var(--teal)"></span>
-        System Configuration
+        Configuration
+        <span id="nav-cfg-chevron" style="margin-left:auto;font-size:9px;transition:transform .2s">▸</span>
+      </div>
+      <div class="nav-children" id="nav-cfg-children">
+        <div class="nav-subitem" onclick="navigate('page-trading-broker')" data-page="page-trading-broker">
+          <span class="nav-dot" style="background:var(--blue);width:6px;height:6px"></span>Broker Configuration
+        </div>
+        <div class="nav-subitem" onclick="navigate('page-platform-config')" data-page="page-platform-config">
+          <span class="nav-dot" style="background:var(--teal);width:6px;height:6px"></span>System Configuration
+        </div>
+        <div class="nav-subitem" onclick="navigate('page-platform-profile')" data-page="page-platform-profile">
+          <span class="nav-dot" style="background:var(--purple);width:6px;height:6px"></span>User Configuration
+        </div>
       </div>
       <div class="nav-item" draggable="true" onclick="navigate('page-platform-logs')" data-page="page-platform-logs">
         <span class="nav-dot" style="background:var(--muted)"></span>
@@ -430,14 +442,6 @@ select option{background:var(--surface2)}
       <div class="nav-item" draggable="true" onclick="navigate('page-platform-ssl')" data-page="page-platform-ssl">
         <span class="nav-dot" style="background:var(--teal)"></span>
         SSL / TLS
-      </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-trading-broker')" data-page="page-trading-broker">
-        <span class="nav-dot" style="background:var(--blue)"></span>
-        Broker Configuration
-      </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-platform-profile')" data-page="page-platform-profile">
-        <span class="nav-dot" style="background:var(--purple)"></span>
-        User Configuration
       </div>
     </div>
   </nav>
@@ -1912,7 +1916,7 @@ select option{background:var(--surface2)}
         <div style="font-size:11px;color:var(--muted)">Changes saved to .env require a broker-gateway restart to take effect.</div>
         <button class="btn btn-ghost btn-sm" onclick="loadBrokerPage()">Refresh</button>
       </div>
-      <div class="broker-grid" id="broker-grid">
+      <div id="broker-grid" style="display:flex;flex-direction:column;gap:16px;max-width:860px">
         <div class="empty-state">Loading&#8230;</div>
       </div>
     </div>
@@ -4570,6 +4574,19 @@ function navigate(pageId) {
 
   const navItem = document.querySelector(`[data-page="${pageId}"]`);
   if (navItem) navItem.classList.add('active');
+
+  // Auto-open parent menus when a child page is navigated to
+  const _CFG_PAGES = ['page-trading-broker','page-platform-config','page-platform-profile'];
+  if (_CFG_PAGES.includes(pageId)) {
+    const ch = document.getElementById('nav-cfg-children');
+    const cv = document.getElementById('nav-cfg-chevron');
+    const pr = document.getElementById('nav-parent-cfg');
+    if (ch && !ch.classList.contains('open')) {
+      ch.classList.add('open');
+      if (cv) cv.style.transform = 'rotate(90deg)';
+      if (pr) pr.classList.add('open');
+    }
+  }
 
   document.getElementById('topbar-title').textContent = PAGE_TITLES[pageId] || pageId;
   currentPage = pageId;
@@ -9579,7 +9596,7 @@ function _renderBrokerCard(broker, info, assignedAccounts = {}) {
         </div>`;
       }).join('');
 
-  return `<div class="bk-card">
+  return `<div class="bk-card" style="width:100%">
     <div class="bk-header">
       <div class="bk-logo" style="background:${['tradier','alpaca','webull'].includes(broker)?'transparent':m.bg};color:${m.fg}">${_brokerLogoSvg(broker,m)}</div>
       <div style="flex:1;min-width:0">
@@ -9618,8 +9635,6 @@ async function testBroker(broker, btn) {
 
 async function openBrokerCfg(broker) {
   const token = getToken();
-  if (!token) return;
-
   _bkCfgBroker = broker;
   const m = BROKER_META[broker];
 
@@ -13504,15 +13519,6 @@ async function _loadNavOrder() {
     _saveNavOrder();
   }
 
-  // Guaranteed: Broker must always be in the Platform group.
-  const brokerNavEl    = document.querySelector('#main-nav .nav-item[data-page="page-trading-broker"]');
-  const platformGroup  = document.querySelector('#main-nav .nav-group[data-group="platform"]');
-  if (brokerNavEl && platformGroup && brokerNavEl.closest('.nav-group') !== platformGroup) {
-    const profileEl = platformGroup.querySelector('.nav-item[data-page="page-platform-profile"]');
-    if (profileEl) platformGroup.insertBefore(brokerNavEl, profileEl);
-    else platformGroup.appendChild(brokerNavEl);
-    _saveNavOrder();
-  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -19698,6 +19704,16 @@ let _smStockRects      = {};   // ticker → { x, y, w, h, sector, subsector, ..
 let _smSubsectorRects  = {};   // "sector:subsector" → { x, y, w, h }
 let _smPanelTimer      = null; // debounce hide
 let _smCurrentKey      = null; // guard stale sparkline fetches (sector:subsector key)
+
+function _cfgNavToggle() {
+  const ch = document.getElementById('nav-cfg-children');
+  const cv = document.getElementById('nav-cfg-chevron');
+  const pr = document.getElementById('nav-parent-cfg');
+  if (!ch) return;
+  const open = ch.classList.toggle('open');
+  if (cv) cv.style.transform = open ? 'rotate(90deg)' : '';
+  if (pr) pr.classList.toggle('open', open);
+}
 
 function _siNavToggle() {
   const ch = document.getElementById('nav-si-children');
