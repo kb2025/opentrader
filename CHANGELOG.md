@@ -3,6 +3,19 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.57] - 2026-05-22
+
+### Changed
+- Broker Configuration: Configure button now loads credentials from `user_secrets` DB via new `/api/user/secrets/batch-reveal` endpoint — eliminates "Failed to load credentials: Invalid token" error caused by stale session cookies hitting the old token-auth `/api/broker/env/reveal` path
+- Broker Configuration: Save button now stores all broker fields (API keys, account numbers, display names, IRA flags) to `user_secrets` DB via new `/api/user/secrets/batch` endpoint; credentials are synced to `.env` for agent consumption and `ot-broker-gateway` is restarted automatically
+- Broker Configuration: removed `if (!token) return` guard from `saveBrokerCfg` — was silently blocking all saves
+- User Configuration / API Keys & Secrets: removed "Brokers" section — broker credentials are now exclusively managed through the Broker Configuration panel; broker-managed keys are flagged in the backend and filtered from the profile secrets grid
+
+### Added
+- `POST /api/user/secrets/batch-reveal` — batch decrypt any list of keys from `user_secrets`; session-cookie auth via `_resolve_user_id`
+- `POST /api/user/secrets/batch` — batch upsert multiple keys to `user_secrets`; syncs to `.env` and restarts broker-gateway when broker keys change
+- `_sync_secrets_to_env(user_id)` — writes all user secrets to `.env` so non-webui agents pick them up on restart
+
 ## [3.7.56] - 2026-05-22
 
 ### Fixed

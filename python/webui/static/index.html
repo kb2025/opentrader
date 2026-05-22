@@ -8478,7 +8478,17 @@ async function loadProfilePage() {
   grid.innerHTML = '<div class="empty-state">Loading…</div>';
   try {
     const token   = getToken();
-    const secrets = await apiFetch(`/api/user/secrets?token=${encodeURIComponent(token)}`);
+    const rawSecrets = await apiFetch(`/api/user/secrets?token=${encodeURIComponent(token)}`);
+    // Remove broker-managed keys (handled by Broker Configuration panel) and orphaned separators
+    const secrets = rawSecrets.filter((s, i, arr) => {
+      if (s.broker_managed) return false;
+      if (s.separator) {
+        // Keep separator only if followed by at least one non-broker, non-separator entry
+        const next = arr.slice(i + 1).find(x => !x.separator);
+        return next && !next.broker_managed;
+      }
+      return true;
+    });
     grid.innerHTML = secrets.map(s => {
       if (s.separator) return `
         <div style="display:flex;align-items:center;gap:8px;margin-top:10px;margin-bottom:2px">
@@ -9658,10 +9668,9 @@ async function openBrokerCfg(broker) {
   const allKeys = m.fields.flatMap(f => [f.key, f.ira, f.name_key].filter(Boolean));
   let env = {};
   try {
-    env = await apiFetch('/api/broker/env/reveal', {
+    env = await apiFetch('/api/user/secrets/batch-reveal', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, keys: allKeys }),
+      body: JSON.stringify({ keys: allKeys }),
     });
   } catch(e) {
     cfgBody.innerHTML = `<div style="color:var(--red);font-size:13px">Failed to load credentials: ${e.message}</div>`;
@@ -9976,39 +9985,35 @@ async function _bkHashPin() {
 }
 
 async function saveBrokerCfg() {
-  const m     = BROKER_META[_bkCfgBroker];
-  const token = getToken();
-  if (!token) return;
-
+  const m    = BROKER_META[_bkCfgBroker];
   const vars = {};
   for (const f of m.fields) {
     const el = document.getElementById(`bkf_${f.key}`);
     if (!el) continue;
     const v = el.value.trim();
-    if (v !== undefined) vars[f.key] = v;
+    if (v !== '') vars[f.key] = v;
     if (f.ira) {
       const cb = document.getElementById(`bkf_${f.ira}`);
       if (cb) vars[f.ira] = cb.checked ? 'true' : 'false';
     }
     if (f.name_key) {
       const nel = document.getElementById(`bkf_${f.name_key}`);
-      if (nel) vars[f.name_key] = nel.value.trim();
+      if (nel && nel.value.trim() !== '') vars[f.name_key] = nel.value.trim();
     }
   }
 
   if (!Object.keys(vars).length) {
-    toast('info', 'No Changes', 'No fields were modified — nothing saved');
+    toast('info', 'No Changes', 'No fields were filled in — nothing saved');
     return;
   }
 
   try {
-    await apiFetch('/api/broker/env', {
+    await apiFetch('/api/user/secrets/batch', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, vars }),
+      body: JSON.stringify({ vars }),
     });
     closeBrokerCfg();
-    toast('success', `${m.name} Saved`, 'Restart ot-broker-gateway to apply');
+    toast('success', `${m.name} Saved`, 'Credentials stored — ot-broker-gateway restarting');
     loadBrokerPage();
   } catch(e) { toast('error', 'Save Failed', e.message); }
 }

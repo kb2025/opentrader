@@ -311,6 +311,9 @@ async def auth_me(request: Request):
 # ── User secrets (encrypted API key storage) ─────────────────────────────────
 
 # Well-known secrets — shown in the profile UI with friendly descriptions
+# Keys managed via Broker Configuration panel — hidden from API Keys & Secrets display
+_BROKER_MANAGED_PREFIXES = ("TRADIER_", "ALPACA_", "WEBULL_")
+
 KNOWN_SECRETS = [
     # ── Brokers ───────────────────────────────────────────────────────────────
     ("---", "Brokers"),
@@ -392,8 +395,10 @@ async def list_user_secrets(request: Request, token: str = ""):
             continue
         in_db  = stored.get(key, False)
         in_env = bool(os.environ.get(key))
+        is_broker = key.startswith(_BROKER_MANAGED_PREFIXES)
         result.append({"key": key, "description": desc,
-                       "is_set": in_db or in_env, "source": "db" if in_db else ("env" if in_env else "")})
+                       "is_set": in_db or in_env, "source": "db" if in_db else ("env" if in_env else ""),
+                       "broker_managed": is_broker})
     return result
 
 @app.post("/api/user/secrets")
@@ -482,6 +487,90 @@ async def reveal_user_secret(key: str, request: Request, token: str = ""):
     except Exception:
         raise HTTPException(status_code=500, detail="Decryption failed")
     return {"key": key, "value": value}
+
+async def _sync_secrets_to_env(user_id: str) -> None:
+    """Write all user secrets to .env so non-webui agents pick them up on restart."""
+    try:
+        pool = await _get_db_pool()
+        rows = await pool.fetch(
+            "SELECT key, encrypted_value FROM user_secrets WHERE user_id=$1::uuid", user_id
+        )
+        updates: dict = {}
+        for row in rows:
+            try:
+                updates[row["key"]] = _decrypt_secret(row["encrypted_value"])
+            except Exception:
+                pass
+        if updates:
+            _write_env_file(updates)
+    except Exception as e:
+        log.warning("sync_secrets_to_env.failed", error=str(e))
+
+
+class BatchRevealBody(BaseModel):
+    keys: list = []
+
+
+@app.post("/api/user/secrets/batch-reveal")
+async def batch_reveal_secrets(request: Request, body: BatchRevealBody):
+    """Return decrypted values for a list of keys from user_secrets (session-cookie auth)."""
+    user_id = await _resolve_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user session found")
+    if not body.keys:
+        return {}
+    try:
+        pool = await _get_db_pool()
+        rows = await pool.fetch(
+            "SELECT key, encrypted_value FROM user_secrets WHERE user_id=$1::uuid AND key = ANY($2::text[])",
+            user_id, [k.upper() for k in body.keys],
+        )
+        result = {k.upper(): os.getenv(k.upper(), "") for k in body.keys}
+        for row in rows:
+            try:
+                result[row["key"]] = _decrypt_secret(row["encrypted_value"])
+            except Exception:
+                pass
+        return result
+    except Exception as e:
+        log.error("batch_reveal.failed", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve secrets")
+
+
+class BatchSaveBody(BaseModel):
+    vars: dict = {}
+
+
+@app.post("/api/user/secrets/batch")
+async def batch_save_secrets(request: Request, body: BatchSaveBody):
+    """Upsert multiple secrets into user_secrets and sync to .env for agents."""
+    user_id = await _resolve_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="No user session found")
+    if not body.vars:
+        raise HTTPException(status_code=400, detail="No vars provided")
+    pool = await _get_db_pool()
+    updated = []
+    for raw_key, value in body.vars.items():
+        key = raw_key.upper()
+        val = str(value).strip()
+        if not val:
+            continue
+        encrypted = _encrypt_secret(val)
+        await pool.execute("""
+            INSERT INTO user_secrets (user_id, key, encrypted_value, updated_at)
+            VALUES ($1::uuid, $2, $3, NOW())
+            ON CONFLICT (user_id, key) DO UPDATE
+                SET encrypted_value=$3, updated_at=NOW()
+        """, user_id, key, encrypted)
+        os.environ[key] = val
+        updated.append(key)
+    if updated:
+        asyncio.create_task(_sync_secrets_to_env(user_id))
+        if any(k.startswith(_BROKER_MANAGED_PREFIXES) for k in updated):
+            asyncio.create_task(_restart_broker_gateway())
+    return {"ok": True, "updated": updated}
+
 
 @app.get("/api/user/preferences")
 async def get_user_preferences(request: Request, token: str = ""):
