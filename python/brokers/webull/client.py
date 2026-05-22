@@ -163,6 +163,13 @@ class WebullClient:
                         elif resp.status == 401:
                             log.error("[webull] Auth error — check API key and secret")
                             raise PermissionError("Webull auth failed: 401")
+                        elif resp.status == 404:
+                            # Non-retryable: endpoint doesn't exist for this API subscription tier
+                            log.warning(
+                                f"[webull] {method} {path} → 404 (endpoint not available "
+                                f"for this API subscription — check Webull developer portal)"
+                            )
+                            raise RuntimeError(f"[webull] Endpoint not found: {path}")
                         elif resp.status == 429:
                             wait = 2 ** attempt
                             log.warning(f"[webull] Rate limited — sleeping {wait}s")

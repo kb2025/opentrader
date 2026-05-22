@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.47] - 2026-05-22
+
+### Fixed
+- Webull 404 on `/trade/order/list` retried 3× per poll cycle (wasteful, noisy); 404 is now non-retryable in the client — raises immediately with a clear "endpoint not available" message
+- `get_orders` now returns an empty list on any exception (404 or otherwise) rather than propagating to the broker gateway order-poll loop; accounts without trading API access no longer spam error logs every 60 s
+- Webull setup panel: added info note explaining that v1 (API Key + Secret) and v2 (App Key + App Secret) are both required, and that 404 errors on order/position endpoints indicate a Market Data–only API subscription that needs to be upgraded to include trading API access
+
 ## [3.7.46] - 2026-05-22
 
 ### Fixed

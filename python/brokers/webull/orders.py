@@ -128,7 +128,11 @@ class WebullOrders:
 
     async def get_orders(self, status: str = "all") -> list[dict]:
         params: dict = {"account_id": self.account_id, "page_size": 100}
-        result = await self.client.get("/trade/order/list", params=params)
+        try:
+            result = await self.client.get("/trade/order/list", params=params)
+        except Exception as e:
+            log.warning(f"[webull:{self.account_label}] get_orders unavailable: {e}")
+            return []
         items = result.get("items", result.get("data", []))
         if isinstance(result, list):
             items = result

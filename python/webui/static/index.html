@@ -9298,6 +9298,7 @@ const BROKER_META = {
     docs: 'https://app.webull.com/',
     fields: [
       { type:'profile_link', text:'API keys are managed in User Configuration → API Keys &amp; Secrets' },
+      { type:'note', text:'<strong>Two key pairs are required.</strong> <em>API Key + Secret</em> (v1) authenticate account/position/order calls. <em>App Key + App Secret</em> (v2) are needed for options chains and enriched position data. Both pairs come from the Webull Developer Portal. If you see auth errors, verify both pairs are from the same app. If you see "endpoint not found" errors, your API subscription may be Market Data only — contact Webull to enable trading API access.' },
       { type:'webull_discover' },
       { type:'separator', label:'Live Accounts' },
       { key:'WEBULL_LIVE_ACCOUNT_1', label:'Account 1', type:'text', hint:'Webull live account number',            ira:'WEBULL_LIVE_ACCOUNT_1_IRA', name_key:'WEBULL_LIVE_1_DISPLAY_NAME' },
@@ -9652,6 +9653,14 @@ async function openBrokerCfg(broker) {
       html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:color-mix(in srgb,var(--blue) 8%,transparent);border:1px solid color-mix(in srgb,var(--blue) 25%,transparent);border-radius:7px;font-size:11px;color:var(--muted)">
         <span style="color:var(--blue);font-size:14px">&#128274;</span>
         <span>${f.text} — <a href="#" onclick="closeBrokerCfg();navigate('page-platform-profile')" style="color:var(--blue);text-decoration:none">Go to My Profile</a></span>
+      </div>`;
+      continue;
+    }
+
+    if (f.type === 'note') {
+      html += `<div style="display:flex;gap:8px;padding:8px 12px;background:color-mix(in srgb,var(--amber,#f59e0b) 8%,transparent);border:1px solid color-mix(in srgb,var(--amber,#f59e0b) 25%,transparent);border-radius:7px;font-size:11px;color:var(--muted);line-height:1.5">
+        <span style="font-size:13px;flex-shrink:0">&#9432;</span>
+        <span>${f.text}</span>
       </div>`;
       continue;
     }
