@@ -327,7 +327,6 @@ KNOWN_SECRETS = [
     ("WEBULL_SECRET_KEY",          "Webull — Secret Key"),
     # ── Market Data ───────────────────────────────────────────────────────────
     ("---", "Market Data"),
-    ("POLYGON_API_KEY",            "Polygon.io — API Key"),
     ("MASSIVE_API_KEY",            "Massive — API Key"),
     ("MASSIVE_MCP_URL",            "Massive — MCP URL"),
     ("ALPHA_VANTAGE_API_KEY",      "Alpha Vantage — API Key"),
@@ -1223,7 +1222,7 @@ async def on_startup():
     await _load_jobs_from_db_to_redis(redis)
     await _ensure_auth_tables()
     # Remove retired secrets that are no longer used by the application
-    _RETIRED_SECRETS = ["CLOUDFLARE_TUNNEL_TOKEN"]
+    _RETIRED_SECRETS = ["CLOUDFLARE_TUNNEL_TOKEN", "POLYGON_API_KEY"]
     if DB_URL:
         try:
             pool = await _get_db_pool()
