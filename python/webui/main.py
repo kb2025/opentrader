@@ -329,10 +329,6 @@ KNOWN_SECRETS = [
     # Note: MASSIVE_API_KEY, ALPHA_VANTAGE_API_KEY, UNUSUAL_WHALES_API_KEY managed via API Configuration connectors
     ("---", "Market Data"),
     ("POLYGON_API_KEY",            "Polygon.io — API Key"),
-    # ── Infrastructure ────────────────────────────────────────────────────────
-    # Note: OPENROUTER, Telegram, Discord, AgentMail, OVTLYR, Google Books managed via API Configuration connectors
-    ("---", "Infrastructure"),
-    ("CLOUDFLARE_TUNNEL_TOKEN",    "Cloudflare Tunnel — Token"),
 ]
 
 def _current_user_id(request: Request) -> str | None:
