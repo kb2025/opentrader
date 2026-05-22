@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.55] - 2026-05-22
+
+### Changed
+- System Configuration: EODData panel now shows the `eoddata_avatar.png` logo instead of the letter fallback
+
 ## [3.7.54] - 2026-05-22
 
 ### Fixed
