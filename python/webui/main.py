@@ -4379,9 +4379,25 @@ async def set_trade_mode(body: TradeModeBody):
 async def reveal_broker_env(request: Request, body: EnvReveal):
     """Return unmasked env values for the given keys (session-cookie or WEBUI_TOKEN auth)."""
     session = request.cookies.get("ot_session", "")
-    if not _verify_jwt(session) and body.token != WEBUI_TOKEN:
+    payload = _verify_jwt(session)
+    if not payload and body.token != WEBUI_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid token")
     env = _read_env_file()
+    # Merge DB-stored secrets so keys set via My Profile are visible after container restarts
+    if payload:
+        try:
+            pool = await _get_db_pool()
+            rows = await pool.fetch(
+                "SELECT key, encrypted_value FROM user_secrets WHERE user_id=$1::uuid AND key = ANY($2::text[])",
+                payload["sub"], list(body.keys),
+            )
+            for row in rows:
+                try:
+                    env[row["key"]] = _decrypt_secret(row["encrypted_value"])
+                except Exception:
+                    pass
+        except Exception:
+            pass
     return {k: env.get(k) or os.getenv(k, "") for k in body.keys}
 
 

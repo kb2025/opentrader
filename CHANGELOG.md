@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.56] - 2026-05-22
+
+### Fixed
+- System Configuration: Service Connector cards showed "API Key not set" for all connectors — `reveal_broker_env` only checked the `.env` file and `os.environ` (which is only seeded from the DB at login); after a container restart, DB-stored secrets (set via My Profile) were absent from `os.environ` until re-login; endpoint now queries the `user_secrets` table directly so connector status reflects the actual stored values regardless of restart state
+
 ## [3.7.55] - 2026-05-22
 
 ### Changed
