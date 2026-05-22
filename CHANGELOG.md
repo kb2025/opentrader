@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.68] - 2026-05-22
+
+### Removed
+- User Configuration: removed "API Keys & Secrets" panel entirely — all credentials are now managed through API Configuration (service connectors) and Broker Configuration
+- Removed associated JS functions: `secretsImportEnv`, `secretToggleShow`, `secretSave`, `secretDelete`
+
 ## [3.7.67] - 2026-05-22
 
 ### Removed
