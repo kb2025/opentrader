@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.64] - 2026-05-22
+
+### Changed
+- API Configuration: Service Connectors changed from tile grid to table view, sorted alphabetically by service name
+
 ## [3.7.63] - 2026-05-22
 
 ### Fixed

@@ -1365,7 +1365,7 @@ select option{background:var(--surface2)}
         <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);white-space:nowrap">Service Connectors</span>
         <div style="flex:1;height:1px;background:var(--border)"></div>
       </div>
-      <div class="broker-grid" id="cfg-connector-grid">
+      <div id="cfg-connector-grid">
         <div class="empty-state">Loading&#8230;</div>
       </div>
 
@@ -8675,28 +8675,46 @@ async function loadConfigPage() {
 
   // User settings moved to My Profile page
 
-  grid.innerHTML = Object.keys(CFG_META).map(svc => {
-    const m = CFG_META[svc];
-    const hasRequired = m.fields.filter(f => f.required).every(f => env[f.key] && env[f.key].trim());
-    const statusCls  = hasRequired ? 'chip-success' : 'chip-muted';
-    const statusTxt  = hasRequired ? 'Configured'   : 'Not configured';
-    return `<div class="bk-card">
-      <div class="bk-card-head" style="display:flex;align-items:center;gap:12px;padding:14px">
-        ${_cfgLogoHtml(svc)}
-        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
-          <span style="font-weight:700;font-size:14px">${m.label}</span>
-          <span class="chip ${statusCls}" style="font-size:10px">${statusTxt}</span>
-        </div>
-      </div>
-      <div class="bk-card-body" style="flex:1;padding:10px 14px;font-size:11px;color:var(--muted);min-height:36px">
-        ${m.fields.filter(f=>f.required).map(f=>`<div>${f.label}: ${env[f.key] ? '<span style="color:var(--green)">&#10003; set</span>' : '<span style="color:var(--dim)">not set</span>'}</div>`).join('')}
-      </div>
-      <div class="bk-card-foot" style="padding:10px 14px;display:flex;gap:8px">
-        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="openCfgModal('${svc}')">&#9881; Configure</button>
-        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="testCfgConnector('${svc}')">&#9654; Test</button>
-      </div>
-    </div>`;
-  }).join('');
+  const sortedSvcs = Object.keys(CFG_META).sort((a, b) => CFG_META[a].label.localeCompare(CFG_META[b].label));
+  grid.innerHTML = `<table style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr style="border-bottom:1px solid var(--border)">
+        <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px;width:36px"></th>
+        <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px">Service</th>
+        <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px">Status</th>
+        <th style="text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px">Required Fields</th>
+        <th style="text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:6px 10px">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${sortedSvcs.map(svc => {
+        const m = CFG_META[svc];
+        const reqFields = m.fields.filter(f => f.required);
+        const hasRequired = reqFields.every(f => env[f.key] && env[f.key].trim());
+        const statusCls = hasRequired ? 'chip-success' : 'chip-muted';
+        const statusTxt = hasRequired ? 'Configured' : 'Not configured';
+        const logoSrc = m.logo ? `/static/${m.logo}` : `/static/logo-${svc}.png`;
+        const logoFallback = `this.parentElement.innerHTML='<div style=\\'width:28px;height:28px;border-radius:6px;background:${m.bg};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:${m.fg}\\'>${m.letter}</div>'`;
+        const fieldsSummary = reqFields.map(f =>
+          `<span style="margin-right:8px;white-space:nowrap">${f.label}: ${env[f.key] ? '<span style="color:var(--green)">&#10003;</span>' : '<span style="color:var(--dim)">—</span>'}</span>`
+        ).join('');
+        return `<tr style="border-bottom:1px solid var(--border);transition:background .12s" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
+          <td style="padding:8px 10px">
+            <div style="width:28px;height:28px;border-radius:6px;overflow:hidden;flex-shrink:0;background:transparent">
+              <img src="${logoSrc}" style="width:100%;height:100%;object-fit:contain" onerror="${logoFallback}">
+            </div>
+          </td>
+          <td style="padding:8px 10px;font-size:13px;font-weight:600;color:var(--text);white-space:nowrap">${m.label}</td>
+          <td style="padding:8px 10px"><span class="chip ${statusCls}" style="font-size:10px">${statusTxt}</span></td>
+          <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fieldsSummary || '<span style="color:var(--dim);font-size:11px">—</span>'}</td>
+          <td style="padding:8px 10px;text-align:right;white-space:nowrap">
+            <button class="btn btn-ghost btn-xs" onclick="openCfgModal('${svc}')" style="margin-left:6px">&#9881; Configure</button>
+            <button class="btn btn-ghost btn-xs" onclick="testCfgConnector('${svc}')" style="margin-left:6px">&#9654; Test</button>
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
 }
 
 // ── User Exclusions ────────────────────────────────────────────────────────────
