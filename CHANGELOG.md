@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.72] - 2026-05-22
+
+### Added
+- Trading Hindsights (Shadow Account): performance metrics row — Sharpe ratio, max drawdown, win rate, profit factor, CAGR (estimated), and cumulative P&L sparkline now displayed after every analysis run
+- `.gitignore`: plans directory excluded from git
+
 ## [3.7.71] - 2026-05-22
 
 ### Added

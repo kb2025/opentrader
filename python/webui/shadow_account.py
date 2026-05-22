@@ -12,11 +12,13 @@ Four discipline categories:
 import asyncio
 import json
 import logging
+import math
 import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 log = logging.getLogger("shadow_account")
@@ -244,6 +246,77 @@ def _analyze_trade(trade: dict, ohlcv: Optional[pd.DataFrame]) -> dict:
     }
 
 
+def _compute_perf_stats(scored: list[dict], date_from: date, date_to: date) -> dict:
+    """
+    Build a daily equity curve from closed trade P&L and compute:
+    Sharpe ratio, max drawdown %, CAGR, win rate, profit factor.
+    """
+    if not scored:
+        return {}
+
+    # Daily P&L — group by exit date (first 10 chars of ts)
+    daily: dict[str, float] = {}
+    for t in scored:
+        day = (t.get("ts") or "")[:10]
+        if day:
+            daily[day] = daily.get(day, 0.0) + float(t.get("actual_pnl") or 0)
+
+    # Fill every calendar day in range with 0 if no trades
+    all_days: list[str] = []
+    d = date_from
+    while d <= date_to:
+        all_days.append(str(d))
+        d += timedelta(days=1)
+
+    pnl_arr   = np.array([daily.get(day, 0.0) for day in all_days], dtype=float)
+    cumulative = np.cumsum(pnl_arr)
+
+    # Sharpe on daily $ P&L (annualised, 252 trading days)
+    std = float(np.std(pnl_arr)) + 1e-10
+    sharpe = round(float(np.mean(pnl_arr)) / std * math.sqrt(252), 3)
+
+    # Max drawdown on cumulative P&L curve
+    peak       = np.maximum.accumulate(cumulative)
+    drawdowns  = cumulative - peak
+    max_dd_abs = float(np.min(drawdowns))
+    max_peak   = float(np.max(peak)) if np.max(peak) > 0 else 1.0
+    max_dd_pct = round(abs(max_dd_abs / max_peak * 100) if max_peak > 0 else 0.0, 2)
+
+    # Win / loss stats
+    winners = [t for t in scored if float(t.get("actual_pnl") or 0) > 0]
+    losers  = [t for t in scored if float(t.get("actual_pnl") or 0) < 0]
+    win_rate = round(len(winners) / len(scored) * 100, 1) if scored else 0.0
+    gross_profit = sum(float(t.get("actual_pnl") or 0) for t in winners)
+    gross_loss   = abs(sum(float(t.get("actual_pnl") or 0) for t in losers)) or 1e-10
+    profit_factor = round(gross_profit / gross_loss, 3) if losers else 0.0
+
+    # CAGR — use total deployed notional as base capital proxy
+    deployed = sum(
+        float(t.get("entry_price") or 0) * float(t.get("qty") or 0)
+        for t in scored
+        if t.get("entry_price") and t.get("qty")
+    )
+    total_return = float(cumulative[-1]) if len(cumulative) else 0.0
+    n_days = max((date_to - date_from).days, 1)
+    if deployed > 0:
+        cagr = round(((1 + total_return / deployed) ** (365.0 / n_days) - 1) * 100, 2)
+    else:
+        cagr = 0.0
+
+    # Equity curve sampled to ≤60 points for sparkline
+    step = max(1, len(cumulative) // 60)
+    equity_curve = [round(float(v), 2) for v in cumulative[::step]]
+
+    return {
+        "sharpe":        sharpe,
+        "max_drawdown":  max_dd_pct,
+        "win_rate":      win_rate,
+        "profit_factor": profit_factor,
+        "cagr":          cagr,
+        "equity_curve":  equity_curve,
+    }
+
+
 def _detect_overtrading(scored: list[dict]) -> list[dict]:
     """Second pass: flag duplicate ticker entries on the same day as overtrading."""
     seen: dict = defaultdict(int)
@@ -427,6 +500,8 @@ async def run_analysis(
         raw_rules = await _extract_rules(openrouter_key, scored, cats)
         rules     = [_backtest_rule(r, scored) for r in raw_rules]
 
+    perf = _compute_perf_stats(scored, date_from, date_to)
+
     return {
         "date_from":            str(date_from),
         "date_to":              str(date_to),
@@ -439,4 +514,11 @@ async def run_analysis(
         "rules":                rules,
         "counterfactual_top5":  top5,
         "trades":               scored,
+        # Performance stats
+        "sharpe":               perf.get("sharpe",        0.0),
+        "max_drawdown":         perf.get("max_drawdown",  0.0),
+        "win_rate":             perf.get("win_rate",      0.0),
+        "profit_factor":        perf.get("profit_factor", 0.0),
+        "cagr":                 perf.get("cagr",          0.0),
+        "equity_curve":         perf.get("equity_curve",  []),
     }

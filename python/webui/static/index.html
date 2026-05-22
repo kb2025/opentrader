@@ -3762,6 +3762,9 @@ select option{background:var(--surface2)}
         <!-- 4 summary cards -->
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px" id="shadow-summary-row"></div>
 
+        <!-- Performance stats row -->
+        <div id="shadow-perf-row" style="display:none;margin-bottom:16px"></div>
+
         <!-- 4 discipline category cards -->
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px" id="shadow-cats-row"></div>
 
@@ -19415,6 +19418,47 @@ function _shadowRenderResults(r) {
     <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${c.label}</div>
     <div style="font-size:26px;font-weight:700;color:${c.color}">${c.val}</div>
   </div>`).join('');
+
+  // ── Performance stats row ───────────────────────────────────────────────
+  const perfRow = $('shadow-perf-row');
+  if (r.sharpe != null || r.win_rate != null) {
+    const shrColor = (r.sharpe||0) >= 1 ? 'var(--green)' : (r.sharpe||0) >= 0.5 ? '#f59e0b' : (r.sharpe||0) < 0 ? 'var(--red)' : 'var(--muted)';
+    const pfColor  = (r.profit_factor||0) >= 1.5 ? 'var(--green)' : (r.profit_factor||0) >= 1 ? '#f59e0b' : 'var(--red)';
+    const cagrColor= (r.cagr||0) > 0 ? 'var(--green)' : (r.cagr||0) < 0 ? 'var(--red)' : 'var(--muted)';
+    const sparkSvg = (r.equity_curve||[]).length > 2 ? _svgEquityCurve(r.equity_curve, 220, 48) : '';
+    perfRow.style.display = 'block';
+    perfRow.innerHTML = `<div class="card" style="padding:14px 20px">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">Trade Performance Metrics</div>
+      <div style="display:flex;gap:32px;flex-wrap:wrap;align-items:center">
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px">SHARPE</div>
+          <div style="font-size:22px;font-weight:700;color:${shrColor}">${(r.sharpe||0).toFixed(2)}</div>
+        </div>
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px">MAX DRAWDOWN</div>
+          <div style="font-size:22px;font-weight:700;color:var(--red)">-${(r.max_drawdown||0).toFixed(1)}%</div>
+        </div>
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px">WIN RATE</div>
+          <div style="font-size:22px;font-weight:700;color:var(--fg)">${(r.win_rate||0).toFixed(1)}%</div>
+        </div>
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px">PROFIT FACTOR</div>
+          <div style="font-size:22px;font-weight:700;color:${pfColor}">${(r.profit_factor||0).toFixed(2)}x</div>
+        </div>
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px">CAGR (est.)</div>
+          <div style="font-size:22px;font-weight:700;color:${cagrColor}">${(r.cagr||0) > 0 ? '+' : ''}${(r.cagr||0).toFixed(1)}%</div>
+        </div>
+        ${sparkSvg ? `<div style="flex:1;min-width:180px;max-width:260px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px">CUMULATIVE P&L</div>
+          ${sparkSvg}
+        </div>` : ''}
+      </div>
+    </div>`;
+  } else {
+    perfRow.style.display = 'none';
+  }
 
   // ── Discipline category cards ────────────────────────────────────────────
   const cats = r.categories || {};

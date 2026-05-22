@@ -40,3 +40,6 @@ venv/
 *.swo
 .DS_Store
 .claude/
+
+# ── Claude Code plans (local only — never commit) ────────────────────────────
+.claude/plans/
