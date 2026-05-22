@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.53] - 2026-05-22
+
+### Fixed
+- `ot-mcp-tradingview`: `ModuleNotFoundError: No module named 'pkg_resources'` on startup — `setuptools` (which provides `pkg_resources`) is not included in Python 3.12 slim images; added explicit `pip install setuptools` before the package install in the Dockerfile
+
 ## [3.7.52] - 2026-05-22
 
 ### Changed
