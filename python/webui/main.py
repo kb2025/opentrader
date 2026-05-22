@@ -1222,6 +1222,16 @@ async def on_startup():
     redis = await get_redis()
     await _load_jobs_from_db_to_redis(redis)
     await _ensure_auth_tables()
+    # Remove retired secrets that are no longer used by the application
+    _RETIRED_SECRETS = ["CLOUDFLARE_TUNNEL_TOKEN"]
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute(
+                "DELETE FROM user_secrets WHERE key = ANY($1::text[])", _RETIRED_SECRETS
+            )
+        except Exception:
+            pass
     # Load the first (admin) user's secrets into env on startup
     if DB_URL:
         try:

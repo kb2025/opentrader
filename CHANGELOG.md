@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.62] - 2026-05-22
+
+### Fixed
+- User Configuration / API Keys & Secrets: `CLOUDFLARE_TUNNEL_TOKEN` deleted from `user_secrets` DB at startup — removes the stale entry for users who had it saved before v3.7.60
+
+### Changed
+- Broker Configuration (Tradier, Alpaca, Webull): removed "API keys are managed in User Configuration" notification box from all three broker panels — keys are now managed in API Configuration
+
 ## [3.7.61] - 2026-05-22
 
 ### Changed

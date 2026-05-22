@@ -9295,7 +9295,6 @@ const BROKER_META = {
     name: 'Tradier', letter: 'T', bg: '#FF5C35', fg: '#fff',
     docs: 'https://documentation.tradier.com/',
     fields: [
-      { type:'profile_link', text:'API keys are managed in User Configuration → API Keys &amp; Secrets' },
       { type:'separator', label:'Sandbox' },
       { key:'TRADIER_SANDBOX_ACCOUNT_NUMBER', label:'Account Number', type:'text', hint:'From Tradier developer dashboard', name_key:'TRADIER_SANDBOX_DISPLAY_NAME' },
       { type:'separator', label:'Production' },
@@ -9310,7 +9309,6 @@ const BROKER_META = {
     name: 'Alpaca', letter: 'A', bg: '#FCEC37', fg: '#111',
     docs: 'https://alpaca.markets/docs/',
     fields: [
-      { type:'profile_link', text:'API keys are managed in User Configuration → API Keys &amp; Secrets' },
       { type:'separator', label:'Paper Trading' },
       { key:'ALPACA_PAPER_ENDPOINT',   label:'Endpoint',       type:'text', hint:'https://paper-api.alpaca.markets/v2' },
       { key:'ALPACA_PAPER_ACCOUNT_ID', label:'Account Number', type:'text', hint:'app.alpaca.markets → Paper Account → Account Number', name_key:'ALPACA_PAPER_DISPLAY_NAME' },
@@ -9326,7 +9324,6 @@ const BROKER_META = {
     name: 'Webull', letter: 'W', bg: '#E82F3E', fg: '#fff',
     docs: 'https://app.webull.com/',
     fields: [
-      { type:'profile_link', text:'API keys are managed in User Configuration → API Keys &amp; Secrets', help_url:'https://developer.webull.com/apis/docs/authentication/IndividualApplicationAPI' },
       { type:'note', text:'<strong>Two key pairs are required.</strong> <em>API Key + Secret</em> (v1) authenticate account/position/order calls. <em>App Key + App Secret</em> (v2) are needed for options chains and enriched position data. Both pairs come from the Webull Developer Portal. If you see auth errors, verify both pairs are from the same app. If you see "endpoint not found" errors, your API subscription may be Market Data only — contact Webull to enable trading API access.' },
       { type:'webull_discover' },
       { type:'separator', label:'Live Accounts' },
