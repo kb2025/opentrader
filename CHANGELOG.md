@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.63] - 2026-05-22
+
+### Fixed
+- User Configuration / API Keys & Secrets: keys managed by API Configuration connectors are now filtered from the profile display (CFG_META-derived exclusion list), restoring the de-duplication that was inadvertently reverted when KNOWN_SECRETS was expanded for the import-env migration in v3.7.61
+
 ## [3.7.62] - 2026-05-22
 
 ### Fixed

@@ -8478,13 +8478,17 @@ async function loadProfilePage() {
   try {
     const token   = getToken();
     const rawSecrets = await apiFetch(`/api/user/secrets?token=${encodeURIComponent(token)}`);
-    // Remove broker-managed keys (handled by Broker Configuration panel) and orphaned separators
+    // Keys managed by API Configuration connectors — hide from profile display
+    const connectorKeys = new Set(
+      Object.values(CFG_META).flatMap(m => m.fields.filter(f => f.key).map(f => f.key))
+    );
+    const isManaged = s => s.broker_managed || (!s.separator && connectorKeys.has(s.key));
+    // Remove connector/broker-managed keys and orphaned separators
     const secrets = rawSecrets.filter((s, i, arr) => {
-      if (s.broker_managed) return false;
+      if (isManaged(s)) return false;
       if (s.separator) {
-        // Keep separator only if followed by at least one non-broker, non-separator entry
         const next = arr.slice(i + 1).find(x => !x.separator);
-        return next && !next.broker_managed;
+        return next && !isManaged(next);
       }
       return true;
     });
