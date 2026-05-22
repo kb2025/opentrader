@@ -332,6 +332,59 @@ Sector and industry data for all open position tickers is stored in the `ticker_
 
 ---
 
+## Subscriptions
+
+OpenTrader integrates with several external services. The table below lists each one, whether it is required or optional, the plan tier needed, approximate monthly cost, and what it provides within the platform.
+
+> Prices are approximate and subject to change — always verify current pricing on the provider's website.
+
+### Core Data & AI
+
+| Service | Required | Plan | ~Cost/mo | What it provides |
+|---|---|---|---|---|
+| [Polygon.io](https://polygon.io/dashboard/signup) | **Yes** | Stocks Starter + Options | $29–$79+ | Real-time and historical OHLCV, options chains (greeks, IV, expiration data), analyst ratings, news, dividends, earnings dates, and market snapshot data. Used throughout the platform for quotes, options chain display, and the dividend subsystem. Options data requires the Options add-on tier. |
+| [OpenRouter](https://openrouter.ai/keys) | **Yes** | Pay-as-you-go | $5–50 | LLM inference (Claude, GPT-4o, and others) for AI-powered trade signals, EOD review analysis, trade directive evaluation, chat agent, and post-close trade analysis. Billed per token — cost depends on model selection and activity level. Configurable per agent in `config/system.toml`. |
+
+### Broker Accounts
+
+At least one broker account is required for live or paper trading. All three provide free API access once a brokerage account is open.
+
+| Broker | Required | Plan | Cost | What it provides |
+|---|---|---|---|---|
+| [Tradier](https://developer.tradier.com) | Optional | Brokerage account | Free API | Equities and options paper and live trading. Free sandbox API for paper trading; production API key requires an active Tradier brokerage account. Supports up to 4 live accounts. |
+| [Alpaca](https://alpaca.markets) | Optional | Brokerage account | Free API | Equities paper and live trading. Paper trading API is freely available without a funded account. Live trading requires an approved Alpaca brokerage account. |
+| [Webull](https://developer.webull.com/apis/docs/authentication/IndividualApplicationAPI) | Optional | Developer API (Individual) | Varies | Equities and options paper and live trading. Requires a Webull Developer Portal application — two key pairs are needed: API Key + Secret (v1) for account data, positions, and orders; App Key + App Secret (v2) for options chains. Check the Webull Developer Portal for current subscription tiers. |
+
+### Market Intelligence (Optional)
+
+These services enhance the signal pipeline and market breadth analysis but are not required for basic operation.
+
+| Service | Required | Plan | ~Cost/mo | What it provides |
+|---|---|---|---|---|
+| [Unusual Whales](https://unusualwhales.com) | Optional | API subscription | ~$50 | Real-time options flow (bullish/bearish net premium), dark pool prints, market tide, Greek exposure, and short interest data. Powers the Market Intelligence pipeline and Quick Intel per-ticker cards. Contact Unusual Whales directly for current API pricing. |
+| [OVTLYR](https://console.ovtlyr.com) | Optional | Subscription | ~$49 | Market breadth bull/bear gauge with crossover detection. The `ot-scraper-ovtlyr` agent scrapes breadth scores that feed into the predictor confidence adjustment and the Market Breadth card on the Trading Dashboard. |
+| [EODData](https://eoddata.com) | Optional | Basic | ~$20 | Market breadth indicators including MAHQ (new highs), LOWQ (new lows), and TRIN (Arms Index). Used as a supplemental or fallback data source for the Market Health panel. |
+
+### Notifications (Optional, Free)
+
+| Service | Required | Plan | Cost | What it provides |
+|---|---|---|---|---|
+| [Telegram](https://telegram.org) | Optional | Bot API | Free | Push notifications for trade fills, system alerts, circuit breaker events, and EOD summaries. Create a bot via [@BotFather](https://t.me/BotFather) and get your Chat ID via [@userinfobot](https://t.me/userinfobot). |
+| [Discord](https://discord.com) | Optional | Webhook | Free | Trade and system event notifications via incoming webhooks. Supports separate webhooks for trades, alerts, and EOD reports. |
+| [AgentMail](https://agentmail.to) | Optional | Free tier | Free | Email delivery for EOD reports, trade review findings, and scheduled daily reports. Free tier provides up to 3 inboxes — sufficient for the default configuration (`ot-orchestrator`, `ot-alerts`, `ot-eod`). |
+
+### Minimum Viable Setup
+
+To run OpenTrader with a single paper trading account and AI signals:
+
+1. **OpenRouter** — required for all LLM features (~$10–20/mo at moderate usage)
+2. **Polygon.io** — required for market data ($29/mo Starter; add Options tier for options features)
+3. **One broker** — Alpaca paper trading is free and requires no funded account
+
+Everything else is optional and can be added incrementally.
+
+---
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE) for details.
