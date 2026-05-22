@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.54] - 2026-05-22
+
+### Fixed
+- Broker Configuration: Configure button showed "Failed to load credentials: Invalid token" for all three brokers — `/api/broker/env/reveal` and `/api/broker/env` were checking `body.token` against `WEBUI_TOKEN` but the browser sends an empty token (session-cookie auth); both endpoints now accept a valid JWT session cookie as an alternative to `WEBUI_TOKEN`
+
 ## [3.7.53] - 2026-05-22
 
 ### Fixed

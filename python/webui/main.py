@@ -4277,7 +4277,7 @@ async def _notify_broker_update(broker: str, updated_keys: list[str]) -> None:
 
 
 class EnvReveal(BaseModel):
-    token: str
+    token: str = ""
     keys:  list
 
 
@@ -4376,23 +4376,25 @@ async def set_trade_mode(body: TradeModeBody):
 
 
 @app.post("/api/broker/env/reveal")
-async def reveal_broker_env(body: EnvReveal):
-    """Return unmasked env values for the given keys (requires token)."""
-    if body.token != WEBUI_TOKEN:
+async def reveal_broker_env(request: Request, body: EnvReveal):
+    """Return unmasked env values for the given keys (session-cookie or WEBUI_TOKEN auth)."""
+    session = request.cookies.get("ot_session", "")
+    if not _verify_jwt(session) and body.token != WEBUI_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid token")
     env = _read_env_file()
     return {k: env.get(k) or os.getenv(k, "") for k in body.keys}
 
 
 class EnvUpdate(BaseModel):
-    token: str
+    token: str = ""
     vars:  dict
 
 
 @app.post("/api/broker/env")
-async def update_broker_env(body: EnvUpdate):
-    """Write broker credential env vars to the .env file."""
-    if body.token != WEBUI_TOKEN:
+async def update_broker_env(request: Request, body: EnvUpdate):
+    """Write broker credential env vars to the .env file (session-cookie or WEBUI_TOKEN auth)."""
+    session = request.cookies.get("ot_session", "")
+    if not _verify_jwt(session) and body.token != WEBUI_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid token")
     if not body.vars:
         raise HTTPException(status_code=400, detail="No vars provided")
