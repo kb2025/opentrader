@@ -326,9 +326,51 @@ KNOWN_SECRETS = [
     ("WEBULL_API_KEY",             "Webull — API Key"),
     ("WEBULL_SECRET_KEY",          "Webull — Secret Key"),
     # ── Market Data ───────────────────────────────────────────────────────────
-    # Note: MASSIVE_API_KEY, ALPHA_VANTAGE_API_KEY, UNUSUAL_WHALES_API_KEY managed via API Configuration connectors
     ("---", "Market Data"),
     ("POLYGON_API_KEY",            "Polygon.io — API Key"),
+    ("MASSIVE_API_KEY",            "Massive — API Key"),
+    ("MASSIVE_MCP_URL",            "Massive — MCP URL"),
+    ("ALPHA_VANTAGE_API_KEY",      "Alpha Vantage — API Key"),
+    ("UNUSUAL_WHALES_API_KEY",     "Unusual Whales — API Key"),
+    ("UNUSUAL_WHALES_MCP_URL",     "Unusual Whales — MCP URL"),
+    ("EODDATA_API_KEY",            "EODData — API Key"),
+    ("GOOGLE_BOOKS_API_KEY",       "Google Books — API Key"),
+    # ── AI / LLM ──────────────────────────────────────────────────────────────
+    ("---", "AI / LLM"),
+    ("OPENROUTER_API_KEY",         "OpenRouter — API Key"),
+    ("OPENROUTER_BASE_URL",        "OpenRouter — Base URL"),
+    ("LLM_PREDICTOR_MODEL",        "LLM — Predictor Model"),
+    ("LLM_REVIEW_MODEL",           "LLM — Review Model"),
+    ("LLM_EOD_MODEL",              "LLM — EOD Report Model"),
+    ("LLM_ORCHESTRATOR_MODEL",     "LLM — Orchestrator Model"),
+    ("LLM_FALLBACK_MODEL",         "LLM — Fallback Model"),
+    # ── Notifications ─────────────────────────────────────────────────────────
+    ("---", "Notifications"),
+    ("TELEGRAM_BOT_TOKEN",         "Telegram — Bot Token"),
+    ("TELEGRAM_CHAT_ID",           "Telegram — Chat ID"),
+    ("DISCORD_BOT_TOKEN",          "Discord — Bot Token"),
+    ("DISCORD_CHANNEL_ID",         "Discord — Channel ID"),
+    ("DISCORD_ALLOWED_GUILDS",     "Discord — Allowed Guilds"),
+    ("DISCORD_INTENTS",            "Discord — Intents"),
+    # ── AgentMail ─────────────────────────────────────────────────────────────
+    ("---", "AgentMail"),
+    ("AGENTMAIL_API_KEY",               "AgentMail — API Key"),
+    ("AGENTMAIL_BASE_URL",              "AgentMail — Base URL"),
+    ("AGENTMAIL_ORCHESTRATOR_INBOX",    "AgentMail — Orchestrator Inbox"),
+    ("AGENTMAIL_REVIEW_INBOX",          "AgentMail — Review Inbox"),
+    ("AGENTMAIL_EOD_INBOX",             "AgentMail — EOD Inbox"),
+    ("AGENTMAIL_ALERTS_INBOX",          "AgentMail — Alerts Inbox"),
+    ("REPORT_RECIPIENT_EMAIL",          "Report Recipient Email"),
+    # ── OVTLYR ────────────────────────────────────────────────────────────────
+    ("---", "OVTLYR"),
+    ("OVTLYR_EMAIL",               "OVTLYR — Email"),
+    ("OVTLYR_PASSWORD",            "OVTLYR — Password"),
+    ("OVTLYR_BASE_URL",            "OVTLYR — Base URL"),
+    # ── Alpaca MCP ────────────────────────────────────────────────────────────
+    ("---", "Alpaca MCP"),
+    ("ALPACA_SECRET_KEY",          "Alpaca MCP — Secret Key"),
+    ("ALPACA_PAPER_TRADE",         "Alpaca MCP — Paper Trading"),
+    ("ALPACA_MCP_URL",             "Alpaca MCP — MCP URL"),
 ]
 
 def _current_user_id(request: Request) -> str | None:
@@ -1189,6 +1231,7 @@ async def on_startup():
             )
             if row:
                 await _load_user_secrets_to_env(row["id"])
+                await _sync_secrets_to_env(row["id"])
         except Exception:
             pass
     if DB_URL:
@@ -3256,7 +3299,7 @@ async def get_market_bars(ticker: str = "SPY", days: int = 90):
     # HIGN (52-week highs) has no direct match — mapped to MAHN on EODData.
     # Semaphore serializes concurrent requests to avoid EODData rate-limits.
     if not lc_bars:
-        eod_key = _read_env_file().get("EODDATA_API_KEY") or os.getenv("EODDATA_API_KEY", "")
+        eod_key = os.getenv("EODDATA_API_KEY", "")
         if eod_key:
             global _eoddata_sem
             if _eoddata_sem is None:

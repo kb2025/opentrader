@@ -8208,13 +8208,12 @@ async function saveSysSettings() {
     const el = document.getElementById(`syscfg_${k}`);
     if (el) vars[k] = el.value;
   });
-  const token = getToken();
   try {
-    await fetch('/api/broker/env', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ token, vars }),
+    await apiFetch('/api/user/secrets/batch', {
+      method: 'POST',
+      body: JSON.stringify({ vars }),
     });
-    toast('success', 'System Settings', 'Saved to .env');
+    toast('success', 'System Settings', 'Settings saved to your profile');
   } catch(e) { toast('error', 'Save Failed', e.message); }
 }
 

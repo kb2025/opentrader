@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.61] - 2026-05-22
+
+### Changed
+- API Configuration / System Settings: Save Settings now stores values in user profile (user_secrets DB) instead of writing to `.env` directly; toast updated accordingly
+- Startup: after loading user secrets into `os.environ`, also sync them back to `.env` so non-webui agents (broker_gateway, scheduler, traders) see the current values after container restart
+- KNOWN_SECRETS expanded from 9 to 45 keys — now covers all API Configuration connector fields (OpenRouter, Telegram, Discord, AgentMail, OVTLYR, Massive, Unusual Whales, Alpha Vantage, EODData, Google Books, Alpaca MCP) so the "Import from .env" migration tool picks them all up
+- EODData breadth indicator lookup: use `os.getenv("EODDATA_API_KEY")` instead of `_read_env_file()` — reads from the in-memory env seeded from user_secrets at login
+
 ## [3.7.60] - 2026-05-22
 
 ### Changed
