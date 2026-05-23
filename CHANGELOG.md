@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.77] - 2026-05-23
+
+### Changed
+- Trading Hindsights: run history now shows last 20 runs (was 10)
+
 ## [3.7.76] - 2026-05-22
 
 ### Fixed

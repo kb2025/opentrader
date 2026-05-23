@@ -19575,7 +19575,7 @@ function _shadowCatBadge(cat) {
 async function _shadowLoadHistory(autoLoad = false) {
   const el = document.getElementById('shadow-history');
   try {
-    const rows = await apiFetch('/api/shadow/history?limit=10');
+    const rows = await apiFetch('/api/shadow/history?limit=20');
     if (!rows || !rows.length) {
       el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No previous runs.</div>';
       return;
