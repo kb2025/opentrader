@@ -16074,7 +16074,7 @@ function _divRenderTiming(data) {
   if (!tbody) return;
   const tickers = Object.keys(data);
   if (!tickers.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No data — requires Polygon API key</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No data — Backfill history first, then refresh</td></tr>';
     return;
   }
   tickers.sort((a, b) => (data[b].avg_pre_drift || 0) - (data[a].avg_pre_drift || 0));

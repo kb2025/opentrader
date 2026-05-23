@@ -9413,8 +9413,8 @@ async def div_timing(token: str = ""):
                     ][:8]
                     if not ex_dates:
                         return sym, None
-                    newest_ex = _date.fromisoformat(ex_dates[0])
-                    oldest_ex = _date.fromisoformat(ex_dates[-1])
+                    newest_ex = date.fromisoformat(ex_dates[0])
+                    oldest_ex = date.fromisoformat(ex_dates[-1])
                     from_str = (oldest_ex - timedelta(days=40)).isoformat()
                     to_str   = (newest_ex + timedelta(days=35)).isoformat()
                     async with _aiohttp.ClientSession() as sess:
@@ -9430,11 +9430,11 @@ async def div_timing(token: str = ""):
                     if not bars:
                         return sym, None
                     price_map = {
-                        _date.fromtimestamp(b["t"] / 1000).isoformat(): b["c"]
+                        date.fromtimestamp(b["t"] / 1000).isoformat(): b["c"]
                         for b in bars
                     }
 
-                    def _nearest(target: _date) -> float | None:
+                    def _nearest(target) -> float | None:
                         for d in range(0, 5):
                             for cand in [target + timedelta(days=d), target - timedelta(days=d)]:
                                 v = price_map.get(cand.isoformat())
@@ -9444,7 +9444,7 @@ async def div_timing(token: str = ""):
 
                     pre_drifts, post_drifts = [], []
                     for ex_str in ex_dates:
-                        ex_d = _date.fromisoformat(ex_str)
+                        ex_d = date.fromisoformat(ex_str)
                         ex_p   = _nearest(ex_d)
                         pre_p  = _nearest(ex_d - timedelta(days=21))
                         post_p = _nearest(ex_d + timedelta(days=14))
@@ -9531,10 +9531,10 @@ async def div_drip_historical(token: str = ""):
                 try:
                     dates = [p["pay_date"] for p in payments]
                     from_str = (
-                        _date.fromisoformat(min(dates)) - timedelta(days=3)
+                        date.fromisoformat(min(dates)) - timedelta(days=3)
                     ).isoformat()
                     to_str = (
-                        _date.fromisoformat(max(dates)) + timedelta(days=3)
+                        date.fromisoformat(max(dates)) + timedelta(days=3)
                     ).isoformat()
                     url = (
                         f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
@@ -9546,7 +9546,7 @@ async def div_drip_historical(token: str = ""):
                                 return sym, {}
                             data = await resp.json()
                     return sym, {
-                        _date.fromtimestamp(b["t"] / 1000).isoformat(): b["c"]
+                        date.fromtimestamp(b["t"] / 1000).isoformat(): b["c"]
                         for b in (data.get("results") or [])
                     }
                 except Exception:
@@ -9562,7 +9562,7 @@ async def div_drip_historical(token: str = ""):
             price_maps = {}
 
         def _nearest_price(pmap: dict, target_str: str) -> float | None:
-            target = _date.fromisoformat(target_str)
+            target = date.fromisoformat(target_str)
             for d in range(0, 5):
                 for cand in [target + timedelta(days=d), target - timedelta(days=d)]:
                     v = pmap.get(cand.isoformat())
@@ -9626,7 +9626,7 @@ async def div_calendar(token: str = ""):
     """12-month dividend calendar: projected pay/ex-dates per ticker. Cached 6h."""
     check_token(token)
     if not DB_URL:
-        return {"months": {}, "as_of": _date.today().isoformat()}
+        return {"months": {}, "as_of": date.today().isoformat()}
     cache_key = "div:calendar:v1"
     _r = None
     try:
@@ -9646,9 +9646,9 @@ async def div_calendar(token: str = ""):
                 if sym and qty > 0 and p.get("is_dividend_payer"):
                     ticker_qty[sym] = ticker_qty.get(sym, 0) + qty
         if not ticker_qty:
-            return {"months": {}, "as_of": _date.today().isoformat()}
+            return {"months": {}, "as_of": date.today().isoformat()}
         meta = await _div_get_meta(list(ticker_qty.keys()))
-        today = _date.today()
+        today = date.today()
         freq_days = {"annual": 365, "semi-annual": 183, "quarterly": 91, "monthly": 30}
         months: dict = {}
         for ticker, qty in ticker_qty.items():
@@ -9699,7 +9699,7 @@ async def div_calendar(token: str = ""):
         return result
     except Exception as e:
         log.warning("div.calendar_error", error=str(e))
-        return {"months": {}, "as_of": _date.today().isoformat()}
+        return {"months": {}, "as_of": date.today().isoformat()}
 
 
 @app.get("/api/dividends/seasonality")
