@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.85] - 2026-05-23
+
+### Added
+- Options Trader: **tick-size validation** — `_snap_to_tick()` rounds every limit price to the CBOE/OCC tick grid ($0.01 increments below $3.00, $0.05 at or above) before submission, eliminating a class of broker price-rejection errors
+- Options Trader: **four-tier limit pricing** — `_compute_limit_price()` maps signal confidence to price aggressiveness: natural/ask (≥0.85), mid (≥0.70), passive/bid (≥0.55), skip (<0.55); orders now route as `limit` with `limit_price` + `price_tier` fields; falls back to market order only when no bid/ask available
+- Options Monitor: **Quote→Trade price fallback** — `_fetch_underlying_price()` now has a two-tier fetch: standard MCP get_quote first, then Polygon daily aggs prev-close for cash index underlyings (VIX→I:VIX, SPX→I:SPX, NDX→I:NDX, RUT→I:RUT, SPXW, XSP, DJX) that have no quote stream; mirrors tasty-agent's `stream_quotes_with_trade_fallback()` pattern
+
 ## [3.7.84] - 2026-05-23
 
 ### Added

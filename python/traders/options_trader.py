@@ -47,6 +47,49 @@ GATEWAY_TIMEOUT      = int(os.getenv("BROKER_GATEWAY_TIMEOUT_SEC", "15"))
 DEFAULT_EXPIRY_DAYS = int(os.getenv("OPTIONS_EXPIRY_DAYS", "7"))   # DTE target
 OTM_OFFSET_PCT      = float(os.getenv("OPTIONS_OTM_PCT", "2.0"))   # % OTM for strike
 
+# ── Tick-size grid (CBOE/OCC standard) ────────────────────────────────────────
+# Options priced < $3.00 trade in $0.01 increments; ≥ $3.00 trade in $0.05.
+_TICK_LOW  = 0.01
+_TICK_HIGH = 0.05
+_TICK_THRESHOLD = 3.0
+
+
+def _snap_to_tick(price: float) -> float:
+    """Round an options limit price to the nearest valid tick increment."""
+    tick = _TICK_HIGH if price >= _TICK_THRESHOLD else _TICK_LOW
+    return round(round(price / tick) * tick, 2)
+
+
+def _compute_limit_price(
+    bid: Optional[float],
+    ask: Optional[float],
+    confidence: float,
+    side: str,
+) -> tuple[Optional[float], str]:
+    """
+    Four-tier limit price selection keyed to signal confidence.
+
+    Tier mapping (from tasty-agent order pricing model):
+      natural (≥ 0.85): take liquidity immediately — ask for buys, bid for sells
+      mid     (≥ 0.70): split the spread — (bid + ask) / 2
+      passive (≥ 0.55): provide liquidity — bid for buys, ask for sells
+      skip    (< 0.55): spread too uncertain, abort
+
+    Returns (tick-snapped price | None, tier label).
+    None means the trade should be skipped (no valid price or below threshold).
+    """
+    if bid is None or ask is None or bid <= 0 or ask <= 0:
+        return None, "no_quote"
+    if confidence >= 0.85:
+        raw, tier = (ask if side == "buy" else bid), "natural"
+    elif confidence >= 0.70:
+        raw, tier = (bid + ask) / 2.0, "mid"
+    elif confidence >= 0.55:
+        raw, tier = (bid if side == "buy" else ask), "passive"
+    else:
+        return None, "skip"
+    return _snap_to_tick(raw), tier
+
 
 class OptionsTrader(BaseAgent):
 
@@ -196,7 +239,9 @@ class OptionsTrader(BaseAgent):
         trade_mode    = await self._trade_mode()
 
         quote = await self._get_quote(ticker, trade_mode)
-        price = quote.get("last") or quote.get("ask") or quote.get("bid")
+        bid   = quote.get("bid")
+        ask   = quote.get("ask")
+        price = quote.get("last") or ask or bid
         if not price:
             log.warning("trader-options.no_price", ticker=ticker)
             return
@@ -204,7 +249,7 @@ class OptionsTrader(BaseAgent):
 
         # Risk controls — slippage + liquidity on the underlying
         controls = await get_risk_controls(self.redis)
-        ok, spread = check_slippage(quote.get("bid"), quote.get("ask"), controls["max_slippage_pct"])
+        ok, spread = check_slippage(bid, ask, controls["max_slippage_pct"])
         if not ok:
             log.info("trader-options.slippage_blocked",
                      ticker=ticker, spread_pct=spread,
@@ -223,6 +268,24 @@ class OptionsTrader(BaseAgent):
         offset        = price * (OTM_OFFSET_PCT / 100)
         target_strike = round(price + offset if opt_type == "call" else price - offset, 2)
 
+        # ── Four-tier limit price + tick validation ────────────────────────────
+        # Converts confidence → price aggressiveness and snaps to CBOE tick grid.
+        order_side  = "buy"   # options trader always opens (buy to open)
+        limit_price, price_tier = _compute_limit_price(bid, ask, confidence, order_side)
+        if limit_price is None:
+            if price_tier == "skip":
+                log.info("trader-options.confidence_below_passive_threshold",
+                         ticker=ticker, confidence=confidence)
+            else:
+                log.info("trader-options.no_bid_ask_for_limit", ticker=ticker,
+                         bid=bid, ask=ask)
+                # Fall back to market order when no spread is available
+                limit_price = _snap_to_tick(price) if price else None
+                price_tier  = "market_fallback"
+        log.info("trader-options.limit_price_selected",
+                 ticker=ticker, bid=bid, ask=ask,
+                 limit_price=limit_price, tier=price_tier, confidence=confidence)
+
         contract_symbol = await self._resolve_contract(
             ticker, opt_type, target_strike, trade_mode
         )
@@ -237,7 +300,10 @@ class OptionsTrader(BaseAgent):
                  ticker=ticker, contract=contract_symbol,
                  opt_type=opt_type, contracts=MAX_CONTRACTS,
                  account=account_label, strategy=strategy_name,
+                 limit_price=limit_price, price_tier=price_tier,
                  mode=trade_mode)
+
+        order_type = "limit" if limit_price and price_tier != "market_fallback" else "market"
 
         # ── Send to broker gateway — route to the assigned account ────────────
         await self.redis.xadd(
@@ -249,7 +315,9 @@ class OptionsTrader(BaseAgent):
                 "underlying":    ticker,
                 "option_type":   opt_type,
                 "contracts":     str(MAX_CONTRACTS),
-                "order_type":    "market",
+                "order_type":    order_type,
+                "limit_price":   str(limit_price) if limit_price else "",
+                "price_tier":    price_tier,
                 "account_label": account_label,
                 "strategy_tag":  strategy_name,
                 "mode":          trade_mode,
@@ -323,6 +391,7 @@ class OptionsTrader(BaseAgent):
             if event_type == "fill":
                 self._positions_today.add(ticker)
 
+            fill_price = float(rdata.get("avg_fill_price") or rdata.get("filled_price") or limit_price or price)
             payload = OrderEventPayload(
                 event_type  = event_type,
                 account_id  = acct,
@@ -332,7 +401,7 @@ class OptionsTrader(BaseAgent):
                 asset_class = "options",
                 direction   = direction,
                 qty         = float(MAX_CONTRACTS),
-                price       = price,
+                price       = fill_price,
                 order_id    = order_id,
                 strategy    = strategy_name,
             )

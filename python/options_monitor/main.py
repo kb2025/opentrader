@@ -165,21 +165,68 @@ async def _fetch_atr(ticker: str) -> Optional[float]:
     return atr
 
 
+# Cash-settled index tickers that lack standard bid/ask quote streams.
+# Polygon returns no last-trade quote for these; fall back to daily aggs.
+_INDEX_TICKERS = frozenset({"VIX", "SPX", "SPXW", "NDX", "RUT", "XSP", "DJX"})
+# Polygon symbol overrides for cash indices (prefixed with "I:")
+_INDEX_POLY_SYM = {
+    "VIX": "I:VIX", "SPX": "I:SPX", "SPXW": "I:SPX",
+    "NDX": "I:NDX", "RUT": "I:RUT", "XSP":  "I:XSP",
+    "DJX": "I:DJI",
+}
+
+
 async def _fetch_underlying_price(ticker: str) -> Optional[float]:
-    """Fetch latest underlying stock price via Massive MCP (Polygon.io)."""
-    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_quote", {"ticker": ticker})
-    if not raw:
+    """
+    Fetch latest underlying price with Quote → Trade (prev-close agg) fallback.
+
+    Equity tickers: Massive MCP get_quote (real-time last trade).
+    Index tickers (VIX, SPX, NDX, RUT, SPXW …): get_quote returns nothing
+    useful for cash indices, so fall back to Polygon daily aggs prev-close.
+    This mirrors tasty-agent's stream_quotes_with_trade_fallback() pattern.
+    """
+    sym = ticker.upper()
+
+    # ── Tier 1: standard quote ─────────────────────────────────────────────
+    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_quote", {"ticker": sym})
+    if raw:
+        try:
+            data  = json.loads(raw)
+            price = data.get("last") or data.get("close") or data.get("prev_close")
+            if price:
+                return float(price)
+        except Exception:
+            pass
+
+    # ── Tier 2: prev-close agg (index fallback) ────────────────────────────
+    api_key  = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
         return None
+
+    poly_sym = _INDEX_POLY_SYM.get(sym, sym)
+    from datetime import timedelta
+    today    = date.today()
+    from_str = (today - timedelta(days=7)).isoformat()
+
     try:
-        data = json.loads(raw)
-        price = (
-            data.get("last")
-            or data.get("close")
-            or data.get("prev_close")
+        import aiohttp
+        url = (
+            f"https://api.polygon.io/v2/aggs/ticker/{poly_sym}/range/1/day"
+            f"/{from_str}/{today.isoformat()}?adjusted=true&sort=desc&limit=1&apiKey={api_key}"
         )
-        return float(price) if price else None
-    except Exception:
-        return None
+        async with aiohttp.ClientSession() as sess:
+            async with sess.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status == 200:
+                    d    = await resp.json()
+                    bars = d.get("results") or []
+                    if bars:
+                        log.debug("options_monitor.price_trade_fallback",
+                                  ticker=sym, poly_sym=poly_sym)
+                        return float(bars[0]["c"])
+    except Exception as e:
+        log.warning("options_monitor.price_fallback_failed", ticker=sym, error=str(e))
+
+    return None
 
 
 async def _fetch_earnings_date(ticker: str) -> Optional[date]:
