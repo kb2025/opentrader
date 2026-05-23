@@ -15145,15 +15145,18 @@ function _divRenderHoldings(accounts) {
   const tbody = document.getElementById('div-holdings-body');
   const rows = [];
   let payerCount = 0;
+  let rowIdx = 0;
   (accounts||[]).forEach(acct => {
     const acctName = acct.display_name || acct.label;
     (acct.positions||[]).forEach(p => {
       const isPayer = p.is_dividend_payer;
       if (isPayer) payerCount++;
       const dim = isPayer ? '' : 'opacity:.45;';
+      const rid = rowIdx++;
+      const far = +(p.forward_annual_rate||0);
       rows.push(`<tr style="${dim}">
         <td><span class="chip chip-muted" style="font-size:10px" title="${_escHtml(acct.label)}">${_escHtml(acctName)}</span></td>
-        <td style="font-weight:700">${_escHtml(p.symbol)}</td>
+        <td style="font-weight:700;cursor:pointer;color:var(--blue)" onclick="_divToggleFundamentals('${_escHtml(p.symbol)}',${rid},${far})" title="Click for fundamentals">${_escHtml(p.symbol)} <span style="font-size:9px;opacity:.6">▾</span></td>
         <td style="font-size:11px;color:var(--muted)">${_escHtml(p.sector||'—')}</td>
         <td>${(+p.qty||0).toLocaleString()}</td>
         <td>${_divFmt$(p.market_value||0)}</td>
@@ -15161,9 +15164,12 @@ function _divRenderHoldings(accounts) {
         <td style="font-family:monospace;font-size:11px">${isPayer ? _escHtml(p.pay_date||'—') : '—'}</td>
         <td>${isPayer ? '$'+(+(p.amount_per_share||0)).toFixed(4) : '—'}</td>
         <td style="font-size:11px;color:var(--muted)">${isPayer ? _divFreqLabel(p.frequency) : '—'}</td>
-        <td>${isPayer ? '$'+(+(p.forward_annual_rate||0)).toFixed(2) : '—'}</td>
+        <td>${isPayer ? '$'+far.toFixed(2) : '—'}</td>
         <td style="${isPayer?'color:var(--green)':''}">${isPayer ? (+(p.forward_yield_pct||0)).toFixed(2)+'%' : '—'}</td>
         <td style="${isPayer?'color:var(--green);font-weight:600':''}">${isPayer ? _divFmt$(p.projected_annual_income||0) : '—'}</td>
+      </tr>
+      <tr id="div-fund-${rid}" style="display:none;background:color-mix(in srgb,var(--bg-card) 60%,transparent)">
+        <td colspan="12" style="padding:12px 16px;border-top:none"></td>
       </tr>`);
     });
   });
@@ -15173,6 +15179,80 @@ function _divRenderHoldings(accounts) {
   tbody.innerHTML = rows.length
     ? rows.join('')
     : '<tr><td colspan="12" class="empty-state">No positions found.</td></tr>';
+}
+
+const _divFundCache = {};
+
+async function _divToggleFundamentals(sym, rid, forwardAnnualRate) {
+  const row = document.getElementById(`div-fund-${rid}`);
+  if (!row) return;
+  if (row.style.display !== 'none') { row.style.display = 'none'; return; }
+  row.style.display = 'table-row';
+  const cell = row.cells[0];
+
+  if (_divFundCache[sym] && Date.now() - _divFundCache[sym].ts < 300000) {
+    _divRenderFundamentalsCell(cell, sym, _divFundCache[sym].data, forwardAnnualRate);
+    return;
+  }
+  cell.innerHTML = '<span style="color:var(--muted);font-size:11px">Loading…</span>';
+  try {
+    const data = await apiFetch(`/api/options/trader/fundamentals/${sym}?token=${encodeURIComponent(getToken())}`);
+    _divFundCache[sym] = { data, ts: Date.now() };
+    _divRenderFundamentalsCell(cell, sym, data, forwardAnnualRate);
+  } catch(e) {
+    cell.innerHTML = `<span style="color:var(--red);font-size:11px">Failed: ${_escHtml(e.message)}</span>`;
+  }
+}
+
+function _divRenderFundamentalsCell(cell, sym, data, forwardAnnualRate) {
+  const d = data.details || {};
+  const earn = data.earnings || {};
+  const div = data.dividend || {};
+  const eps = +(earn.eps || 0);
+  const far = +forwardAnnualRate;
+
+  const mcap = d.market_cap ? _fmtMcap(d.market_cap) : '—';
+  const pe   = (eps > 0 && d.market_cap) ? '—' : '—';  // need price for P/E
+
+  // Get current price from positions (market_value / qty)
+  let price = 0;
+  (_divData?.accounts||[]).forEach(acct => (acct.positions||[]).forEach(p => {
+    if (p.symbol === sym && p.qty > 0) price = (p.market_value||0) / p.qty;
+  }));
+  const peVal  = (eps > 0 && price > 0) ? (price / eps).toFixed(1) + 'x' : '—';
+  const payoutVal = (eps > 0 && far > 0) ? Math.min((far / eps * 100), 999).toFixed(0) + '%' : '—';
+  const exchLabel = (d.exchange||'').replace('XNAS','NASDAQ').replace('XNYS','NYSE').replace('XASE','AMEX').replace('XOTC','OTC');
+  const descText  = d.description ? d.description.slice(0, 320) + (d.description.length > 320 ? '…' : '') : '';
+
+  const stats = [
+    ['Market Cap', mcap],
+    ['P/E Ratio', peVal],
+    ['EPS (TTM)', eps > 0 ? '$' + eps.toFixed(2) : '—'],
+    ['Payout Ratio', payoutVal],
+    exchLabel ? ['Exchange', exchLabel] : null,
+    earn.earnings_date ? ['Next Earnings', earn.earnings_date] : null,
+    d.employees ? ['Employees', (+d.employees).toLocaleString()] : null,
+  ].filter(Boolean);
+
+  cell.innerHTML = `<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+    ${descText ? `<div style="flex:2;min-width:180px;max-width:380px;font-size:11px;color:var(--muted);line-height:1.55">${_escHtml(descText)}</div>` : ''}
+    <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+      ${stats.map(([lbl,val]) => `<div style="text-align:center;min-width:76px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">${lbl}</div>
+        <div style="font-size:13px;font-weight:600;margin-top:3px;color:var(--text)">${val}</div>
+      </div>`).join('')}
+    </div>
+    ${d.homepage ? `<a href="${_escHtml(d.homepage)}" target="_blank" rel="noopener" style="font-size:10px;color:var(--blue);align-self:flex-end;white-space:nowrap">↗ Website</a>` : ''}
+  </div>`;
+}
+
+function _fmtMcap(v) {
+  const n = +v;
+  if (!n) return '—';
+  if (n >= 1e12) return '$' + (n/1e12).toFixed(2) + 'T';
+  if (n >= 1e9)  return '$' + (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6)  return '$' + (n/1e6).toFixed(1) + 'M';
+  return '$' + n.toLocaleString();
 }
 
 // ── Bar Chart ─────────────────────────────────────────────────────────────────

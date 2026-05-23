@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.78] - 2026-05-23
+
+### Added
+- Dividend Holdings: click any ticker symbol to expand an inline fundamentals panel showing company description, market cap, P/E ratio, EPS (TTM), payout ratio (computed from forward annual rate / EPS), next earnings date, employee count, and website link; data fetched lazily and cached 5 min per ticker via existing `/api/options/trader/fundamentals/{ticker}` endpoint
+
 ## [3.7.77] - 2026-05-23
 
 ### Changed
