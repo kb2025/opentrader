@@ -23,7 +23,7 @@ import io
 import json
 import os
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 import asyncpg
@@ -335,7 +335,6 @@ async def _score_roll_candidates(
         strike  = float(details.get("strike_price") or 0)
         exp_str = details.get("expiration_date", "")
         bid     = float(quote.get("bid_price") or 0)
-        ask     = float(quote.get("ask_price") or 0)
         if not strike or not exp_str or bid <= 0:
             continue
         try:
@@ -422,6 +421,122 @@ def _bs_delta(S: float, K: float, T: float, sigma: float,
               r: float = 0.05, option_type: str = "call") -> Optional[float]:
     """Black-Scholes delta — thin wrapper around _bs_greeks for backward compat."""
     return _bs_greeks(S, K, T, sigma, r, option_type)["delta"]
+
+
+def _intrinsic_value(S: float, K: float, option_type: str) -> float:
+    """Intrinsic value: floor of option worth. Never negative."""
+    if option_type == "call":
+        return max(0.0, S - K)
+    if option_type == "put":
+        return max(0.0, K - S)
+    return 0.0
+
+
+def _bs_price(S: float, K: float, T: float, sigma: float,
+              r: float = 0.045, option_type: str = "call") -> Optional[float]:
+    """Black-Scholes theoretical price (intrinsic + time value)."""
+    import math
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return _intrinsic_value(S, K, option_type)
+    try:
+        sqrt_T = math.sqrt(T)
+        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
+        d2 = d1 - sigma * sqrt_T
+        def ncdf(x):
+            return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
+        if option_type == "call":
+            price = S * ncdf(d1) - K * math.exp(-r * T) * ncdf(d2)
+        else:
+            price = K * math.exp(-r * T) * ncdf(-d2) - S * ncdf(-d1)
+        return round(max(price, _intrinsic_value(S, K, option_type)), 4)
+    except Exception:
+        return None
+
+
+async def _compute_option_mark(
+    broker_price: float,
+    contract_symbol: str,
+    underlying: str,
+    option_type: str,
+    strike: Optional[float],
+    expiration_date,           # date | None
+    current_underlying: Optional[float],
+) -> tuple[float, str]:
+    """
+    Market-aware option valuation with graceful fallback (BYE pattern).
+
+    Returns (mark_price, source) where source is one of:
+      "broker"    — live broker quote (preferred)
+      "polygon"   — Polygon snapshot mid-price
+      "bs_model"  — Black-Scholes using VIX as sigma estimate
+      "intrinsic" — max(0, S-K) floor value
+      "zero"      — no data available
+
+    Called when broker_price == 0 (Webull scan dropout or after-hours gap).
+    """
+    # Tier 1: broker has a live price — nothing to do
+    if broker_price and broker_price > 0:
+        return broker_price, "broker"
+
+    # Tier 2: Polygon option snapshot (OCC ticker format O:...)
+    if POLYGON_API_KEY and contract_symbol:
+        poly_sym = contract_symbol if contract_symbol.startswith("O:") else f"O:{contract_symbol}"
+        try:
+            import aiohttp as _ah
+            url = (
+                f"https://api.polygon.io/v3/snapshot/options/{underlying}/{poly_sym}"
+                f"?apiKey={POLYGON_API_KEY}"
+            )
+            async with _ah.ClientSession() as sess:
+                async with sess.get(url, timeout=_ah.ClientTimeout(total=6)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        snap = (data.get("results") or {})
+                        day  = snap.get("day") or {}
+                        bid   = float(snap.get("last_quote", {}).get("bid") or 0)
+                        close = float(day.get("close") or 0)
+                        _ask  = float(snap.get("last_quote", {}).get("ask") or 0)
+                        if bid > 0 and _ask > 0:
+                            mid = round((bid + _ask) / 2.0, 4)
+                            log.info("options_monitor.mark_polygon_mid",
+                                     contract=contract_symbol, mid=mid, bid=bid, ask=_ask)
+                            return mid, "polygon"
+                        if close > 0:
+                            log.info("options_monitor.mark_polygon_close",
+                                     contract=contract_symbol, close=close)
+                            return close, "polygon"
+        except Exception as _e:
+            log.debug("options_monitor.mark_polygon_failed",
+                      contract=contract_symbol, error=str(_e))
+
+    # Tier 3: Black-Scholes using VIX as sigma, requires S, K, T
+    if current_underlying and strike and expiration_date and option_type in ("call", "put"):
+        T = max(0.0, (expiration_date - date.today()).days) / 365.0
+        # Fetch VIX from Redis cache (set by market_tone module, 30m TTL)
+        sigma = 0.25  # default 25% vol if VIX unavailable
+        try:
+            from shared.redis_client import get_redis as _gr
+            _r = await _gr()
+            vix_raw = await _r.get("market:vix:latest")
+            if vix_raw:
+                vix = float(vix_raw)
+                sigma = vix / 100.0
+        except Exception:
+            pass
+        bs = _bs_price(current_underlying, float(strike), T, sigma, option_type=option_type)
+        if bs is not None and bs > 0:
+            log.info("options_monitor.mark_bs_model",
+                     contract=contract_symbol, bs_price=bs, sigma=round(sigma, 3), T=round(T, 3))
+            return bs, "bs_model"
+
+    # Tier 4: intrinsic value floor
+    if current_underlying and strike and option_type in ("call", "put"):
+        intrinsic = _intrinsic_value(current_underlying, float(strike), option_type)
+        log.info("options_monitor.mark_intrinsic",
+                 contract=contract_symbol, intrinsic=intrinsic)
+        return intrinsic, "intrinsic"
+
+    return 0.0, "zero"
 
 
 async def _fetch_option_chain_details(
@@ -1188,6 +1303,32 @@ class OptionsMonitor(BaseAgent):
             except Exception:
                 pass
 
+        # ── Market-aware option mark (BYE valuation fallback) ─────────────────
+        # When the broker returns 0 (Webull scan dropout, after-hours gap),
+        # fall through: Polygon snapshot → Black-Scholes (VIX sigma) → intrinsic.
+        # current_opt_price now always holds the best available mark.
+        raw_broker_price = bp["current_price"]
+        if raw_broker_price and raw_broker_price > 0:
+            current_opt_price = raw_broker_price
+            mark_source       = "broker"
+        else:
+            current_opt_price, mark_source = await _compute_option_mark(
+                raw_broker_price,
+                contract_symbol,
+                underlying,
+                option_type,
+                strike,
+                expiration_date,
+                current_underlying,
+            )
+            if mark_source != "broker":
+                log.info(
+                    "options_monitor.mark_fallback_used",
+                    contract=contract_symbol,
+                    source=mark_source,
+                    mark=current_opt_price,
+                )
+
         # ── Determine entry price / date ──────────────────────────────────────
         entry_price_option    = bp["entry_price"]  # option premium
         underlying_entry      = None
@@ -1315,17 +1456,20 @@ class OptionsMonitor(BaseAgent):
             dist_exit_alert = round(current_underlying - levels["level_exit_alert"], 4)
             dist_roll_1     = round(current_underlying - levels["level_roll_1"], 4)
 
+        # notes field records fallback source when broker price was unavailable
+        scan_notes = None if mark_source == "broker" else f"mark_source={mark_source}"
+
         await pool.execute(
             """INSERT INTO option_trade_log
                (position_id, contract_symbol, underlying, event_type,
                 underlying_price, contract_price, atr_value,
-                distance_emergency, distance_exit_alert, distance_roll_1)
+                distance_emergency, distance_exit_alert, distance_roll_1, notes)
                VALUES ($1,$2,$3,'scan',
                        $4::NUMERIC,$5::NUMERIC,$6::NUMERIC,
-                       $7::NUMERIC,$8::NUMERIC,$9::NUMERIC)""",
+                       $7::NUMERIC,$8::NUMERIC,$9::NUMERIC,$10)""",
             pos_id, contract_symbol, underlying,
-            current_underlying, bp["current_price"], atr,
-            dist_emergency, dist_exit_alert, dist_roll_1,
+            current_underlying, current_opt_price, atr,
+            dist_emergency, dist_exit_alert, dist_roll_1, scan_notes,
         )
 
         # ── Check alert thresholds ────────────────────────────────────────────
@@ -1336,7 +1480,7 @@ class OptionsMonitor(BaseAgent):
                 option_type=option_type,
                 current_strike=strike,
                 current_expiry=expiration_date,
-                current_contract_bid=float(bp.get("current_price") or 0),
+                current_contract_bid=current_opt_price,  # use resolved mark, not raw broker 0
             )
 
         # ── Generate/refresh chart (async, don't block scan) ─────────────────

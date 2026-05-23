@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.89] - 2026-05-23
+
+### Fixed
+- **Options monitor market-aware valuation fallback** (BYE pattern): when a broker returns price=0 (Webull scan dropout, after-hours gap), the monitor now falls through a 4-tier chain instead of logging 0 — (1) Polygon option snapshot mid-price, (2) Black-Scholes using VIX from Redis as sigma estimate, (3) intrinsic value floor `max(0, S-K)` for calls / `max(0, K-S)` for puts, (4) zero as last resort
+- Roll scoring `current_contract_bid` now receives the resolved mark price instead of the raw broker 0, so roll candidate credit calculations remain valid during quote gaps
+- Scan log `contract_price` field now records the best available mark; `notes` field records `mark_source=polygon|bs_model|intrinsic` when fallback was used
+- Added missing `timedelta` to module-level `datetime` imports (was imported inline only inside functions)
+- Removed unused `ask` variable in `_score_roll_candidates`
+
 ## [3.7.88] - 2026-05-23
 
 ### Changed
