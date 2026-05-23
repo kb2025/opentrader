@@ -20536,6 +20536,40 @@ function _analyticsRenderPortfolio(d) {
     </div>`;
 }
 
+function _techSvgPath(vals, W, H, padX, padY, nullOk) {
+  const valid = vals.filter(v => v != null);
+  if (!valid.length) return '';
+  const mn = Math.min(...valid), mx = Math.max(...valid);
+  const rng = mx - mn || 1;
+  const n = vals.length;
+  const xs = i => padX + (i / (n - 1)) * (W - padX * 2);
+  const ys = v => padY + (1 - (v - mn) / rng) * (H - padY * 2);
+  let path = '', skip = true;
+  vals.forEach((v, i) => {
+    if (v == null) { skip = true; return; }
+    path += (skip ? 'M' : 'L') + xs(i).toFixed(1) + ',' + ys(v).toFixed(1);
+    skip = false;
+  });
+  return path;
+}
+
+function _techXLabels(dates, W, H, padX) {
+  const n = dates.length;
+  const step = Math.max(1, Math.floor(n / 5));
+  return dates.map((d, i) => {
+    if (i % step !== 0 && i !== n - 1) return '';
+    const x = (padX + (i / (n - 1)) * (W - padX * 2)).toFixed(1);
+    return `<text x="${x}" y="${H - 2}" font-size="8" text-anchor="middle" fill="#64748b">${d}</text>`;
+  }).join('');
+}
+
+function _techYRef(val, mn, mx, W, H, padX, padY, color, label) {
+  const rng = mx - mn || 1;
+  const y = (padY + (1 - (val - mn) / rng) * (H - padY * 2)).toFixed(1);
+  return `<line x1="${padX}" y1="${y}" x2="${W - padX}" y2="${y}" stroke="${color}" stroke-width="0.8" stroke-dasharray="3,2"/>
+          <text x="${W - padX + 2}" y="${parseFloat(y) + 3}" font-size="7" fill="${color}">${label}</text>`;
+}
+
 async function _analyticsLoadTech() {
   const ticker = (document.getElementById('analytics-tech-ticker')?.value || '').trim().toUpperCase();
   if (!ticker) return;
@@ -20544,33 +20578,142 @@ async function _analyticsLoadTech() {
   const d = await apiFetch(`/api/analytics/technicals/${ticker}?token=${getToken()}`);
   if (!d || d.error) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error || 'No data'}</div>`; return; }
 
-  const rsiColor = d.rsi == null ? 'var(--muted)' : d.rsi > 70 ? 'var(--red)' : d.rsi < 30 ? 'var(--green)' : 'var(--fg)';
-  const rsiLabel = d.rsi == null ? '—' : d.rsi > 70 ? 'Overbought' : d.rsi < 30 ? 'Oversold' : 'Neutral';
-  const macdColor = d.macd_hist == null ? 'var(--muted)' : d.macd_hist >= 0 ? 'var(--green)' : 'var(--red)';
-  const bbPos = (d.close != null && d.bb_upper != null && d.bb_lower != null)
-    ? Math.round(((d.close - d.bb_lower) / (d.bb_upper - d.bb_lower)) * 100) : null;
+  const dates = d.dates || [];
+  const n     = dates.length;
+  const W = 860, padX = 28, padY = 12;
+
+  // ── Bollinger Bands + Price chart ──────────────────────────────────────────
+  const bbH = 130;
+  const allBB = [...d.closes, ...d.bb_upper.filter(v=>v!=null), ...d.bb_lower.filter(v=>v!=null)];
+  const bbMn = Math.min(...allBB), bbMx = Math.max(...allBB);
+  const bbRng = bbMx - bbMn || 1;
+  const bbXs = i => padX + (i / (n - 1)) * (W - padX * 2);
+  const bbYs = v => padY + (1 - (v - bbMn) / bbRng) * (bbH - padY * 2);
+
+  // Filled band polygon between upper and lower
+  let bandPts = '';
+  const upValid = d.bb_upper.map((v,i) => v != null ? [i,v] : null).filter(Boolean);
+  const loValid = d.bb_lower.map((v,i) => v != null ? [i,v] : null).filter(Boolean);
+  if (upValid.length) {
+    bandPts = upValid.map(([i,v]) => `${bbXs(i).toFixed(1)},${bbYs(v).toFixed(1)}`).join(' ')
+            + ' ' + [...loValid].reverse().map(([i,v]) => `${bbXs(i).toFixed(1)},${bbYs(v).toFixed(1)}`).join(' ');
+  }
+
+  const bbClosePath = d.closes.map((v,i) => (i===0?'M':'L')+bbXs(i).toFixed(1)+','+bbYs(v).toFixed(1)).join('');
+  const bbMidPath   = _techSvgPath(d.bb_mid, W, bbH, padX, padY);
+  const bbUpPath    = _techSvgPath(d.bb_upper, W, bbH, padX, padY);
+  const bbLoPath    = _techSvgPath(d.bb_lower, W, bbH, padX, padY);
+
+  // current close position in band
+  const lastUp = d.bb_upper.at(-1), lastLo = d.bb_lower.at(-1);
+  const bbPct  = (lastUp != null && lastLo != null && lastUp !== lastLo)
+    ? Math.round(((d.close - lastLo) / (lastUp - lastLo)) * 100) : null;
+  const bbColor = bbPct == null ? '#94a3b8' : bbPct > 80 ? '#f87171' : bbPct < 20 ? '#34d399' : '#22d3ee';
+
+  const bbSvg = `
+    <svg viewBox="0 0 ${W} ${bbH}" style="width:100%;max-height:${bbH}px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+      ${bandPts ? `<polygon points="${bandPts}" fill="#22d3ee" fill-opacity="0.08"/>` : ''}
+      <path d="${bbUpPath}" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="3,2"/>
+      <path d="${bbLoPath}" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="3,2"/>
+      <path d="${bbMidPath}" fill="none" stroke="#94a3b8" stroke-width="1"/>
+      <path d="${bbClosePath}" fill="none" stroke="#22d3ee" stroke-width="1.8"/>
+      ${_techXLabels(dates, W, bbH, padX)}
+    </svg>`;
+
+  // ── RSI chart ──────────────────────────────────────────────────────────────
+  const rsiH = 80;
+  const rsiLast = d.rsi.filter(v=>v!=null).at(-1);
+  const rsiColor = rsiLast == null ? '#94a3b8' : rsiLast > 70 ? '#f87171' : rsiLast < 30 ? '#34d399' : '#a78bfa';
+  const rsiLabel = rsiLast == null ? '—' : rsiLast > 70 ? 'Overbought' : rsiLast < 30 ? 'Oversold' : 'Neutral';
+  const rsiPath  = _techSvgPath(d.rsi, W, rsiH, padX, padY);
+  const rsiSvg = `
+    <svg viewBox="0 0 ${W} ${rsiH}" style="width:100%;max-height:${rsiH}px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+      <rect x="${padX}" y="${padY + (1-70/100)*(rsiH-padY*2)}" width="${W-padX*2}" height="${(70-30)/100*(rsiH-padY*2)}" fill="#22d3ee" fill-opacity="0.06"/>
+      ${_techYRef(70, 0, 100, W, rsiH, padX, padY, '#f87171', '70')}
+      ${_techYRef(30, 0, 100, W, rsiH, padX, padY, '#34d399', '30')}
+      <path d="${rsiPath}" fill="none" stroke="${rsiColor}" stroke-width="1.8"/>
+    </svg>`;
+
+  // ── MACD chart (histogram bars + line + signal) ────────────────────────────
+  const macdH = 80;
+  const macdAll = [...d.macd, ...d.macd_signal, ...d.macd_hist].filter(v=>v!=null);
+  const macdMn = Math.min(...macdAll, 0), macdMx = Math.max(...macdAll, 0);
+  const macdRng = macdMx - macdMn || 1;
+  const macdXs  = i => padX + (i / (n - 1)) * (W - padX * 2);
+  const macdYs  = v => padY + (1 - (v - macdMn) / macdRng) * (macdH - padY * 2);
+  const zeroY   = macdYs(0).toFixed(1);
+  const barW    = Math.max(1, ((W - padX * 2) / n) - 1);
+
+  const histBars = d.macd_hist.map((v, i) => {
+    if (v == null) return '';
+    const x  = (macdXs(i) - barW / 2).toFixed(1);
+    const y1 = macdYs(v).toFixed(1);
+    const h  = Math.abs(parseFloat(y1) - parseFloat(zeroY));
+    const yTop = Math.min(parseFloat(y1), parseFloat(zeroY)).toFixed(1);
+    const col  = v >= 0 ? '#34d399' : '#f87171';
+    return `<rect x="${x}" y="${yTop}" width="${barW.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" fill="${col}" fill-opacity="0.7"/>`;
+  }).join('');
+
+  const macdLinePath = _techSvgPath(d.macd, W, macdH, padX, padY);
+  const macdSigPath  = _techSvgPath(d.macd_signal, W, macdH, padX, padY);
+  const macdSvg = `
+    <svg viewBox="0 0 ${W} ${macdH}" style="width:100%;max-height:${macdH}px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+      <line x1="${padX}" y1="${zeroY}" x2="${W-padX}" y2="${zeroY}" stroke="#475569" stroke-width="0.7"/>
+      ${histBars}
+      <path d="${macdLinePath}" fill="none" stroke="#22d3ee" stroke-width="1.5"/>
+      <path d="${macdSigPath}"  fill="none" stroke="#f59e0b" stroke-width="1.2"/>
+    </svg>`;
+
+  // ── Stat summary row ───────────────────────────────────────────────────────
+  const macdLast = d.macd.at(-1), sigLast = d.macd_signal.at(-1), histLast = d.macd_hist.at(-1);
+  const histColor = histLast == null ? '#94a3b8' : histLast >= 0 ? '#34d399' : '#f87171';
 
   el.innerHTML = `
-    <div style="display:flex;gap:24px;flex-wrap:wrap">
-      <div style="min-width:120px">
-        <div style="font-size:11px;color:var(--muted)">RSI(14)</div>
-        <div style="font-size:24px;font-weight:700;color:${rsiColor}">${d.rsi ?? '—'}</div>
-        <div style="font-size:11px;color:${rsiColor}">${rsiLabel}</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
+      <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 12px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px">RSI(14)</div>
+        <div style="font-size:22px;font-weight:700;color:${rsiColor}">${rsiLast?.toFixed(1) ?? '—'}</div>
+        <div style="font-size:10px;color:${rsiColor}">${rsiLabel}</div>
       </div>
-      <div style="min-width:180px">
-        <div style="font-size:11px;color:var(--muted)">MACD(12,26,9)</div>
-        <div style="font-size:13px;font-weight:600">${d.macd ?? '—'} / ${d.macd_signal ?? '—'}</div>
-        <div style="font-size:12px;color:${macdColor}">Histogram: ${d.macd_hist ?? '—'}</div>
+      <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 12px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:2px">MACD · Signal</div>
+        <div style="font-size:16px;font-weight:700">${macdLast?.toFixed(3) ?? '—'} / ${sigLast?.toFixed(3) ?? '—'}</div>
+        <div style="font-size:10px;color:${histColor}">Hist: ${histLast?.toFixed(3) ?? '—'}</div>
       </div>
-      <div style="min-width:220px">
-        <div style="font-size:11px;color:var(--muted)">Bollinger Bands(20,2)</div>
-        <div style="font-size:12px">Upper: <b>${d.bb_upper ?? '—'}</b> · Mid: <b>${d.bb_mid ?? '—'}</b> · Lower: <b>${d.bb_lower ?? '—'}</b></div>
-        ${bbPos != null ? `<div style="font-size:11px;color:var(--muted)">Close at ${bbPos}th %ile of band</div>` : ''}
+      <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 12px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:2px">Bollinger %B</div>
+        <div style="font-size:22px;font-weight:700;color:${bbColor}">${bbPct != null ? bbPct+'%' : '—'}</div>
+        <div style="font-size:10px;color:var(--muted)">Close $${d.close?.toFixed(2) ?? '—'} · ${d.bars}d</div>
       </div>
-      <div style="min-width:100px">
-        <div style="font-size:11px;color:var(--muted)">Close</div>
-        <div style="font-size:18px;font-weight:700">$${d.close?.toFixed(2) ?? '—'}</div>
-        <div style="font-size:10px;color:var(--muted)">${d.bars} bars</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr;gap:10px">
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:4px;letter-spacing:.06em;text-transform:uppercase">Price + Bollinger Bands(20,2)</div>
+        ${bbSvg}
+        <div style="display:flex;gap:14px;font-size:9px;color:var(--muted);margin-top:3px">
+          <span><span style="color:#22d3ee">━</span> Price</span>
+          <span><span style="color:#64748b">╌</span> Upper/Lower (±2σ)</span>
+          <span><span style="color:#94a3b8">─</span> Mid (SMA20)</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:4px;letter-spacing:.06em;text-transform:uppercase">RSI(14)</div>
+          ${rsiSvg}
+          <div style="display:flex;gap:14px;font-size:9px;color:var(--muted);margin-top:3px">
+            <span><span style="color:#f87171">─</span> 70 overbought</span>
+            <span><span style="color:#34d399">─</span> 30 oversold</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:4px;letter-spacing:.06em;text-transform:uppercase">MACD(12,26,9)</div>
+          ${macdSvg}
+          <div style="display:flex;gap:14px;font-size:9px;color:var(--muted);margin-top:3px">
+            <span><span style="color:#22d3ee">━</span> MACD</span>
+            <span><span style="color:#f59e0b">━</span> Signal</span>
+            <span><span style="color:#34d399">▮</span>/<span style="color:#f87171">▮</span> Histogram</span>
+          </div>
+        </div>
       </div>
     </div>`;
 }

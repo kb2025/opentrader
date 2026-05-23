@@ -14607,20 +14607,22 @@ async def analytics_risk(days: int = 252, mode: str = "live", token: str = ""):
 
 # ── C: Technical indicators ───────────────────────────────────────────────────
 
-def _rsi(closes: list[float], period: int = 14) -> float | None:
-    if len(closes) < period + 1:
-        return None
+def _rsi_series(closes: list[float], period: int = 14) -> list[float | None]:
+    """RSI at every bar; None for the first `period` bars."""
     gains, losses = [], []
     for i in range(1, len(closes)):
         d = closes[i] - closes[i - 1]
         gains.append(max(d, 0))
         losses.append(max(-d, 0))
-    avg_gain = sum(gains[-period:]) / period
-    avg_loss = sum(losses[-period:]) / period
-    if avg_loss == 0:
-        return 100.0
-    rs = avg_gain / avg_loss
-    return round(100 - 100 / (1 + rs), 2)
+    result: list[float | None] = [None] * (period + 1)
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        rs = avg_gain / avg_loss if avg_loss else float("inf")
+        result.append(round(100 - 100 / (1 + rs), 2))
+    return result
 
 
 def _ema(values: list[float], period: int) -> list[float]:
@@ -14633,32 +14635,38 @@ def _ema(values: list[float], period: int) -> list[float]:
     return ema
 
 
-def _macd(closes: list[float]) -> tuple[float | None, float | None, float | None]:
+def _macd_series(closes: list[float]) -> tuple[list, list, list]:
     if len(closes) < 35:
-        return None, None, None
-    ema12 = _ema(closes, 12)
-    ema26 = _ema(closes, 26)
-    macd_line = [ema12[i] - ema26[i] for i in range(len(ema12))]
+        return [], [], []
+    ema12     = _ema(closes, 12)
+    ema26     = _ema(closes, 26)
+    macd_line = [round(ema12[i] - ema26[i], 4) for i in range(len(ema12))]
     signal    = _ema(macd_line, 9)
-    hist      = [macd_line[i] - signal[i] for i in range(len(signal))]
-    return round(macd_line[-1], 4), round(signal[-1], 4), round(hist[-1], 4)
+    hist      = [round(macd_line[i] - signal[i], 4) for i in range(len(signal))]
+    return macd_line, [round(v, 4) for v in signal], hist
 
 
-def _bollinger(closes: list[float], period: int = 20, std_mult: float = 2.0) -> tuple:
-    if len(closes) < period:
-        return None, None, None
-    window = closes[-period:]
-    mid    = sum(window) / period
-    std    = _statistics.stdev(window)
-    return round(mid + std_mult * std, 4), round(mid, 4), round(mid - std_mult * std, 4)
+def _bb_series(closes: list[float], period: int = 20, std_mult: float = 2.0) -> tuple[list, list, list]:
+    upper, mid, lower = [], [], []
+    for i in range(len(closes)):
+        if i < period - 1:
+            upper.append(None); mid.append(None); lower.append(None)
+            continue
+        window = closes[i - period + 1: i + 1]
+        m      = sum(window) / period
+        s      = _statistics.stdev(window)
+        upper.append(round(m + std_mult * s, 4))
+        mid.append(round(m, 4))
+        lower.append(round(m - std_mult * s, 4))
+    return upper, mid, lower
 
 
 @app.get("/api/analytics/technicals/{ticker}")
 async def analytics_technicals(ticker: str, token: str = ""):
-    """RSI-14, MACD(12,26,9), Bollinger Bands(20,2) for a ticker. Cached 30m."""
+    """RSI-14, MACD(12,26,9), Bollinger Bands(20,2) with full series for charting. Cached 30m."""
     check_token(token)
     sym       = ticker.upper()
-    cache_key = f"analytics:tech:{sym}"
+    cache_key = f"analytics:tech2:{sym}"
     try:
         _r = await get_redis()
         cached = await _r.get(cache_key)
@@ -14674,10 +14682,10 @@ async def analytics_technicals(ticker: str, token: str = ""):
     try:
         import aiohttp as _ah
         from datetime import date as _date, timedelta as _td
-        from_dt = (_date.today() - _td(days=80)).isoformat()
+        from_dt = (_date.today() - _td(days=120)).isoformat()
         url = (
             f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
-            f"/{from_dt}/{_date.today().isoformat()}?adjusted=true&sort=asc&limit=60&apiKey={api_key}"
+            f"/{from_dt}/{_date.today().isoformat()}?adjusted=true&sort=asc&limit=90&apiKey={api_key}"
         )
         async with _ah.ClientSession() as sess:
             async with sess.get(url, timeout=_ah.ClientTimeout(total=8)) as resp:
@@ -14685,25 +14693,38 @@ async def analytics_technicals(ticker: str, token: str = ""):
                     return {"error": f"Polygon HTTP {resp.status}"}
                 data = await resp.json()
         bars   = data.get("results") or []
+        dates  = [b.get("t", 0) for b in bars if b.get("c")]
         closes = [float(b["c"]) for b in bars if b.get("c")]
+        # keep last 60 bars for chart readability
+        dates  = dates[-60:]
+        closes = closes[-60:]
         if len(closes) < 20:
             return {"error": "Insufficient price history"}
 
-        rsi            = _rsi(closes)
-        macd, sig, hst = _macd(closes)
-        bb_u, bb_m, bb_l = _bollinger(closes)
+        rsi_s                    = _rsi_series(closes)[-60:]
+        macd_l, macd_sig, macd_h = _macd_series(closes)
+        bb_u, bb_m, bb_l         = _bb_series(closes)
+        # truncate to 60
+        macd_l   = macd_l[-60:];  macd_sig = macd_sig[-60:];  macd_h = macd_h[-60:]
+        bb_u     = bb_u[-60:];    bb_m     = bb_m[-60:];      bb_l   = bb_l[-60:]
+
+        # date labels MM-DD
+        from datetime import datetime as _dt
+        date_labels = [_dt.fromtimestamp(t / 1000).strftime("%m-%d") if t else "" for t in dates]
 
         result = {
-            "ticker":    sym,
-            "close":     closes[-1],
-            "rsi":       rsi,
-            "macd":      macd,
-            "macd_signal": sig,
-            "macd_hist": hst,
-            "bb_upper":  bb_u,
-            "bb_mid":    bb_m,
-            "bb_lower":  bb_l,
-            "bars":      len(closes),
+            "ticker":      sym,
+            "close":       closes[-1],
+            "bars":        len(closes),
+            "dates":       date_labels,
+            "closes":      [round(v, 4) for v in closes],
+            "rsi":         rsi_s,
+            "macd":        macd_l,
+            "macd_signal": macd_sig,
+            "macd_hist":   macd_h,
+            "bb_upper":    bb_u,
+            "bb_mid":      bb_m,
+            "bb_lower":    bb_l,
         }
         try:
             if _r:

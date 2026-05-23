@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.88] - 2026-05-23
+
+### Changed
+- **Technical Indicators panel**: replaced text stats with three inline SVG charts — Bollinger Bands (price channel with filled ±2σ band + %B readout), RSI-14 (line with overbought/oversold reference lines + neutral zone fill), MACD(12,26,9) (colour-coded histogram bars + MACD/signal lines); backend now returns full 60-bar series for all three indicators (uses Wilder smoothing for RSI, rolling window for BB series)
+
 ## [3.7.87] - 2026-05-23
 
 ### Added
