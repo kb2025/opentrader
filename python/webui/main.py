@@ -8342,6 +8342,8 @@ async def div_holdings(token: str = ""):
             cost = float(p.get("cost_basis") or p.get("cost") or 0)
             price= float(p.get("current_price") or p.get("last_price") or p.get("mark") or 0)
             mval = float(p.get("market_value") or (qty * price))
+            if not price and qty > 0 and mval > 0:
+                price = mval / qty
             total_value += mval
             total_cost += cost
             m = meta.get(sym, {})

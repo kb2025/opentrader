@@ -15350,15 +15350,17 @@ function _divRenderAvgDown(accounts) {
   const underwater = [];
   (accounts||[]).forEach(acct => {
     (acct.positions||[]).forEach(p => {
-      const qty   = +(p.qty||0);
-      const cost  = +(p.cost_basis||0);
-      const price = +(p.current_price||0);
+      const qty  = +(p.qty||0);
+      const cost = +(p.cost_basis||0);
+      const mval = +(p.market_value||0);
+      // Derive price from market_value/qty when current_price is missing (Webull, etc.)
+      const price = +(p.current_price||0) || (qty > 0 && mval > 0 ? mval / qty : 0);
       if (qty <= 0 || cost <= 0 || price <= 0) return;
       const costPerShare = cost / qty;
       const underPct = (costPerShare - price) / costPerShare * 100;
       if (underPct > 0.5) {
         underwater.push({ sym: p.symbol, account: acct.display_name || acct.label,
-          qty, cost, costPerShare, price, underPct, mval: p.market_value });
+          qty, cost, costPerShare, price, underPct, mval });
       }
     });
   });
