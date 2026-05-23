@@ -2074,6 +2074,15 @@ select option{background:var(--surface2)}
           <div class="stat-label">Portfolio Value</div>
           <div class="stat-value" id="div-stat-portval" style="color:var(--text)">—</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Cost Basis</div>
+          <div class="stat-value" id="div-stat-costbasis" style="color:var(--text)">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Unrealized P&amp;L</div>
+          <div class="stat-value" id="div-stat-unrealized" style="color:var(--green)">—</div>
+          <div class="stat-sub" id="div-stat-unrealized-sub" style="font-size:10px;color:var(--muted);margin-top:3px"></div>
+        </div>
       </div>
 
       <!-- Controls -->
@@ -2139,11 +2148,37 @@ select option{background:var(--surface2)}
           <table>
             <thead><tr>
               <th>Account</th><th>Ticker</th><th>Sector</th><th>Qty</th>
-              <th>Mkt Value</th><th>Ex-Date</th><th>Pay Date</th>
-              <th>$/Share</th><th>Freq</th><th>Fwd Rate</th><th>Yield</th><th>Ann. Income</th>
+              <th>Cost Basis</th><th>Mkt Value</th><th>Unrealized</th>
+              <th>Ex-Date</th><th>Pay Date</th>
+              <th>$/Share</th><th>Freq</th><th>Fwd Rate</th><th>Yield</th><th>YOC</th><th>Ann. Income</th>
             </tr></thead>
-            <tbody id="div-holdings-body"><tr><td colspan="12" class="empty-state">Loading…</td></tr></tbody>
+            <tbody id="div-holdings-body"><tr><td colspan="15" class="empty-state">Loading…</td></tr></tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Average Down Calculator -->
+      <div class="card" style="margin-bottom:16px" id="div-avgdown-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-avgdown-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">Average Down Calculator</span>
+          <span id="div-avgdown-subtitle" style="font-size:11px;color:var(--muted)">underwater positions</span>
+        </div>
+        <div id="div-avgdown-body" style="display:none;padding:12px 16px">
+          <div id="div-avgdown-content" style="font-size:12px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Goal Portfolio Allocation -->
+      <div class="card" style="margin-bottom:16px" id="div-goal-card">
+        <div class="card-header">
+          <span class="card-title">Goal Portfolio</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span id="div-goal-subtitle" style="font-size:11px;color:var(--muted)">target vs actual allocation</span>
+            <button class="btn btn-ghost btn-sm" onclick="_divAddGoalTarget()">+ Add Target</button>
+          </div>
+        </div>
+        <div id="div-goal-body" style="padding:12px 16px">
+          <div id="div-goal-content" style="font-size:12px;color:var(--muted)">Loading…</div>
         </div>
       </div>
 
@@ -14794,13 +14829,17 @@ async function loadDividendPage(forceRefresh = false) {
     if (forceRefresh) {
       await apiFetch(`/api/dividends/refresh?token=${encodeURIComponent(token)}`, { method: 'POST' });
     }
-    const [holdings, forecast, history, upcoming, acctStats] = await Promise.all([
+    const [holdings, forecast, history, upcoming, acctStats, growthStreaks, targets] = await Promise.all([
       apiFetch(`/api/dividends/holdings?token=${encodeURIComponent(token)}`),
       apiFetch(`/api/dividends/forecast?token=${encodeURIComponent(token)}`),
       apiFetch(`/api/dividends/history?token=${encodeURIComponent(token)}&limit=500`),
       apiFetch(`/api/dividends/upcoming?token=${encodeURIComponent(token)}`).catch(() => ({ upcoming: [] })),
       apiFetch(`/api/dividends/account-stats?token=${encodeURIComponent(token)}`).catch(() => null),
+      apiFetch(`/api/dividends/growth-streaks?token=${encodeURIComponent(token)}`).catch(() => ({})),
+      apiFetch(`/api/dividends/targets?token=${encodeURIComponent(token)}`).catch(() => []),
     ]);
+    _divGrowthStreaks = growthStreaks || {};
+    _divGoalTargets  = targets || [];
     _divData = holdings;
     _divForecast = forecast;
     _divUpcomingRaw = upcoming;
@@ -14899,10 +14938,23 @@ function _divRenderStats(s) {
   document.getElementById('div-stat-payers').textContent    = s.dividend_payers || 0;
   document.getElementById('div-stat-payers-sub').textContent = 'of ' + (s.total_holdings || 0) + ' holdings';
   document.getElementById('div-stat-portval').textContent   = _divFmt$(s.total_portfolio_value || 0);
+  const cbEl = document.getElementById('div-stat-costbasis');
+  if (cbEl && s.total_cost_basis != null) cbEl.textContent = _divFmt$(s.total_cost_basis);
+  const urEl = document.getElementById('div-stat-unrealized');
+  const urSub = document.getElementById('div-stat-unrealized-sub');
+  if (urEl && s.total_unrealized_pnl != null) {
+    const ur = s.total_unrealized_pnl;
+    const urPct = s.total_unrealized_pnl_pct || 0;
+    urEl.textContent = (ur >= 0 ? '+' : '') + _divFmt$(ur);
+    urEl.style.color = ur >= 0 ? 'var(--green)' : 'var(--red)';
+    if (urSub) urSub.textContent = (urPct >= 0 ? '+' : '') + urPct.toFixed(2) + '% on cost basis';
+  }
 }
 
 let _divActiveAccount = '';
 let _divUpcomingRaw = null;
+let _divGrowthStreaks = {};
+let _divGoalTargets = [];
 
 function _divRenderAccountCards(accounts) {
   const container = document.getElementById('div-account-cards');
@@ -15043,9 +15095,15 @@ function _divComputeFromAccounts(accounts) {
   const totalPayers = new Set(positions.map(p => p.symbol)).size;
   const annIncome   = Object.values(tickerTotals).reduce((s, v) => s + v, 0);
 
+  const totalCostBasis = accounts.reduce((s, a) =>
+    s + (a.positions||[]).reduce((s2, p) => s2 + (+(p.cost_basis||0)), 0), 0);
+  const totalUnrealized = totalValue - totalCostBasis;
+  const totalUnrealizedPct = totalCostBasis > 0 ? (totalUnrealized / totalCostBasis * 100) : 0;
+
   return { by_ticker, by_sector, by_account, by_yield, monthly, totalValue, totalPayers, annIncome,
            monthlyAvg: projectedMonthly,
-           totalHoldings: accounts.reduce((s, a) => s + (a.positions||[]).length, 0) };
+           totalHoldings: accounts.reduce((s, a) => s + (a.positions||[]).length, 0),
+           totalCostBasis, totalUnrealized, totalUnrealizedPct };
 }
 
 // Merge actual dividend_history into the forecast monthly array.
@@ -15134,7 +15192,12 @@ function _divApplyFilter() {
     total_holdings:                 computed.totalHoldings,
     total_portfolio_value:          computed.totalValue,
     monthly_avg:                    computed.monthlyAvg,
+    total_cost_basis:               computed.totalCostBasis,
+    total_unrealized_pnl:           computed.totalUnrealized,
+    total_unrealized_pnl_pct:       computed.totalUnrealizedPct,
   });
+  _divRenderAvgDown(filtered);
+  _divRenderGoalAllocation(filtered, _divGoalTargets, computed.totalValue);
 }
 
 function _divFreqLabel(f) {
@@ -15154,22 +15217,46 @@ function _divRenderHoldings(accounts) {
       const dim = isPayer ? '' : 'opacity:.45;';
       const rid = rowIdx++;
       const far = +(p.forward_annual_rate||0);
+      const cost = +(p.cost_basis||0);
+      const qty  = +(p.qty||0);
+      const mval = +(p.market_value||0);
+      const ur = p.unrealized_pnl;
+      const urPct = p.unrealized_pnl_pct;
+      const urColor = (urPct == null) ? 'var(--muted)' : urPct >= 0 ? 'var(--green)' : 'var(--red)';
+      const urText = urPct == null ? '—' : `${urPct >= 0 ? '+' : ''}${urPct.toFixed(1)}%`;
+      const yoc = p.yoc_pct;
+      const yocText = yoc != null ? yoc.toFixed(2) + '%' : '—';
+      const yocColor = yoc != null && yoc > 0 ? 'var(--blue)' : 'var(--muted)';
+
+      // Growth streak badge
+      const streak = (_divGrowthStreaks[p.symbol] || {}).streak || 0;
+      const streakBadge = streak >= 10
+        ? `<span title="${streak}yr dividend growth" style="font-size:9px;color:#f59e0b;margin-left:3px">★${streak}yr</span>`
+        : streak >= 5
+        ? `<span title="${streak}yr dividend growth" style="font-size:9px;color:var(--green);margin-left:3px">★${streak}yr</span>`
+        : streak >= 1
+        ? `<span title="${streak}yr dividend growth" style="font-size:9px;color:var(--blue);margin-left:3px">↑${streak}yr</span>`
+        : '';
+
       rows.push(`<tr style="${dim}">
         <td><span class="chip chip-muted" style="font-size:10px" title="${_escHtml(acct.label)}">${_escHtml(acctName)}</span></td>
-        <td style="font-weight:700;cursor:pointer;color:var(--blue)" onclick="_divToggleFundamentals('${_escHtml(p.symbol)}',${rid},${far})" title="Click for fundamentals">${_escHtml(p.symbol)} <span style="font-size:9px;opacity:.6">▾</span></td>
+        <td style="font-weight:700;cursor:pointer;color:var(--blue)" onclick="_divToggleFundamentals('${_escHtml(p.symbol)}',${rid},${far})" title="Click for fundamentals">${_escHtml(p.symbol)}${streakBadge} <span style="font-size:9px;opacity:.6">▾</span></td>
         <td style="font-size:11px;color:var(--muted)">${_escHtml(p.sector||'—')}</td>
-        <td>${(+p.qty||0).toLocaleString()}</td>
-        <td>${_divFmt$(p.market_value||0)}</td>
+        <td>${qty.toLocaleString()}</td>
+        <td style="font-size:11px;color:var(--muted)">${cost > 0 ? _divFmt$(cost) : '—'}</td>
+        <td>${_divFmt$(mval)}</td>
+        <td style="color:${urColor};font-size:11px;font-weight:600">${urText}</td>
         <td style="font-family:monospace;font-size:11px">${isPayer ? _escHtml(p.ex_date||'—') : '—'}</td>
         <td style="font-family:monospace;font-size:11px">${isPayer ? _escHtml(p.pay_date||'—') : '—'}</td>
         <td>${isPayer ? '$'+(+(p.amount_per_share||0)).toFixed(4) : '—'}</td>
         <td style="font-size:11px;color:var(--muted)">${isPayer ? _divFreqLabel(p.frequency) : '—'}</td>
         <td>${isPayer ? '$'+far.toFixed(2) : '—'}</td>
         <td style="${isPayer?'color:var(--green)':''}">${isPayer ? (+(p.forward_yield_pct||0)).toFixed(2)+'%' : '—'}</td>
+        <td style="color:${yocColor}">${yocText}</td>
         <td style="${isPayer?'color:var(--green);font-weight:600':''}">${isPayer ? _divFmt$(p.projected_annual_income||0) : '—'}</td>
       </tr>
       <tr id="div-fund-${rid}" style="display:none;background:color-mix(in srgb,var(--bg-card) 60%,transparent)">
-        <td colspan="12" style="padding:12px 16px;border-top:none"></td>
+        <td colspan="15" style="padding:12px 16px;border-top:none"></td>
       </tr>`);
     });
   });
@@ -15178,7 +15265,7 @@ function _divRenderHoldings(accounts) {
     `${payerCount} payers · ${total - payerCount} non-payers`;
   tbody.innerHTML = rows.length
     ? rows.join('')
-    : '<tr><td colspan="12" class="empty-state">No positions found.</td></tr>';
+    : '<tr><td colspan="15" class="empty-state">No positions found.</td></tr>';
 }
 
 const _divFundCache = {};
@@ -15253,6 +15340,202 @@ function _fmtMcap(v) {
   if (n >= 1e9)  return '$' + (n/1e9).toFixed(1) + 'B';
   if (n >= 1e6)  return '$' + (n/1e6).toFixed(1) + 'M';
   return '$' + n.toLocaleString();
+}
+
+function _divRenderAvgDown(accounts) {
+  const container = document.getElementById('div-avgdown-content');
+  const subtitle  = document.getElementById('div-avgdown-subtitle');
+  if (!container) return;
+
+  const underwater = [];
+  (accounts||[]).forEach(acct => {
+    (acct.positions||[]).forEach(p => {
+      const qty   = +(p.qty||0);
+      const cost  = +(p.cost_basis||0);
+      const price = +(p.current_price||0);
+      if (qty <= 0 || cost <= 0 || price <= 0) return;
+      const costPerShare = cost / qty;
+      const underPct = (costPerShare - price) / costPerShare * 100;
+      if (underPct > 0.5) {
+        underwater.push({ sym: p.symbol, account: acct.display_name || acct.label,
+          qty, cost, costPerShare, price, underPct, mval: p.market_value });
+      }
+    });
+  });
+
+  if (subtitle) subtitle.textContent = underwater.length ? `${underwater.length} underwater` : 'no underwater positions';
+
+  if (!underwater.length) {
+    container.innerHTML = '<div style="color:var(--green);padding:4px 0">All holdings are above cost basis.</div>';
+    return;
+  }
+
+  underwater.sort((a, b) => b.underPct - a.underPct);
+
+  const rows = underwater.map(p => {
+    const id = `avgdown-${p.sym.replace(/[^a-z0-9]/gi,'').toLowerCase()}`;
+    const halfwayTarget = (p.costPerShare + p.price) / 2;
+    const sharesToHalve = (halfwayTarget > p.price && halfwayTarget < p.costPerShare)
+      ? Math.ceil((p.qty * (p.costPerShare - halfwayTarget)) / (halfwayTarget - p.price)) : 0;
+    const costToHalve = sharesToHalve * p.price;
+    return `<tr>
+      <td style="font-weight:700">${_escHtml(p.sym)}</td>
+      <td style="font-size:11px;color:var(--muted)">${_escHtml(p.account)}</td>
+      <td style="text-align:right">${p.qty.toLocaleString()}</td>
+      <td style="text-align:right;color:var(--amber)">${_divFmt$(p.costPerShare)}</td>
+      <td style="text-align:right;color:var(--blue)">${_divFmt$(p.price)}</td>
+      <td style="text-align:right;color:var(--red);font-weight:600">-${p.underPct.toFixed(1)}%</td>
+      <td style="text-align:right;font-size:11px;color:var(--muted)">${sharesToHalve > 0 ? sharesToHalve + ' sh · ' + _divFmt$(costToHalve) : '—'}</td>
+      <td style="text-align:right">
+        <input type="number" id="${id}-budget" placeholder="$ amount" min="0" step="100"
+          style="width:90px;padding:3px 6px;font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text)"
+          oninput="_divCalcAvgDown('${_escHtml(p.sym)}',${p.qty},${p.costPerShare},${p.price})">
+      </td>
+      <td id="${id}-result" style="font-size:11px;color:var(--muted);min-width:140px">—</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:700px">
+    <thead><tr style="font-size:10px;color:var(--muted);border-bottom:1px solid var(--border)">
+      <th style="text-align:left;padding:4px 8px">Ticker</th>
+      <th style="text-align:left">Account</th>
+      <th style="text-align:right">Shares</th>
+      <th style="text-align:right">Cost/Sh</th>
+      <th style="text-align:right">Price</th>
+      <th style="text-align:right">% Under</th>
+      <th style="text-align:right">To Halve Gap</th>
+      <th style="text-align:right">Budget</th>
+      <th style="text-align:left;padding:0 8px">New Avg After Buy</th>
+    </tr></thead>
+    <tbody style="font-size:12px">${rows}</tbody>
+  </table></div>
+  <div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5">
+    <strong>To Halve Gap:</strong> shares × cost to bring average down to midpoint between cost/share and current price.
+    Enter a budget to compute a custom average-down.
+  </div>`;
+}
+
+function _divCalcAvgDown(sym, qty, costPerShare, price) {
+  const id = `avgdown-${sym.replace(/[^a-z0-9]/gi,'').toLowerCase()}`;
+  const budgetEl = document.getElementById(`${id}-budget`);
+  const resultEl = document.getElementById(`${id}-result`);
+  if (!budgetEl || !resultEl) return;
+  const budget = +(budgetEl.value||0);
+  if (budget <= 0 || price <= 0) { resultEl.textContent = '—'; return; }
+  const sharesToBuy = budget / price;
+  const newAvg = ((costPerShare * qty) + budget) / (qty + sharesToBuy);
+  const improvement = (costPerShare - newAvg) / costPerShare * 100;
+  resultEl.innerHTML = `<span style="color:var(--green);font-weight:600">${_divFmt$(newAvg)}/sh</span> <span style="color:var(--muted)">(↓${improvement.toFixed(1)}% · ${sharesToBuy.toFixed(1)} sh)</span>`;
+}
+
+function _divRenderGoalAllocation(accounts, targets, totalValue) {
+  const container = document.getElementById('div-goal-content');
+  const subtitle  = document.getElementById('div-goal-subtitle');
+  if (!container) return;
+
+  if (!targets || !targets.length) {
+    container.innerHTML = `<div style="font-size:12px;color:var(--muted)">No targets set. Click "+ Add Target" to define your ideal portfolio allocation.</div>`;
+    if (subtitle) subtitle.textContent = 'target vs actual allocation';
+    return;
+  }
+
+  const actualPct = {};
+  (accounts||[]).forEach(acct => (acct.positions||[]).forEach(p => {
+    if (totalValue > 0 && p.market_value > 0)
+      actualPct[p.symbol] = (actualPct[p.symbol]||0) + (p.market_value / totalValue * 100);
+  }));
+
+  const rows = targets.map(t => {
+    const actual = actualPct[t.ticker] || 0;
+    const gap = actual - t.target_pct;
+    const absGap = Math.abs(gap);
+    const onTarget = absGap < 0.5;
+    const gapColor = onTarget ? 'var(--green)' : gap > 0 ? 'var(--amber)' : 'var(--blue)';
+    const gapLabel = onTarget ? '✓ On target' : gap > 0 ? `+${gap.toFixed(1)}% over` : `${gap.toFixed(1)}% under`;
+    const rebalance$ = absGap * totalValue / 100;
+    const action = onTarget ? '—' : gap > 0 ? `Trim ${_divFmt$(rebalance$)}` : `Buy ${_divFmt$(rebalance$)}`;
+    const actionColor = onTarget ? 'var(--muted)' : gap > 0 ? 'var(--amber)' : 'var(--green)';
+    const barMax = Math.max(t.target_pct, actual, 1);
+    const targetBarW = Math.round(t.target_pct / barMax * 80);
+    const actualBarW = Math.round(actual / barMax * 80);
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="font-weight:700;padding:6px 4px">${_escHtml(t.ticker)}</td>
+      <td style="text-align:right;color:var(--blue)">${t.target_pct.toFixed(1)}%</td>
+      <td style="text-align:right;color:var(--green)">${actual.toFixed(1)}%</td>
+      <td style="padding:4px 8px">
+        <div style="position:relative;height:14px;background:var(--border);border-radius:3px;width:120px">
+          <div style="position:absolute;left:0;top:0;height:100%;width:${actualBarW}%;background:${actual>t.target_pct?'var(--amber)':'var(--green)'};border-radius:3px;opacity:.8"></div>
+          <div style="position:absolute;left:${targetBarW}%;top:-2px;height:18px;width:2px;background:var(--blue);border-radius:1px" title="Target: ${t.target_pct.toFixed(1)}%"></div>
+        </div>
+      </td>
+      <td style="font-size:11px;color:${gapColor}">${gapLabel}</td>
+      <td style="font-size:11px;color:${actionColor}">${action}</td>
+      <td style="padding:0 4px"><button onclick="_divDeleteTarget('${_escHtml(t.ticker)}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;padding:2px 6px" title="Remove target">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  const totalTarget = targets.reduce((s, t) => s + t.target_pct, 0);
+  const allocated = Math.abs(totalTarget - 100) < 1;
+  const allocNote = allocated ? '✓ Fully allocated' : totalTarget < 100
+    ? `${(100-totalTarget).toFixed(1)}% unallocated`
+    : `${(totalTarget-100).toFixed(1)}% over-allocated`;
+  if (subtitle) subtitle.textContent = `${targets.length} targets · ${allocNote}`;
+
+  container.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:550px">
+    <thead><tr style="font-size:10px;color:var(--muted);border-bottom:1px solid var(--border)">
+      <th style="text-align:left;padding:4px">Ticker</th>
+      <th style="text-align:right">Target</th>
+      <th style="text-align:right">Actual</th>
+      <th style="padding:0 8px">Allocation</th>
+      <th style="text-align:left">Gap</th>
+      <th style="text-align:left">Action</th>
+      <th></th>
+    </tr></thead>
+    <tbody style="font-size:12px">${rows}</tbody>
+    <tfoot><tr style="font-size:11px;color:var(--muted)">
+      <td style="padding-top:8px">Total targets</td>
+      <td style="text-align:right;color:${allocated?'var(--green)':'var(--amber)'}">
+        ${totalTarget.toFixed(1)}%</td>
+      <td colspan="5" style="padding-left:8px;color:var(--muted)">${allocNote}</td>
+    </tr></tfoot>
+  </table></div>`;
+}
+
+async function _divAddGoalTarget() {
+  const sym = (prompt('Ticker symbol (e.g. AAPL):') || '').trim().toUpperCase();
+  if (!sym) return;
+  const raw = prompt(`Target allocation % for ${sym} (e.g. 5 = 5%):`) || '';
+  const pct = parseFloat(raw);
+  if (isNaN(pct) || pct <= 0) { toast('error', 'Invalid', 'Enter a positive allocation %'); return; }
+  const notes = (prompt('Notes (optional, press Enter to skip):') || '').trim();
+  try {
+    await apiFetch(`/api/dividends/targets?token=${encodeURIComponent(getToken())}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: sym, target_pct: pct, notes }),
+    });
+    _divGoalTargets = await apiFetch(`/api/dividends/targets?token=${encodeURIComponent(getToken())}`);
+    if (_divData) {
+      const filtered = _divFilterAccounts(_divData.accounts || []);
+      const computed = _divComputeFromAccounts(filtered);
+      _divRenderGoalAllocation(filtered, _divGoalTargets, computed.totalValue);
+    }
+    toast('success', 'Target saved', `${sym}: ${pct}%`);
+  } catch(e) { toast('error', 'Failed', e.message); }
+}
+
+async function _divDeleteTarget(ticker) {
+  if (!confirm(`Remove ${ticker} from goal portfolio?`)) return;
+  try {
+    await apiFetch(`/api/dividends/targets/${encodeURIComponent(ticker)}?token=${encodeURIComponent(getToken())}`, { method: 'DELETE' });
+    _divGoalTargets = _divGoalTargets.filter(t => t.ticker !== ticker);
+    if (_divData) {
+      const filtered = _divFilterAccounts(_divData.accounts || []);
+      const computed = _divComputeFromAccounts(filtered);
+      _divRenderGoalAllocation(filtered, _divGoalTargets, computed.totalValue);
+    }
+    toast('success', 'Removed', `${ticker} target removed`);
+  } catch(e) { toast('error', 'Failed', e.message); }
 }
 
 // ── Bar Chart ─────────────────────────────────────────────────────────────────

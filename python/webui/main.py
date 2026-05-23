@@ -8320,6 +8320,7 @@ async def div_holdings(token: str = ""):
             pass
 
     total_value = 0.0
+    total_cost = 0.0
     total_annual = 0.0
     total_payers = 0
     accounts_out = []
@@ -8342,6 +8343,7 @@ async def div_holdings(token: str = ""):
             price= float(p.get("current_price") or p.get("last_price") or p.get("mark") or 0)
             mval = float(p.get("market_value") or (qty * price))
             total_value += mval
+            total_cost += cost
             m = meta.get(sym, {})
             # Income projection: prefer actual DB history; fall back to yfinance only
             # when there are no recorded payments for this account + ticker.
@@ -8364,7 +8366,10 @@ async def div_holdings(token: str = ""):
                 "symbol":                sym,
                 "qty":                   qty,
                 "cost_basis":            cost,
+                "current_price":         price,
                 "market_value":          mval,
+                "unrealized_pnl":        round(mval - cost, 2) if cost > 0 else None,
+                "unrealized_pnl_pct":    round((mval - cost) / cost * 100, 2) if cost > 0 else None,
                 "ex_date":               str(m.get("ex_date") or "") or None,
                 "pay_date":              str(m.get("pay_date") or "") or None,
                 "amount_per_share":      aps,
@@ -8376,6 +8381,7 @@ async def div_holdings(token: str = ""):
                 "is_dividend_payer":     is_payer,
                 "projected_annual_income":  ann_income,
                 "projected_monthly_income": ann_income / 12,
+                "yoc_pct":              round(ann_income / cost * 100, 2) if cost > 0 and ann_income > 0 else None,
             })
         bal = acct.get("balances", {})
         margin = bal.get("margin") or {}
@@ -8398,6 +8404,9 @@ async def div_holdings(token: str = ""):
             "annual_projected_income":      round(total_annual, 2),
             "forward_yield_on_portfolio_pct": round(fwd_yield, 4),
             "total_portfolio_value":        round(total_value, 2),
+            "total_cost_basis":             round(total_cost, 2),
+            "total_unrealized_pnl":         round(total_value - total_cost, 2),
+            "total_unrealized_pnl_pct":     round((total_value - total_cost) / total_cost * 100, 2) if total_cost > 0 else 0.0,
         },
     }
 
@@ -9041,6 +9050,109 @@ async def _get_db_pool():
         min_size=1, max_size=5,
     )
     return _db_pool
+
+
+@app.get("/api/dividends/growth-streaks")
+async def div_growth_streaks(token: str = ""):
+    """Consecutive dividend growth years per ticker from dividend_history."""
+    check_token(token)
+    if not DB_URL:
+        return {}
+    try:
+        pool = await _get_db_pool()
+        rows = await pool.fetch("""
+            SELECT ticker,
+                   EXTRACT(YEAR FROM pay_date)::int AS yr,
+                   AVG(amount_per_share) AS avg_aps
+            FROM dividend_history
+            WHERE pay_date IS NOT NULL AND amount_per_share > 0
+            GROUP BY ticker, EXTRACT(YEAR FROM pay_date)::int
+            ORDER BY ticker, EXTRACT(YEAR FROM pay_date)::int
+        """)
+        from collections import defaultdict
+        by_ticker: dict = defaultdict(list)
+        for r in rows:
+            by_ticker[r["ticker"]].append((int(r["yr"]), float(r["avg_aps"])))
+        result = {}
+        for ticker, year_data in by_ticker.items():
+            year_data.sort()
+            if len(year_data) < 2:
+                result[ticker] = {"streak": 0, "years_tracked": len(year_data)}
+                continue
+            streak = 0
+            for i in range(len(year_data) - 1, 0, -1):
+                curr_yr, curr_aps = year_data[i]
+                prev_yr, prev_aps = year_data[i - 1]
+                if curr_yr == prev_yr + 1 and prev_aps > 0 and curr_aps > prev_aps * 1.001:
+                    streak += 1
+                else:
+                    break
+            result[ticker] = {"streak": streak, "years_tracked": len(year_data)}
+        return result
+    except Exception as e:
+        log.warning("div.growth_streaks_error", error=str(e))
+        return {}
+
+
+async def _ensure_portfolio_targets_table():
+    if not DB_URL:
+        return
+    pool = await _get_db_pool()
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS portfolio_targets (
+            ticker     TEXT        PRIMARY KEY,
+            target_pct NUMERIC     NOT NULL CHECK (target_pct >= 0),
+            notes      TEXT        DEFAULT '',
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+
+
+@app.get("/api/dividends/targets")
+async def get_portfolio_targets(token: str = ""):
+    """User-defined allocation targets for goal portfolio tracking."""
+    check_token(token)
+    if not DB_URL:
+        return []
+    await _ensure_portfolio_targets_table()
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        "SELECT ticker, target_pct, notes FROM portfolio_targets ORDER BY target_pct DESC"
+    )
+    return [{"ticker": r["ticker"], "target_pct": float(r["target_pct"]), "notes": r["notes"] or ""} for r in rows]
+
+
+class PortfolioTargetBody(BaseModel):
+    ticker: str
+    target_pct: float
+    notes: str = ""
+
+
+@app.post("/api/dividends/targets")
+async def upsert_portfolio_target(body: PortfolioTargetBody, token: str = ""):
+    check_token(token)
+    if not DB_URL:
+        raise HTTPException(503, "No DB")
+    await _ensure_portfolio_targets_table()
+    pool = await _get_db_pool()
+    await pool.execute("""
+        INSERT INTO portfolio_targets (ticker, target_pct, notes, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (ticker) DO UPDATE SET
+            target_pct = EXCLUDED.target_pct, notes = EXCLUDED.notes, updated_at = NOW()
+    """, body.ticker.upper().strip(), max(0.0, body.target_pct), body.notes.strip())
+    return {"ok": True}
+
+
+@app.delete("/api/dividends/targets/{ticker}")
+async def delete_portfolio_target(ticker: str, token: str = ""):
+    check_token(token)
+    if not DB_URL:
+        raise HTTPException(503, "No DB")
+    await _ensure_portfolio_targets_table()
+    pool = await _get_db_pool()
+    await pool.execute("DELETE FROM portfolio_targets WHERE ticker = $1", ticker.upper())
+    return {"ok": True}
 
 
 # ── Options Dashboard API ─────────────────────────────────────────────────────

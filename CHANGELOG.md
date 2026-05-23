@@ -3,6 +3,18 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.80] - 2026-05-23
+
+### Added
+- Dividend Dashboard: YOC (Yield-on-Cost) column in holdings table — annual income ÷ original cost basis per position
+- Dividend Dashboard: Unrealized P&L per position (market value vs cost basis) + two new summary stat cards (Total Cost Basis, Unrealized P&L with % on cost basis)
+- Dividend Dashboard: Average Down Calculator panel — identifies underwater positions, shows shares/cost to halve the gap, and computes custom average-down from a user-entered budget
+- Dividend Dashboard: Dividend Growth Streak badge on ticker symbols — consecutive years of dividend increases sourced from dividend_history (★ gold ≥10yr, ★ green ≥5yr, ↑ blue ≥1yr)
+- Dividend Dashboard: Goal Portfolio Allocation panel — user-defined target % per ticker with Add/Remove UI, visual allocation bar vs actual, gap analysis, and buy/trim rebalancing suggestions
+- Backend: `/api/dividends/growth-streaks` endpoint computes consecutive growth years per ticker from dividend_history
+- Backend: `/api/dividends/targets` GET/POST/DELETE endpoints with `portfolio_targets` DB table for persistent goal allocations
+- Backend: `div_holdings` enriched with `current_price`, `unrealized_pnl`, `unrealized_pnl_pct`, `yoc_pct`, and `total_cost_basis`/`total_unrealized_pnl`/`total_unrealized_pnl_pct` in summary
+
 ## [3.7.79] - 2026-05-23
 
 ### Fixed
