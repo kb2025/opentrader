@@ -14311,6 +14311,793 @@ async def shadow_run_detail(run_id: str, token: str = ""):
     return d
 
 
+# ── FinanceToolkit Analytics (A–F) ───────────────────────────────────────────
+# Pure-math helpers — no external deps beyond stdlib + aiohttp (already present)
+
+import math as _math
+import statistics as _statistics
+import zipfile as _zipfile
+import io as _io
+
+
+def _pct_returns(nav_series: list[float]) -> list[float]:
+    """Daily percentage returns from NAV series."""
+    return [
+        (nav_series[i] - nav_series[i - 1]) / nav_series[i - 1]
+        for i in range(1, len(nav_series))
+        if nav_series[i - 1] != 0
+    ]
+
+
+def _annualise(r: float, n: int = 252) -> float:
+    return (1 + r) ** n - 1 if r > -1 else -1.0
+
+
+def _sharpe(returns: list[float], rf_daily: float = 0.0, ann: int = 252) -> float:
+    excess = [r - rf_daily for r in returns]
+    if len(excess) < 2:
+        return 0.0
+    mu  = sum(excess) / len(excess)
+    std = _statistics.stdev(excess)
+    return (mu / std * _math.sqrt(ann)) if std > 0 else 0.0
+
+
+def _sortino(returns: list[float], rf_daily: float = 0.0, ann: int = 252) -> float:
+    excess   = [r - rf_daily for r in returns]
+    downside = [r for r in excess if r < 0]
+    if len(downside) < 2:
+        return 0.0
+    mu      = sum(excess) / len(excess)
+    dd_std  = _statistics.stdev(downside)
+    return (mu / dd_std * _math.sqrt(ann)) if dd_std > 0 else 0.0
+
+
+def _max_drawdown(nav_series: list[float]) -> float:
+    peak = nav_series[0]
+    mdd  = 0.0
+    for v in nav_series:
+        if v > peak:
+            peak = v
+        dd = (peak - v) / peak if peak > 0 else 0.0
+        if dd > mdd:
+            mdd = dd
+    return mdd
+
+
+def _ulcer_index(nav_series: list[float]) -> float:
+    peak = nav_series[0]
+    sq_sum = 0.0
+    for v in nav_series:
+        if v > peak:
+            peak = v
+        dd_pct = (peak - v) / peak * 100 if peak > 0 else 0.0
+        sq_sum += dd_pct ** 2
+    return _math.sqrt(sq_sum / len(nav_series)) if nav_series else 0.0
+
+
+def _var_historical(returns: list[float], level: float = 0.05) -> float:
+    """Historical VaR at given significance level (loss as positive number)."""
+    s = sorted(returns)
+    idx = max(0, int(len(s) * level) - 1)
+    return -s[idx]
+
+
+def _cvar(returns: list[float], level: float = 0.05) -> float:
+    """Expected Shortfall (CVaR) at given level."""
+    s = sorted(returns)
+    cutoff = int(len(s) * level)
+    tail   = s[:max(1, cutoff)]
+    return -sum(tail) / len(tail)
+
+
+def _skewness(returns: list[float]) -> float:
+    if len(returns) < 3:
+        return 0.0
+    n  = len(returns)
+    mu = sum(returns) / n
+    s  = _statistics.stdev(returns)
+    if s == 0:
+        return 0.0
+    return (sum((r - mu) ** 3 for r in returns) / n) / (s ** 3)
+
+
+def _kurtosis(returns: list[float]) -> float:
+    if len(returns) < 4:
+        return 0.0
+    n  = len(returns)
+    mu = sum(returns) / n
+    s  = _statistics.stdev(returns)
+    if s == 0:
+        return 0.0
+    return (sum((r - mu) ** 4 for r in returns) / n) / (s ** 4) - 3.0  # excess kurtosis
+
+
+def _beta_alpha(port_ret: list[float], mkt_ret: list[float], rf_daily: float = 0.0) -> tuple[float, float]:
+    """OLS beta and Jensen's alpha (annualised) against market."""
+    n = min(len(port_ret), len(mkt_ret))
+    if n < 5:
+        return 1.0, 0.0
+    pr  = port_ret[-n:]
+    mr  = mkt_ret[-n:]
+    ep  = [r - rf_daily for r in pr]
+    em  = [r - rf_daily for r in mr]
+    mu_ep = sum(ep) / n
+    mu_em = sum(em) / n
+    cov   = sum((ep[i] - mu_ep) * (em[i] - mu_em) for i in range(n)) / (n - 1)
+    var_m = sum((r - mu_em) ** 2 for r in em) / (n - 1)
+    beta  = cov / var_m if var_m > 0 else 1.0
+    alpha_daily = mu_ep - beta * mu_em
+    return round(beta, 4), round(_annualise(alpha_daily), 4)
+
+
+def _information_ratio(port_ret: list[float], bench_ret: list[float], ann: int = 252) -> float:
+    n = min(len(port_ret), len(bench_ret))
+    if n < 2:
+        return 0.0
+    active = [port_ret[-n + i] - bench_ret[-n + i] for i in range(n)]
+    mu_a   = sum(active) / n
+    te     = _statistics.stdev(active)
+    return (mu_a / te * _math.sqrt(ann)) if te > 0 else 0.0
+
+
+# ── A: Performance metrics ────────────────────────────────────────────────────
+
+async def _fetch_spx_returns(days: int) -> list[float]:
+    """Fetch SPX daily returns from Polygon (I:SPX index, last N days). Cached 6h."""
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return []
+    try:
+        _r = await get_redis()
+        ck = f"analytics:spx_ret:{days}"
+        cached = await _r.get(ck)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    try:
+        import aiohttp as _ah
+        from datetime import date as _date, timedelta as _td
+        from_dt = (_date.today() - _td(days=days + 10)).isoformat()
+        url = (
+            f"https://api.polygon.io/v2/aggs/ticker/I:SPX/range/1/day"
+            f"/{from_dt}/{_date.today().isoformat()}?adjusted=true&sort=asc&limit={days + 50}&apiKey={api_key}"
+        )
+        async with _ah.ClientSession() as sess:
+            async with sess.get(url, timeout=_ah.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+        bars   = data.get("results") or []
+        closes = [float(b["c"]) for b in bars if b.get("c")]
+        rets   = _pct_returns(closes)
+        if _r:
+            await _r.setex(ck, 21600, json.dumps(rets))
+        return rets
+    except Exception:
+        return []
+
+
+@app.get("/api/analytics/performance")
+async def analytics_performance(days: int = 252, mode: str = "live", token: str = ""):
+    """Risk-adjusted return metrics: Sharpe, Sortino, Treynor, Jensen's alpha, Info ratio, beta."""
+    check_token(token)
+    cache_key = f"analytics:perf:{mode}:{days}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT snapshot_date, SUM(total_nav) AS nav, SUM(day_pnl) AS dpnl
+           FROM portfolio_snapshots
+           WHERE mode = $1 AND snapshot_date >= CURRENT_DATE - ($2 || ' days')::INTERVAL
+           GROUP BY snapshot_date ORDER BY snapshot_date ASC""",
+        mode, str(days),
+    )
+    if len(rows) < 5:
+        return {"error": "Insufficient NAV history (need 5+ snapshots)", "count": len(rows)}
+
+    nav_series = [float(r["nav"]) for r in rows]
+    port_ret   = _pct_returns(nav_series)
+    spx_ret    = await _fetch_spx_returns(days)
+
+    # Align lengths (take last N)
+    n        = min(len(port_ret), len(spx_ret)) if spx_ret else len(port_ret)
+    pr_align = port_ret[-n:] if n else port_ret
+    mr_align = spx_ret[-n:]  if (spx_ret and n) else []
+
+    rf_daily = 0.045 / 252  # ~4.5% annual risk-free
+    sharpe   = _sharpe(pr_align, rf_daily)
+    sortino  = _sortino(pr_align, rf_daily)
+    beta, alpha = _beta_alpha(pr_align, mr_align, rf_daily) if mr_align else (1.0, 0.0)
+    treynor  = ((sum(pr_align) / len(pr_align) - rf_daily) / beta * _math.sqrt(252)) if beta != 0 else 0.0
+    info_r   = _information_ratio(pr_align, mr_align) if mr_align else 0.0
+    total_r  = (nav_series[-1] - nav_series[0]) / nav_series[0] if nav_series[0] else 0.0
+    ann_r    = _annualise(sum(pr_align) / len(pr_align)) if pr_align else 0.0
+    vol      = _statistics.stdev(pr_align) * _math.sqrt(252) if len(pr_align) > 1 else 0.0
+
+    result = {
+        "sharpe":          round(sharpe, 3),
+        "sortino":         round(sortino, 3),
+        "treynor":         round(treynor, 4),
+        "jensen_alpha":    round(alpha, 4),
+        "information_ratio": round(info_r, 3),
+        "beta":            round(beta, 3),
+        "total_return":    round(total_r * 100, 2),
+        "annualised_return": round(ann_r * 100, 2),
+        "volatility_ann":  round(vol * 100, 2),
+        "days":            len(rows),
+        "mode":            mode,
+    }
+    try:
+        if _r:
+            await _r.setex(cache_key, 3600, json.dumps(result))
+    except Exception:
+        pass
+    return result
+
+
+# ── B: Risk metrics ───────────────────────────────────────────────────────────
+
+@app.get("/api/analytics/risk")
+async def analytics_risk(days: int = 252, mode: str = "live", token: str = ""):
+    """Portfolio risk metrics: VaR, CVaR, Max Drawdown, Ulcer Index, skewness, kurtosis."""
+    check_token(token)
+    cache_key = f"analytics:risk:{mode}:{days}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT snapshot_date, SUM(total_nav) AS nav
+           FROM portfolio_snapshots
+           WHERE mode = $1 AND snapshot_date >= CURRENT_DATE - ($2 || ' days')::INTERVAL
+           GROUP BY snapshot_date ORDER BY snapshot_date ASC""",
+        mode, str(days),
+    )
+    if len(rows) < 5:
+        return {"error": "Insufficient NAV history", "count": len(rows)}
+
+    nav_series = [float(r["nav"]) for r in rows]
+    rets       = _pct_returns(nav_series)
+    if len(rets) < 5:
+        return {"error": "Insufficient return observations"}
+
+    mdd      = _max_drawdown(nav_series)
+    ulcer    = _ulcer_index(nav_series)
+    var95    = _var_historical(rets, 0.05)
+    var99    = _var_historical(rets, 0.01)
+    cvar95   = _cvar(rets, 0.05)
+    cvar99   = _cvar(rets, 0.01)
+    skew     = _skewness(rets)
+    kurt     = _kurtosis(rets)
+    ann_r    = _annualise(sum(rets) / len(rets)) if rets else 0.0
+    calmar   = ann_r / mdd if mdd > 0 else 0.0
+
+    result = {
+        "var_95":          round(var95 * 100, 3),
+        "var_99":          round(var99 * 100, 3),
+        "cvar_95":         round(cvar95 * 100, 3),
+        "cvar_99":         round(cvar99 * 100, 3),
+        "max_drawdown":    round(mdd * 100, 2),
+        "ulcer_index":     round(ulcer, 3),
+        "skewness":        round(skew, 3),
+        "kurtosis":        round(kurt, 3),
+        "calmar_ratio":    round(calmar, 3),
+        "days":            len(rows),
+    }
+    try:
+        if _r:
+            await _r.setex(cache_key, 3600, json.dumps(result))
+    except Exception:
+        pass
+    return result
+
+
+# ── C: Technical indicators ───────────────────────────────────────────────────
+
+def _rsi(closes: list[float], period: int = 14) -> float | None:
+    if len(closes) < period + 1:
+        return None
+    gains, losses = [], []
+    for i in range(1, len(closes)):
+        d = closes[i] - closes[i - 1]
+        gains.append(max(d, 0))
+        losses.append(max(-d, 0))
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return round(100 - 100 / (1 + rs), 2)
+
+
+def _ema(values: list[float], period: int) -> list[float]:
+    if not values:
+        return []
+    k   = 2 / (period + 1)
+    ema = [values[0]]
+    for v in values[1:]:
+        ema.append(v * k + ema[-1] * (1 - k))
+    return ema
+
+
+def _macd(closes: list[float]) -> tuple[float | None, float | None, float | None]:
+    if len(closes) < 35:
+        return None, None, None
+    ema12 = _ema(closes, 12)
+    ema26 = _ema(closes, 26)
+    macd_line = [ema12[i] - ema26[i] for i in range(len(ema12))]
+    signal    = _ema(macd_line, 9)
+    hist      = [macd_line[i] - signal[i] for i in range(len(signal))]
+    return round(macd_line[-1], 4), round(signal[-1], 4), round(hist[-1], 4)
+
+
+def _bollinger(closes: list[float], period: int = 20, std_mult: float = 2.0) -> tuple:
+    if len(closes) < period:
+        return None, None, None
+    window = closes[-period:]
+    mid    = sum(window) / period
+    std    = _statistics.stdev(window)
+    return round(mid + std_mult * std, 4), round(mid, 4), round(mid - std_mult * std, 4)
+
+
+@app.get("/api/analytics/technicals/{ticker}")
+async def analytics_technicals(ticker: str, token: str = ""):
+    """RSI-14, MACD(12,26,9), Bollinger Bands(20,2) for a ticker. Cached 30m."""
+    check_token(token)
+    sym       = ticker.upper()
+    cache_key = f"analytics:tech:{sym}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {"error": "No API key"}
+
+    try:
+        import aiohttp as _ah
+        from datetime import date as _date, timedelta as _td
+        from_dt = (_date.today() - _td(days=80)).isoformat()
+        url = (
+            f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+            f"/{from_dt}/{_date.today().isoformat()}?adjusted=true&sort=asc&limit=60&apiKey={api_key}"
+        )
+        async with _ah.ClientSession() as sess:
+            async with sess.get(url, timeout=_ah.ClientTimeout(total=8)) as resp:
+                if resp.status != 200:
+                    return {"error": f"Polygon HTTP {resp.status}"}
+                data = await resp.json()
+        bars   = data.get("results") or []
+        closes = [float(b["c"]) for b in bars if b.get("c")]
+        if len(closes) < 20:
+            return {"error": "Insufficient price history"}
+
+        rsi            = _rsi(closes)
+        macd, sig, hst = _macd(closes)
+        bb_u, bb_m, bb_l = _bollinger(closes)
+
+        result = {
+            "ticker":    sym,
+            "close":     closes[-1],
+            "rsi":       rsi,
+            "macd":      macd,
+            "macd_signal": sig,
+            "macd_hist": hst,
+            "bb_upper":  bb_u,
+            "bb_mid":    bb_m,
+            "bb_lower":  bb_l,
+            "bars":      len(closes),
+        }
+        try:
+            if _r:
+                await _r.setex(cache_key, 1800, json.dumps(result))
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── D: Financial ratios ───────────────────────────────────────────────────────
+
+@app.get("/api/analytics/fundamentals/{ticker}")
+async def analytics_fundamentals(ticker: str, token: str = ""):
+    """P/E, P/B, EV/EBITDA, current ratio, debt/equity, ROE, ROA, gross margin. Cached 12h."""
+    check_token(token)
+    sym       = ticker.upper()
+    cache_key = f"analytics:fund:{sym}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {"error": "No API key"}
+
+    try:
+        import aiohttp as _ah
+
+        async def _pg(url: str):
+            async with _ah.ClientSession() as s:
+                async with s.get(url, timeout=_ah.ClientTimeout(total=8)) as r:
+                    return await r.json() if r.status == 200 else {}
+
+        detail_url = f"https://api.polygon.io/v3/reference/tickers/{sym}?apiKey={api_key}"
+        fin_url    = (
+            f"https://api.polygon.io/vX/reference/financials"
+            f"?ticker={sym}&timeframe=quarterly&limit=4&sort=period_of_report_date&order=desc&apiKey={api_key}"
+        )
+        detail, fin = await asyncio.gather(_pg(detail_url), _pg(fin_url))
+
+        res_det   = detail.get("results", {})
+        market_cap = float(res_det.get("market_cap") or 0)
+
+        quarters = (fin.get("results") or [])[:4]
+
+        def _sum_field(section: str, field: str) -> float:
+            return sum(
+                float((q.get("financials", {}).get(section, {}).get(field, {}) or {}).get("value") or 0)
+                for q in quarters
+            )
+
+        def _latest_field(section: str, field: str) -> float:
+            for q in quarters:
+                v = (q.get("financials", {}).get(section, {}).get(field, {}) or {}).get("value")
+                if v is not None:
+                    return float(v)
+            return 0.0
+
+        # Income statement (TTM)
+        revenue_ttm     = _sum_field("income_statement", "revenues")
+        net_income_ttm  = _sum_field("income_statement", "net_income_loss")
+        gross_profit_ttm = _sum_field("income_statement", "gross_profit")
+        ebitda_ttm      = _sum_field("income_statement", "operating_income_loss")
+        eps_ttm         = _sum_field("income_statement", "basic_earnings_per_share")
+
+        # Balance sheet (most recent quarter)
+        total_assets    = _latest_field("balance_sheet", "assets")
+        total_equity    = _latest_field("balance_sheet", "equity")
+        curr_assets     = _latest_field("balance_sheet", "current_assets")
+        curr_liabilities = _latest_field("balance_sheet", "current_liabilities")
+        long_term_debt  = _latest_field("balance_sheet", "long_term_debt")
+        total_liabilities = _latest_field("balance_sheet", "liabilities")
+
+        pe  = round(market_cap / net_income_ttm, 2) if net_income_ttm > 0 else None
+        pb  = round(market_cap / total_equity, 2)   if total_equity  > 0 else None
+        ev  = market_cap + long_term_debt
+        ev_ebitda = round(ev / ebitda_ttm, 2)       if ebitda_ttm   > 0 else None
+        cr  = round(curr_assets / curr_liabilities, 2) if curr_liabilities > 0 else None
+        de  = round((total_liabilities) / total_equity, 2) if total_equity > 0 else None
+        roe = round(net_income_ttm / total_equity * 100, 2)  if total_equity > 0 else None
+        roa = round(net_income_ttm / total_assets * 100, 2)  if total_assets  > 0 else None
+        gm  = round(gross_profit_ttm / revenue_ttm * 100, 2) if revenue_ttm   > 0 else None
+        result = {
+            "ticker":        sym,
+            "market_cap":    market_cap,
+            "pe_ttm":        pe,
+            "pb":            pb,
+            "ev_ebitda":     ev_ebitda,
+            "current_ratio": cr,
+            "debt_equity":   de,
+            "roe":           roe,
+            "roa":           roa,
+            "gross_margin":  gm,
+            "eps_ttm":       round(eps_ttm, 4),
+            "revenue_ttm":   revenue_ttm,
+            "net_income_ttm": net_income_ttm,
+        }
+        try:
+            if _r:
+                await _r.setex(cache_key, 43200, json.dumps(result))
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── E: Fama-French 5-factor attribution ───────────────────────────────────────
+
+async def _fetch_ff5_factors(days: int = 252) -> dict[str, list[float]]:
+    """
+    Download daily F-F 5-factor data from Dartmouth. Cached 24h in Redis.
+    Returns dict: {"Mkt-RF": [...], "SMB": [...], "HML": [...], "RMW": [...], "CMA": [...], "RF": [...]}
+    Values are in percent — caller divides by 100.
+    """
+    cache_key = f"analytics:ff5:{days}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    url = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
+    try:
+        import aiohttp as _ah
+        async with _ah.ClientSession() as sess:
+            async with sess.get(url, timeout=_ah.ClientTimeout(total=30)) as resp:
+                if resp.status != 200:
+                    return {}
+                raw = await resp.read()
+
+        with _zipfile.ZipFile(_io.BytesIO(raw)) as zf:
+            name = [n for n in zf.namelist() if n.lower().endswith(".csv")][0]
+            text = zf.read(name).decode("utf-8", errors="ignore")
+
+        # Skip header lines until we hit the data (YYYYMMDD,float,...)
+        factors: dict[str, list[float]] = {k: [] for k in ("Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF")}
+        col_map = None
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split(",")]
+            if parts[0] == "" and col_map is None:
+                # header row: ,Mkt-RF,SMB,HML,RMW,CMA,RF
+                col_map = parts[1:]
+                continue
+            if col_map is None or not parts[0].isdigit() or len(parts[0]) != 8:
+                continue
+            try:
+                for i, k in enumerate(col_map):
+                    if k in factors:
+                        factors[k].append(float(parts[i + 1]))
+            except (ValueError, IndexError):
+                continue
+
+        # Trim to last N trading days
+        for k in factors:
+            factors[k] = factors[k][-days:]
+
+        try:
+            if _r:
+                await _r.setex(cache_key, 86400, json.dumps(factors))
+        except Exception:
+            pass
+        return factors
+    except Exception as e:
+        log.warning("analytics.ff5_fetch_failed", error=str(e))
+        return {}
+
+
+def _ols_regression(y: list[float], xs: list[list[float]]) -> dict:
+    """Minimal OLS via normal equations. Returns {alpha, betas, r_squared}."""
+    n = len(y)
+    k = len(xs)
+    if n < k + 5:
+        return {}
+
+    # Build design matrix X (add intercept column)
+    X = [[1.0] + [xs[j][i] for j in range(k)] for i in range(n)]
+
+    # XtX and Xty
+    xt = [[X[i][j] for i in range(n)] for j in range(k + 1)]
+    XtX = [[sum(xt[a][i] * X[i][b] for i in range(n)) for b in range(k + 1)] for a in range(k + 1)]
+    Xty = [sum(xt[a][i] * y[i] for i in range(n)) for a in range(k + 1)]
+
+    # Gaussian elimination
+    m = k + 1
+    aug = [XtX[i][:] + [Xty[i]] for i in range(m)]
+    for col in range(m):
+        pivot = max(range(col, m), key=lambda r: abs(aug[r][col]))
+        aug[col], aug[pivot] = aug[pivot], aug[col]
+        if abs(aug[col][col]) < 1e-12:
+            return {}
+        for row in range(m):
+            if row != col:
+                f = aug[row][col] / aug[col][col]
+                for j in range(m + 1):
+                    aug[row][j] -= f * aug[col][j]
+    coeffs = [aug[i][m] / aug[i][i] for i in range(m)]
+
+    # R²
+    y_mean = sum(y) / n
+    ss_tot = sum((v - y_mean) ** 2 for v in y)
+    y_hat  = [sum(coeffs[j] * X[i][j] for j in range(m)) for i in range(n)]
+    ss_res = sum((y[i] - y_hat[i]) ** 2 for i in range(n))
+    r2     = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    return {"alpha": coeffs[0], "betas": coeffs[1:], "r_squared": r2}
+
+
+@app.get("/api/analytics/factors")
+async def analytics_factors(days: int = 252, mode: str = "live", token: str = ""):
+    """Fama-French 5-factor attribution. Factor data from Dartmouth (cached 24h)."""
+    check_token(token)
+    cache_key = f"analytics:factors:{mode}:{days}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT SUM(total_nav) AS nav
+           FROM portfolio_snapshots
+           WHERE mode = $1 AND snapshot_date >= CURRENT_DATE - ($2 || ' days')::INTERVAL
+           GROUP BY snapshot_date ORDER BY snapshot_date ASC""",
+        mode, str(days),
+    )
+    if len(rows) < 20:
+        return {"error": "Insufficient NAV history (need 20+ snapshots)"}
+
+    nav_series = [float(r["nav"]) for r in rows]
+    port_ret   = _pct_returns(nav_series)
+
+    ff5 = await _fetch_ff5_factors(days)
+    if not ff5:
+        return {"error": "Could not fetch Fama-French factor data from Dartmouth"}
+
+    # Align: take last N matching length
+    n = min(len(port_ret), len(ff5.get("Mkt-RF", [])))
+    if n < 20:
+        return {"error": f"Insufficient overlapping data ({n} days)"}
+
+    rf_daily  = [v / 100 for v in ff5["RF"][-n:]]
+    excess_r  = [port_ret[-n + i] - rf_daily[i] for i in range(n)]
+    mkt_rf    = [v / 100 for v in ff5["Mkt-RF"][-n:]]
+    smb       = [v / 100 for v in ff5["SMB"][-n:]]
+    hml       = [v / 100 for v in ff5["HML"][-n:]]
+    rmw       = [v / 100 for v in ff5["RMW"][-n:]]
+    cma       = [v / 100 for v in ff5["CMA"][-n:]]
+
+    reg = _ols_regression(excess_r, [mkt_rf, smb, hml, rmw, cma])
+    if not reg:
+        return {"error": "Regression failed"}
+
+    betas   = reg["betas"]
+    alpha_d = reg["alpha"]
+    ann_alpha = _annualise(alpha_d)
+
+    result = {
+        "alpha_annualised": round(ann_alpha * 100, 3),
+        "mkt_rf_beta":      round(betas[0], 4),
+        "smb_beta":         round(betas[1], 4),
+        "hml_beta":         round(betas[2], 4),
+        "rmw_beta":         round(betas[3], 4),
+        "cma_beta":         round(betas[4], 4),
+        "r_squared":        round(reg["r_squared"], 4),
+        "days":             n,
+        "factor_source":    "Dartmouth (Ken French Data Library)",
+    }
+    try:
+        if _r:
+            await _r.setex(cache_key, 21600, json.dumps(result))
+    except Exception:
+        pass
+    return result
+
+
+# ── F: Portfolio analytics (rolling + benchmark) ──────────────────────────────
+
+@app.get("/api/analytics/portfolio")
+async def analytics_portfolio(days: int = 90, mode: str = "live", token: str = ""):
+    """Rolling Sharpe (21d), drawdown timeline, benchmark comparison vs SPX."""
+    check_token(token)
+    cache_key = f"analytics:port:{mode}:{days}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT snapshot_date, SUM(total_nav) AS nav
+           FROM portfolio_snapshots
+           WHERE mode = $1 AND snapshot_date >= CURRENT_DATE - ($2 || ' days')::INTERVAL
+           GROUP BY snapshot_date ORDER BY snapshot_date ASC""",
+        mode, str(days),
+    )
+    if len(rows) < 5:
+        return {"error": "Insufficient NAV history", "series": []}
+
+    dates      = [str(r["snapshot_date"]) for r in rows]
+    nav_series = [float(r["nav"]) for r in rows]
+    port_ret   = _pct_returns(nav_series)
+    spx_ret    = await _fetch_spx_returns(days)
+
+    rf_daily = 0.045 / 252
+
+    # Rolling 21-day Sharpe (need at least 22 points)
+    roll_sharpe: list[float | None] = [None] * (min(21, len(port_ret)))
+    for i in range(21, len(port_ret) + 1):
+        window = port_ret[i - 21:i]
+        roll_sharpe.append(_sharpe(window, rf_daily, 252))
+
+    # Drawdown series
+    peak = nav_series[0]
+    dd_series: list[float] = []
+    for v in nav_series:
+        if v > peak:
+            peak = v
+        dd_series.append(round((peak - v) / peak * 100, 2) if peak > 0 else 0.0)
+
+    # Benchmark indexed to portfolio start
+    bench_indexed: list[float | None] = []
+    if spx_ret:
+        n       = min(len(port_ret), len(spx_ret))
+        base    = nav_series[0]
+        bv      = base
+        bench_indexed.append(base)
+        for i in range(min(n, len(dates) - 1)):
+            bv *= (1 + spx_ret[-(n) + i])
+            bench_indexed.append(round(bv, 2))
+
+    # Pad/trim benchmark to match dates length
+    while len(bench_indexed) < len(dates):
+        bench_indexed.append(None)
+    bench_indexed = bench_indexed[:len(dates)]
+
+    series = [
+        {
+            "date":         dates[i],
+            "nav":          round(nav_series[i], 2),
+            "drawdown_pct": dd_series[i],
+            "rolling_sharpe": round(roll_sharpe[i], 3) if (i < len(roll_sharpe) and roll_sharpe[i] is not None) else None,
+            "benchmark_nav": bench_indexed[i] if i < len(bench_indexed) else None,
+        }
+        for i in range(len(dates))
+    ]
+
+    # Summary stats
+    n_align = min(len(port_ret), len(spx_ret)) if spx_ret else 0
+    if n_align:
+        pr = port_ret[-n_align:]
+        mr = spx_ret[-n_align:]
+        port_cum  = round(((1 + sum(pr) / len(pr)) ** len(pr) - 1) * 100, 2)
+        bench_cum = round(((1 + sum(mr) / len(mr)) ** len(mr) - 1) * 100, 2)
+        excess_cum = round(port_cum - bench_cum, 2)
+    else:
+        pr = port_ret
+        port_cum = round(((1 + sum(pr) / len(pr)) ** len(pr) - 1) * 100, 2) if pr else 0.0
+        bench_cum = excess_cum = None
+
+    result = {
+        "series":         series,
+        "port_return_pct": port_cum,
+        "bench_return_pct": bench_cum,
+        "excess_return_pct": excess_cum,
+        "max_drawdown_pct": round(_max_drawdown(nav_series) * 100, 2),
+        "days":           len(rows),
+        "benchmark":      "I:SPX",
+    }
+    try:
+        if _r:
+            await _r.setex(cache_key, 3600, json.dumps(result))
+    except Exception:
+        pass
+    return result
+
+
 # ── Serve frontend ────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)

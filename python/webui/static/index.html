@@ -364,6 +364,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#a78bfa"></span>
         Trading Hindsights
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-analytics')" data-page="page-analytics">
+        <span class="nav-dot" style="background:#22d3ee"></span>
+        Portfolio Analytics
+      </div>
       <div class="nav-parent" id="nav-parent-sectorinsight" onclick="_siNavToggle()">
         <span class="nav-dot" style="background:#a78bfa"></span>
         Sector Insight
@@ -3953,7 +3957,106 @@ select option{background:var(--surface2)}
 
     </div><!-- /page-shadow-account -->
 
-    <!-- ═════════════════════════���══════════════
+    <!-- ══════════════════════════════════════
+         PAGE: Portfolio Analytics (A–F)
+    ══════════════════════════════════════ -->
+    <div class="page" id="page-analytics">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--fg)">Portfolio Analytics</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">Performance · Risk · Technicals · Fundamentals · Factor Attribution · Rolling</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="analytics-mode" class="btn btn-ghost btn-sm" onchange="loadAnalyticsPage()">
+            <option value="live">Live</option>
+            <option value="paper">Paper</option>
+          </select>
+          <select id="analytics-days" class="btn btn-ghost btn-sm" onchange="loadAnalyticsPage()">
+            <option value="60">60 days</option>
+            <option value="90" selected>90 days</option>
+            <option value="180">180 days</option>
+            <option value="252">1 year</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadAnalyticsPage(true)">&#8635; Refresh</button>
+        </div>
+      </div>
+
+      <!-- Row 1: Performance + Risk side by side -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <!-- A: Performance Metrics -->
+        <div class="card">
+          <div class="card-header">
+            <span style="font-weight:600">Performance Metrics</span>
+            <span style="font-size:11px;color:var(--muted)">Sharpe · Sortino · Alpha · Beta</span>
+          </div>
+          <div id="analytics-perf-body" class="card-body">
+            <div style="font-size:12px;color:var(--muted)">Loading…</div>
+          </div>
+        </div>
+        <!-- B: Risk Metrics -->
+        <div class="card">
+          <div class="card-header">
+            <span style="font-weight:600">Risk Metrics</span>
+            <span style="font-size:11px;color:var(--muted)">VaR · CVaR · Drawdown · Ulcer</span>
+          </div>
+          <div id="analytics-risk-body" class="card-body">
+            <div style="font-size:12px;color:var(--muted)">Loading…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 2: Factor Attribution -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <span style="font-weight:600">Fama-French 5-Factor Attribution</span>
+          <span style="font-size:11px;color:var(--muted)">Source: Dartmouth (Ken French Data Library)</span>
+        </div>
+        <div id="analytics-factors-body" class="card-body">
+          <div style="font-size:12px;color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Row 3: Rolling Portfolio chart -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <span style="font-weight:600">Portfolio vs Benchmark (SPX)</span>
+          <span style="font-size:11px;color:var(--muted)">NAV · Drawdown · Rolling Sharpe</span>
+        </div>
+        <div id="analytics-port-body" class="card-body">
+          <div style="font-size:12px;color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Row 4: Technical Indicators lookup -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px">
+          <span style="font-weight:600">Technical Indicators</span>
+          <div style="display:flex;gap:6px;margin-left:auto">
+            <input id="analytics-tech-ticker" class="btn btn-ghost btn-sm" style="width:90px;text-transform:uppercase" placeholder="AAPL" />
+            <button class="btn btn-primary btn-sm" onclick="_analyticsLoadTech()">Fetch</button>
+          </div>
+        </div>
+        <div id="analytics-tech-body" class="card-body">
+          <div style="font-size:12px;color:var(--muted)">Enter a ticker to load RSI, MACD, Bollinger Bands.</div>
+        </div>
+      </div>
+
+      <!-- Row 5: Fundamentals lookup -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px">
+          <span style="font-weight:600">Financial Ratios</span>
+          <div style="display:flex;gap:6px;margin-left:auto">
+            <input id="analytics-fund-ticker" class="btn btn-ghost btn-sm" style="width:90px;text-transform:uppercase" placeholder="MSFT" />
+            <button class="btn btn-primary btn-sm" onclick="_analyticsLoadFund()">Fetch</button>
+          </div>
+        </div>
+        <div id="analytics-fund-body" class="card-body">
+          <div style="font-size:12px;color:var(--muted)">Enter a ticker to load P/E, P/B, EV/EBITDA, ROE, ROA, margins.</div>
+        </div>
+      </div>
+    </div><!-- /page-analytics -->
+
+    <!-- ════════════════════════════════════════
          PAGE: Sector Leaders
     ════════════════════════════════════════ -->
     <div class="page" id="page-equities-sector-leaders">
@@ -4602,6 +4705,7 @@ const PAGE_TITLES = {
   'page-equities-sector-leaders': 'Sector Leaders',
   'page-si-market-health':        'Market Health',
   'page-shadow-account':    'Trading Hindsights',
+  'page-analytics':         'Portfolio Analytics',
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
   'page-resources-groups':     'Market Groups',
@@ -4752,6 +4856,7 @@ function navigate(pageId) {
     case 'page-equities-sector-leaders': loadSectorLeadersPage(); break;
     case 'page-si-market-health':        loadMarketHealthPage();  break;
     case 'page-shadow-account':    loadShadowPage(); loadReviewRecommendations(); break;
+    case 'page-analytics':         loadAnalyticsPage(); break;
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
     case 'page-resources-groups':     loadMarketGroupsPage();    break;
@@ -20250,6 +20355,258 @@ async function _otPlaceOrder() {
       }
     }
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Portfolio Analytics (A–F)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadAnalyticsPage(force = false) {
+  const mode = document.getElementById('analytics-mode')?.value || 'live';
+  const days = document.getElementById('analytics-days')?.value || '90';
+  const tok  = getToken();
+  const bustQ = force ? `&_t=${Date.now()}` : '';
+
+  // A: Performance
+  document.getElementById('analytics-perf-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
+  // B: Risk
+  document.getElementById('analytics-risk-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
+  // E: Factors
+  document.getElementById('analytics-factors-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Fetching Dartmouth factor data…</div>';
+  // F: Portfolio
+  document.getElementById('analytics-port-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
+
+  const base = `?days=${days}&mode=${mode}&token=${tok}${bustQ}`;
+
+  const [perfRes, riskRes, factRes, portRes] = await Promise.allSettled([
+    apiFetch(`/api/analytics/performance${base}`),
+    apiFetch(`/api/analytics/risk${base}`),
+    apiFetch(`/api/analytics/factors${base}`),
+    apiFetch(`/api/analytics/portfolio${base}`),
+  ]);
+
+  _analyticsRenderPerf(perfRes.status === 'fulfilled' ? perfRes.value : null);
+  _analyticsRenderRisk(riskRes.status === 'fulfilled' ? riskRes.value : null);
+  _analyticsRenderFactors(factRes.status === 'fulfilled' ? factRes.value : null);
+  _analyticsRenderPortfolio(portRes.status === 'fulfilled' ? portRes.value : null);
+}
+
+function _analyticsStatRow(label, value, sub = '') {
+  const subHtml = sub ? `<span style="font-size:10px;color:var(--muted);margin-left:4px">${sub}</span>` : '';
+  return `<tr><td style="color:var(--muted);font-size:12px;padding:4px 8px 4px 0">${label}</td>`
+       + `<td style="font-size:13px;font-weight:600;padding:4px 0">${value}${subHtml}</td></tr>`;
+}
+
+function _analyticsRenderPerf(d) {
+  const el = document.getElementById('analytics-perf-body');
+  if (!d || d.error) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error || 'No data'}</div>`; return; }
+  const color = v => v >= 0 ? 'var(--green)' : 'var(--red)';
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse">
+    ${_analyticsStatRow('Sharpe Ratio',    `<span style="color:${color(d.sharpe)}">${d.sharpe.toFixed(3)}</span>`, 'annualised')}
+    ${_analyticsStatRow('Sortino Ratio',   `<span style="color:${color(d.sortino)}">${d.sortino.toFixed(3)}</span>`, 'downside only')}
+    ${_analyticsStatRow('Treynor Ratio',   d.treynor.toFixed(4), 'vs beta')}
+    ${_analyticsStatRow("Jensen's Alpha",  `<span style="color:${color(d.jensen_alpha)}">${(d.jensen_alpha*100).toFixed(2)}%</span>`, 'ann.')}
+    ${_analyticsStatRow('Info Ratio',      d.information_ratio.toFixed(3), 'vs SPX')}
+    ${_analyticsStatRow('Beta',            d.beta.toFixed(3))}
+    ${_analyticsStatRow('Total Return',    `<span style="color:${color(d.total_return)}">${d.total_return.toFixed(2)}%</span>`)}
+    ${_analyticsStatRow('Ann. Return',     `<span style="color:${color(d.annualised_return)}">${d.annualised_return.toFixed(2)}%</span>`)}
+    ${_analyticsStatRow('Ann. Volatility', d.volatility_ann.toFixed(2) + '%')}
+  </table><div style="font-size:10px;color:var(--muted);margin-top:8px">${d.days} trading days · ${d.mode} mode</div>`;
+}
+
+function _analyticsRenderRisk(d) {
+  const el = document.getElementById('analytics-risk-body');
+  if (!d || d.error) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error || 'No data'}</div>`; return; }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse">
+    ${_analyticsStatRow('VaR 95%',         `<span style="color:var(--red)">${d.var_95.toFixed(3)}%</span>`, '1-day loss')}
+    ${_analyticsStatRow('VaR 99%',         `<span style="color:var(--red)">${d.var_99.toFixed(3)}%</span>`, '1-day loss')}
+    ${_analyticsStatRow('CVaR 95%',        `<span style="color:var(--red)">${d.cvar_95.toFixed(3)}%</span>`, 'expected shortfall')}
+    ${_analyticsStatRow('CVaR 99%',        `<span style="color:var(--red)">${d.cvar_99.toFixed(3)}%</span>`, 'expected shortfall')}
+    ${_analyticsStatRow('Max Drawdown',    `<span style="color:var(--red)">${d.max_drawdown.toFixed(2)}%</span>`)}
+    ${_analyticsStatRow('Ulcer Index',     d.ulcer_index.toFixed(3))}
+    ${_analyticsStatRow('Skewness',        d.skewness.toFixed(3))}
+    ${_analyticsStatRow('Excess Kurtosis', d.kurtosis.toFixed(3))}
+    ${_analyticsStatRow('Calmar Ratio',    d.calmar_ratio.toFixed(3))}
+  </table>`;
+}
+
+function _analyticsRenderFactors(d) {
+  const el = document.getElementById('analytics-factors-body');
+  if (!d || d.error) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error || 'No data'}</div>`; return; }
+  const brow = (label, val, desc) => {
+    const c = Math.abs(val) < 0.05 ? 'var(--muted)' : val > 0 ? 'var(--green)' : 'var(--red)';
+    return `<tr>
+      <td style="color:var(--muted);font-size:12px;padding:4px 8px 4px 0">${label}</td>
+      <td style="font-size:13px;font-weight:600;color:${c};padding:4px 8px 4px 0">${val.toFixed(4)}</td>
+      <td style="font-size:11px;color:var(--muted)">${desc}</td></tr>`;
+  };
+  const alphaColor = d.alpha_annualised >= 0 ? 'var(--green)' : 'var(--red)';
+  el.innerHTML = `
+    <div style="display:flex;gap:24px;margin-bottom:12px;flex-wrap:wrap">
+      <div><div style="font-size:11px;color:var(--muted)">Alpha (ann.)</div>
+           <div style="font-size:20px;font-weight:700;color:${alphaColor}">${d.alpha_annualised.toFixed(2)}%</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">R²</div>
+           <div style="font-size:20px;font-weight:700">${(d.r_squared*100).toFixed(1)}%</div></div>
+      <div style="font-size:11px;color:var(--muted);align-self:flex-end">${d.days} days · ${d.factor_source}</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      ${brow('Mkt-RF β', d.mkt_rf_beta, 'Market risk premium')}
+      ${brow('SMB β',    d.smb_beta,    'Small minus big (size)')}
+      ${brow('HML β',    d.hml_beta,    'High minus low (value)')}
+      ${brow('RMW β',    d.rmw_beta,    'Robust minus weak (profitability)')}
+      ${brow('CMA β',    d.cma_beta,    'Conservative minus aggressive (investment)')}
+    </table>`;
+}
+
+function _analyticsRenderPortfolio(d) {
+  const el = document.getElementById('analytics-port-body');
+  if (!d || d.error || !d.series?.length) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error || 'No data'}</div>`; return;
+  }
+  const s = d.series;
+  const dates   = s.map(p => p.date.slice(5));  // MM-DD
+  const navs    = s.map(p => p.nav);
+  const dds     = s.map(p => p.drawdown_pct);
+  const sharpes = s.map(p => p.rolling_sharpe);
+  const benches = s.map(p => p.benchmark_nav);
+
+  // Summary strip
+  const pc  = d.port_return_pct != null ? `${d.port_return_pct >= 0 ? '+' : ''}${d.port_return_pct.toFixed(2)}%` : 'N/A';
+  const bc  = d.bench_return_pct != null ? `${d.bench_return_pct >= 0 ? '+' : ''}${d.bench_return_pct.toFixed(2)}%` : 'N/A';
+  const exc = d.excess_return_pct != null ? `${d.excess_return_pct >= 0 ? '+' : ''}${d.excess_return_pct.toFixed(2)}%` : 'N/A';
+  const pcC  = d.port_return_pct  >= 0 ? 'var(--green)' : 'var(--red)';
+  const excC = d.excess_return_pct >= 0 ? 'var(--green)' : 'var(--red)';
+
+  const W = 860, H = 140, PAD = 40;
+  const n = navs.length;
+
+  function toSVGpath(vals, W, H, PAD, nullOk) {
+    const valid = vals.filter(v => v != null);
+    if (!valid.length) return '';
+    const mn = Math.min(...valid), mx = Math.max(...valid);
+    const rng = mx - mn || 1;
+    const xs = i => PAD + (i / (n - 1)) * (W - PAD * 2);
+    const ys = v => PAD + (1 - (v - mn) / rng) * (H - PAD * 2);
+    const pts = vals.map((v, i) => v != null ? `${xs(i).toFixed(1)},${ys(v).toFixed(1)}` : null);
+    let d = '', skip = true;
+    for (const p of pts) { if (p) { d += (skip ? 'M' : 'L') + p; skip = false; } else { skip = true; } }
+    return d;
+  }
+
+  const navPath    = toSVGpath(navs, W, H, PAD);
+  const benchPath  = toSVGpath(benches, W, H, PAD);
+  const ddPath     = toSVGpath(dds.map(v => -v), W, H/2, PAD/2);  // drawdown chart
+  const shrpPath   = toSVGpath(sharpes, W, H/2, PAD/2);
+
+  // X-axis labels: every ~20 days
+  const step = Math.max(1, Math.floor(n / 6));
+  const xLabels = Array.from({length: n}, (_, i) => i).filter(i => i % step === 0 || i === n-1)
+    .map(i => `<text x="${(PAD + (i/(n-1))*(W-PAD*2)).toFixed(1)}" y="${H-4}" font-size="9" text-anchor="middle" fill="var(--muted)">${dates[i]}</text>`).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px">
+      <div><div style="font-size:11px;color:var(--muted)">Portfolio</div><div style="font-size:18px;font-weight:700;color:${pcC}">${pc}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">SPX Benchmark</div><div style="font-size:18px;font-weight:700">${bc}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Excess Return</div><div style="font-size:18px;font-weight:700;color:${excC}">${exc}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Max Drawdown</div><div style="font-size:18px;font-weight:700;color:var(--red)">${d.max_drawdown_pct.toFixed(2)}%</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">NAV vs SPX Benchmark</div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:140px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+      ${benchPath ? `<path d="${benchPath}" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,2"/>` : ''}
+      <path d="${navPath}" fill="none" stroke="#22d3ee" stroke-width="1.8"/>
+      ${xLabels}
+    </svg>
+    <div style="display:flex;gap:16px;font-size:10px;color:var(--muted);margin:4px 0 10px">
+      <span><span style="color:#22d3ee">━</span> Portfolio NAV</span>
+      ${benchPath ? '<span><span style="color:#94a3b8">╌</span> SPX (indexed)</span>' : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">Drawdown %</div>
+        <svg viewBox="0 0 ${W} ${H/2}" style="width:100%;max-height:70px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+          <path d="${ddPath}" fill="none" stroke="#f87171" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">Rolling 21d Sharpe</div>
+        <svg viewBox="0 0 ${W} ${H/2}" style="width:100%;max-height:70px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+          <path d="${shrpPath}" fill="none" stroke="#a78bfa" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>`;
+}
+
+async function _analyticsLoadTech() {
+  const ticker = (document.getElementById('analytics-tech-ticker')?.value || '').trim().toUpperCase();
+  if (!ticker) return;
+  const el = document.getElementById('analytics-tech-body');
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
+  const d = await apiFetch(`/api/analytics/technicals/${ticker}?token=${getToken()}`);
+  if (!d || d.error) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error || 'No data'}</div>`; return; }
+
+  const rsiColor = d.rsi == null ? 'var(--muted)' : d.rsi > 70 ? 'var(--red)' : d.rsi < 30 ? 'var(--green)' : 'var(--fg)';
+  const rsiLabel = d.rsi == null ? '—' : d.rsi > 70 ? 'Overbought' : d.rsi < 30 ? 'Oversold' : 'Neutral';
+  const macdColor = d.macd_hist == null ? 'var(--muted)' : d.macd_hist >= 0 ? 'var(--green)' : 'var(--red)';
+  const bbPos = (d.close != null && d.bb_upper != null && d.bb_lower != null)
+    ? Math.round(((d.close - d.bb_lower) / (d.bb_upper - d.bb_lower)) * 100) : null;
+
+  el.innerHTML = `
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      <div style="min-width:120px">
+        <div style="font-size:11px;color:var(--muted)">RSI(14)</div>
+        <div style="font-size:24px;font-weight:700;color:${rsiColor}">${d.rsi ?? '—'}</div>
+        <div style="font-size:11px;color:${rsiColor}">${rsiLabel}</div>
+      </div>
+      <div style="min-width:180px">
+        <div style="font-size:11px;color:var(--muted)">MACD(12,26,9)</div>
+        <div style="font-size:13px;font-weight:600">${d.macd ?? '—'} / ${d.macd_signal ?? '—'}</div>
+        <div style="font-size:12px;color:${macdColor}">Histogram: ${d.macd_hist ?? '—'}</div>
+      </div>
+      <div style="min-width:220px">
+        <div style="font-size:11px;color:var(--muted)">Bollinger Bands(20,2)</div>
+        <div style="font-size:12px">Upper: <b>${d.bb_upper ?? '—'}</b> · Mid: <b>${d.bb_mid ?? '—'}</b> · Lower: <b>${d.bb_lower ?? '—'}</b></div>
+        ${bbPos != null ? `<div style="font-size:11px;color:var(--muted)">Close at ${bbPos}th %ile of band</div>` : ''}
+      </div>
+      <div style="min-width:100px">
+        <div style="font-size:11px;color:var(--muted)">Close</div>
+        <div style="font-size:18px;font-weight:700">$${d.close?.toFixed(2) ?? '—'}</div>
+        <div style="font-size:10px;color:var(--muted)">${d.bars} bars</div>
+      </div>
+    </div>`;
+}
+
+async function _analyticsLoadFund() {
+  const ticker = (document.getElementById('analytics-fund-ticker')?.value || '').trim().toUpperCase();
+  if (!ticker) return;
+  const el = document.getElementById('analytics-fund-body');
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
+  const d = await apiFetch(`/api/analytics/fundamentals/${ticker}?token=${getToken()}`);
+  if (!d || d.error) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error || 'No data'}</div>`; return; }
+
+  const fmt = v => v != null ? v.toFixed(2) : '—';
+  const fmtPct = v => v != null ? v.toFixed(2) + '%' : '—';
+  const fmtB = v => v > 1e9 ? `$${(v/1e9).toFixed(2)}B` : v > 1e6 ? `$${(v/1e6).toFixed(1)}M` : `$${v?.toFixed(0) ?? '—'}`;
+
+  el.innerHTML = `
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">${ticker} — Market Cap: ${fmtB(d.market_cap)}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+      ${[
+        ['P/E (TTM)', fmt(d.pe_ttm)],
+        ['P/B', fmt(d.pb)],
+        ['EV/EBITDA', fmt(d.ev_ebitda)],
+        ['Current Ratio', fmt(d.current_ratio)],
+        ['Debt/Equity', fmt(d.debt_equity)],
+        ['ROE', fmtPct(d.roe)],
+        ['ROA', fmtPct(d.roa)],
+        ['Gross Margin', fmtPct(d.gross_margin)],
+        ['EPS (TTM)', fmt(d.eps_ttm)],
+        ['Revenue (TTM)', fmtB(d.revenue_ttm)],
+        ['Net Income (TTM)', fmtB(d.net_income_ttm)],
+      ].map(([label, val]) => `<div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
+        <div style="font-size:10px;color:var(--muted)">${label}</div>
+        <div style="font-size:16px;font-weight:700">${val}</div>
+      </div>`).join('')}
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -3,6 +3,17 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.87] - 2026-05-23
+
+### Added
+- **Portfolio Analytics page** (FinanceToolkit-inspired): new sidebar nav item with 5 panels
+- **A — Performance metrics** (`/api/analytics/performance`): Sharpe, Sortino, Treynor, Jensen's alpha, Information ratio, beta, total/annualised return, volatility — all pure-Python, no scipy
+- **B — Risk metrics** (`/api/analytics/risk`): VaR 95/99, CVaR 95/99, Max Drawdown, Ulcer Index, skewness, excess kurtosis, Calmar ratio
+- **C — Technical indicators** (`/api/analytics/technicals/{ticker}`): RSI-14, MACD(12,26,9), Bollinger Bands(20,2) via Polygon OHLCV
+- **D — Financial ratios** (`/api/analytics/fundamentals/{ticker}`): P/E, P/B, EV/EBITDA, Current Ratio, Debt/Equity, ROE, ROA, Gross Margin from Polygon vX financials + ticker details
+- **E — Fama-French 5-factor attribution** (`/api/analytics/factors`): OLS regression against Mkt-RF, SMB, HML, RMW, CMA; annualised alpha + R² — factor data fetched from Dartmouth (Ken French Data Library), cached 24h
+- **F — Rolling portfolio analytics** (`/api/analytics/portfolio`): 21-day rolling Sharpe, drawdown timeline, NAV vs SPX benchmark comparison; SVG line charts inline
+
 ## [3.7.86] - 2026-05-23
 
 ### Added
