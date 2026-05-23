@@ -28,6 +28,7 @@ from shared.mcp_client import get_tv_indicators, tv_confirms_direction, get_avg_
 from shared.assignments import load_active_assignments
 from shared.exclusions import is_excluded
 from shared.risk_controls import get_risk_controls, check_slippage, check_liquidity
+from shared.market_tone import get_market_tone, get_tone_thresholds
 from scheduler.calendar import is_market_open, is_trading_day
 
 log = structlog.get_logger("trader-options")
@@ -208,16 +209,32 @@ class OptionsTrader(BaseAgent):
                          tv_rec=tv["recommendation"],
                          buy=tv["buy"], sell=tv["sell"])
 
+            # ── Market tone — adjust min_confidence and pricing tier ──────────
+            tone            = await get_market_tone(self.redis)
+            tone_thresholds = get_tone_thresholds(tone)
+            tone_min_conf   = tone_thresholds.get("min_confidence")
+            tone_tier       = tone_thresholds.get("price_tier_override")  # may be None
+            log.info("trader-options.market_tone",
+                     ticker=ticker, tone=tone,
+                     tone_min_conf=tone_min_conf, tone_tier=tone_tier)
+
             # Place an order for each assigned account
             for assignment in assignments:
-                if confidence < assignment["min_confidence"]:
+                # Use the stricter of strategy min_confidence and tone min_confidence
+                effective_min_conf = max(
+                    assignment["min_confidence"],
+                    tone_min_conf if tone_min_conf else 0.0,
+                )
+                if confidence < effective_min_conf:
                     log.debug("trader-options.below_threshold",
                               ticker=ticker, conf=confidence,
-                              required=assignment["min_confidence"],
-                              strategy=assignment["strategy_name"])
+                              required=effective_min_conf,
+                              strategy=assignment["strategy_name"],
+                              tone=tone)
                     continue
                 await self._place_option_order(
-                    ticker, direction, confidence, data, assignment
+                    ticker, direction, confidence, data, assignment,
+                    tone_tier=tone_tier,
                 )
 
         except Exception as e:
@@ -233,6 +250,7 @@ class OptionsTrader(BaseAgent):
         confidence: float,
         data:       dict,
         assignment: dict,
+        tone_tier:  Optional[str] = None,
     ):
         account_label = assignment["account_label"]
         strategy_name = assignment["strategy_name"]
@@ -269,9 +287,22 @@ class OptionsTrader(BaseAgent):
         target_strike = round(price + offset if opt_type == "call" else price - offset, 2)
 
         # ── Four-tier limit price + tick validation ────────────────────────────
-        # Converts confidence → price aggressiveness and snaps to CBOE tick grid.
+        # Confidence selects the default tier; market tone can override it.
+        # Tone override maps: "natural"|"mid"|"passive" — a more conservative
+        # tone (bearish) forces passive even on high-confidence signals.
         order_side  = "buy"   # options trader always opens (buy to open)
         limit_price, price_tier = _compute_limit_price(bid, ask, confidence, order_side)
+        if tone_tier and limit_price is not None:
+            tier_order = ["passive", "mid", "natural"]
+            sig_idx    = tier_order.index(price_tier) if price_tier in tier_order else 2
+            tone_idx   = tier_order.index(tone_tier)  if tone_tier  in tier_order else 2
+            if tone_idx < sig_idx:  # tone is more conservative — apply it
+                limit_price, price_tier = _compute_limit_price(
+                    bid, ask,
+                    {"natural": 0.85, "mid": 0.70, "passive": 0.55}[tone_tier],
+                    order_side,
+                )
+                price_tier = f"{tone_tier}(tone)"
         if limit_price is None:
             if price_tier == "skip":
                 log.info("trader-options.confidence_below_passive_threshold",

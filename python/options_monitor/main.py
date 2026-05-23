@@ -36,6 +36,7 @@ from shared.mcp_client import call_mcp_tool
 log = structlog.get_logger("options-monitor")
 
 DB_URL               = os.getenv("DB_URL", "")
+POLYGON_API_KEY      = os.getenv("MASSIVE_API_KEY", "")
 TRADINGVIEW_MCP_URL  = os.getenv("TRADINGVIEW_MCP_URL", "http://ot-mcp-tradingview:8000/mcp")
 MASSIVE_MCP_URL      = os.getenv("MASSIVE_MCP_URL", "http://ot-mcp-massive:8000/mcp")
 BROKER_GATEWAY_TIMEOUT = int(os.getenv("BROKER_GATEWAY_TIMEOUT_SEC", "20"))
@@ -245,6 +246,136 @@ async def _fetch_earnings_date(ticker: str) -> Optional[date]:
         return None
     except Exception:
         return None
+
+
+async def _fetch_ex_dividend_date(ticker: str) -> Optional[date]:
+    """Fetch next ex-dividend date for ticker via Massive MCP. Returns None if unavailable."""
+    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends", {"ticker": ticker, "limit": 4})
+    if not raw:
+        return None
+    try:
+        records = json.loads(raw)
+        if not isinstance(records, list):
+            return None
+        today_str = date.today().isoformat()
+        upcoming  = [r for r in records if r.get("ex_dividend_date", "") >= today_str]
+        if upcoming:
+            return date.fromisoformat(upcoming[0]["ex_dividend_date"])
+    except Exception:
+        pass
+    return None
+
+
+def _check_early_assignment_risk(
+    option_type: str,
+    expiration_date: Optional[date],
+    ex_div_date: Optional[date],
+) -> bool:
+    """
+    Return True if an ITM call is at risk of early assignment due to an ex-dividend
+    date falling before expiration. Puts are not at risk for dividend-driven assignment.
+    From option_screener find_roll_outs.py: ex-date within 10 days of expiry = high risk.
+    """
+    if option_type != "call":
+        return False
+    if not expiration_date or not ex_div_date:
+        return False
+    return ex_div_date <= expiration_date
+
+
+async def _score_roll_candidates(
+    underlying: str,
+    option_type: str,
+    current_strike: Optional[float],
+    current_expiry: Optional[date],
+    current_contract_bid: float,
+    days_to_exp: int,
+) -> list[dict]:
+    """
+    Fetch option chain for higher-DTE expirations and rank roll candidates.
+
+    Scoring formula (adapted from option_screener find_roll_outs.py:109-150):
+      score = credit_pct + buy_up_pct
+      + 0.5 bonus if credit > buy_up (prefer credit rolls over debit rolls)
+      + (10 - (new_dte / 7) * 3)     duration factor — penalise rolling too far out
+      - 2.0 if ex-div within 10 days of new expiry (assignment risk)
+
+    Returns up to 5 scored candidates sorted descending by score.
+    """
+    if not POLYGON_API_KEY or not current_strike or not current_expiry:
+        return []
+    today = date.today()
+    min_new_exp = current_expiry + timedelta(days=7)
+    max_new_exp = current_expiry + timedelta(days=56)   # max 8-week look-ahead
+    ex_div      = await _fetch_ex_dividend_date(underlying)
+
+    try:
+        import aiohttp as _aiohttp
+        url = (
+            f"https://api.polygon.io/v3/snapshot/options/{underlying.upper()}"
+            f"?option_type={option_type[0]}"
+            f"&expiration_date.gte={min_new_exp.isoformat()}"
+            f"&expiration_date.lte={max_new_exp.isoformat()}"
+            f"&limit=100&apiKey={POLYGON_API_KEY}"
+        )
+        async with _aiohttp.ClientSession() as sess:
+            async with sess.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+        snaps = data.get("results") or []
+    except Exception as e:
+        log.debug("options_monitor.roll_chain_fetch_failed", underlying=underlying, error=str(e))
+        return []
+
+    candidates = []
+    for snap in snaps:
+        details = snap.get("details") or {}
+        quote   = snap.get("last_quote") or {}
+        strike  = float(details.get("strike_price") or 0)
+        exp_str = details.get("expiration_date", "")
+        bid     = float(quote.get("bid_price") or 0)
+        ask     = float(quote.get("ask_price") or 0)
+        if not strike or not exp_str or bid <= 0:
+            continue
+        try:
+            new_exp = date.fromisoformat(exp_str)
+        except Exception:
+            continue
+        new_bid = bid
+        new_dte = (new_exp - today).days
+        if new_dte <= 0:
+            continue
+
+        # credit_pct: what we receive rolling vs current contract
+        credit    = new_bid - current_contract_bid
+        credit_pct = credit / max(current_contract_bid, 0.01)
+
+        # buy_up_pct: upside from rolling to a higher strike (calls only)
+        buy_up     = max(0.0, strike - current_strike) if current_strike else 0.0
+        buy_up_pct = buy_up / max(current_strike or strike, 1.0)
+
+        score = credit_pct + buy_up_pct
+        if credit > buy_up:
+            score += 0.5                              # credit preference bonus
+        score += max(0, 10 - (new_dte / 7) * 3)     # duration factor
+        if ex_div and (ex_div - new_exp).days >= -10 and (ex_div - new_exp).days <= 0:
+            score -= 2.0                              # ex-div risk penalty
+
+        candidates.append({
+            "strike":         round(strike, 2),
+            "expiry":         exp_str,
+            "new_dte":        new_dte,
+            "new_bid":        round(new_bid, 2),
+            "credit":         round(credit, 2),
+            "credit_pct":     round(credit_pct * 100, 2),
+            "buy_up_pct":     round(buy_up_pct * 100, 2),
+            "score":          round(score, 3),
+            "ex_div_risk":    bool(ex_div and ex_div <= new_exp),
+        })
+
+    candidates.sort(key=lambda c: -c["score"])
+    return candidates[:5]
 
 
 def _bs_greeks(S: float, K: float, T: float, sigma: float,
@@ -938,6 +1069,43 @@ class OptionsMonitor(BaseAgent):
         else:
             earnings_date = await _fetch_earnings_date(underlying)
 
+        # ── Ex-dividend early-assignment risk check (calls only) ──────────────
+        # Flag when next ex-date falls before our expiration — call holders may
+        # exercise early to capture the dividend, forcing assignment.
+        # Adapted from option_screener find_roll_outs.py dividend risk logic.
+        ex_div_date = await _fetch_ex_dividend_date(underlying)
+        if _check_early_assignment_risk(option_type, expiration_date, ex_div_date):
+            days_to_ex = (ex_div_date - date.today()).days
+            log.warning(
+                "options_monitor.early_assignment_risk",
+                contract=contract_symbol,
+                underlying=underlying,
+                ex_div_date=ex_div_date.isoformat(),
+                expiration_date=expiration_date.isoformat() if expiration_date else None,
+                days_to_ex_div=days_to_ex,
+            )
+            if days_to_ex <= 10:
+                try:
+                    _r = await get_redis()
+                    await _r.xadd(
+                        STREAMS.get("alerts", "system.alerts"),
+                        {
+                            "source":   "options-monitor",
+                            "level":    "warning",
+                            "title":    f"Early Assignment Risk: {underlying}",
+                            "message":  (
+                                f"⚠️ {contract_symbol} | Ex-div {ex_div_date} is "
+                                f"{days_to_ex}d away — before expiry {expiration_date}. "
+                                f"Call may be exercised early to capture dividend."
+                            ),
+                            "ticker":   underlying,
+                            "contract": contract_symbol,
+                        },
+                        maxlen=5_000,
+                    )
+                except Exception:
+                    pass
+
         # Initialise entry_date early (needed by chain lookup below).
         # Will be overridden below if an existing DB row is found.
         entry_date = existing["entry_date"] if existing else today
@@ -1162,8 +1330,14 @@ class OptionsMonitor(BaseAgent):
 
         # ── Check alert thresholds ────────────────────────────────────────────
         if current_underlying and levels and underlying_entry:
-            await self._check_alerts(pool, pos_id, contract_symbol, underlying,
-                                     current_underlying, levels, existing)
+            await self._check_alerts(
+                pool, pos_id, contract_symbol, underlying,
+                current_underlying, levels, existing,
+                option_type=option_type,
+                current_strike=strike,
+                current_expiry=expiration_date,
+                current_contract_bid=float(bp.get("current_price") or 0),
+            )
 
         # ── Generate/refresh chart (async, don't block scan) ─────────────────
         task = asyncio.create_task(
@@ -1185,6 +1359,10 @@ class OptionsMonitor(BaseAgent):
         current_price: float,
         levels: dict,
         existing,
+        option_type: str = "call",
+        current_strike: Optional[float] = None,
+        current_expiry: Optional[date] = None,
+        current_contract_bid: float = 0.0,
     ):
         """Fire Redis alerts when price crosses ATR thresholds (once per level)."""
         alerts_fired = {}
@@ -1240,6 +1418,34 @@ class OptionsMonitor(BaseAgent):
                 maxlen=5_000,
             )
 
+            # ── Roll-candidate scoring on any roll signal ──────────────────
+            roll_note = f"{label} triggered at underlying=${current_price:.2f}, threshold=${threshold:.2f}"
+            if "roll" in alert_key and current_contract_bid > 0:
+                days_to_exp = (current_expiry - date.today()).days if current_expiry else 0
+                candidates  = await _score_roll_candidates(
+                    underlying, option_type, current_strike,
+                    current_expiry, current_contract_bid, days_to_exp,
+                )
+                if candidates:
+                    best = candidates[0]
+                    roll_note += (
+                        f" | Top roll: {best['expiry']} ${best['strike']} "
+                        f"score={best['score']} credit={best['credit_pct']}%"
+                        f"{' ⚠️ex-div' if best['ex_div_risk'] else ''}"
+                    )
+                    log.info("options_monitor.roll_candidates",
+                             contract=contract, underlying=underlying,
+                             candidates=candidates)
+                    # Publish ranked candidates to Redis for dashboard pickup
+                    try:
+                        await self.redis.setex(
+                            f"options:roll_candidates:{pos_id}",
+                            3600 * 4,
+                            json.dumps(candidates),
+                        )
+                    except Exception:
+                        pass
+
             # Log the alert event
             await pool.execute(
                 """INSERT INTO option_trade_log
@@ -1249,7 +1455,7 @@ class OptionsMonitor(BaseAgent):
                 pos_id, contract, underlying,
                 f"alert_{alert_key}", current_price,
                 None,
-                f"{label} triggered at underlying=${current_price:.2f}, threshold=${threshold:.2f}",
+                roll_note,
             )
 
             alerts_fired[alert_key] = True

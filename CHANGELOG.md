@@ -3,6 +3,17 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.86] - 2026-05-23
+
+### Added
+- Options Monitor: **Roll-out scoring** — when any roll ATR level fires, `_score_roll_candidates()` fetches the Polygon option chain for higher-DTE expirations and ranks candidates using option_screener's formula: `credit_pct + buy_up_pct + 0.5 credit bonus - duration penalty (10 - dte/7*3) - 2.0 ex-div risk penalty`; top 5 stored in Redis `options:roll_candidates:{pos_id}` (4h TTL) and logged; most scoring detail appended to alert note in `option_trade_log`
+- Options Monitor: **Early assignment risk flag** — `_fetch_ex_dividend_date()` fetches next ex-div date via Massive MCP; `_check_early_assignment_risk()` fires a Redis warning alert when a call's ex-date falls before expiration and is ≤10 days away; prevents unexpected dividend-driven assignment
+- Options Trader + Shared: **VIX-keyed market tone framework** — new `shared/market_tone.py` fetches VIX from Polygon daily aggs (30m Redis cache), classifies into bullish/neutral/bearish/forgiving tones from `config/market_tones.json`; options trader applies the stricter of strategy `min_confidence` and tone threshold, and overrides the limit price tier to match tone aggressiveness (bearish→passive, forgiving→natural)
+- Config: `config/market_tones.json` — four tone definitions with `min_confidence`, `price_tier_override`, delta range, OI floor, downside protection %, and annualised ROO thresholds
+
+### Planned
+- Multi-leg execution (spreads, PMCC, iron condor): full plan saved to `/home/claude/.claude/plans/multi-leg-options-execution.md`
+
 ## [3.7.85] - 2026-05-23
 
 ### Added
