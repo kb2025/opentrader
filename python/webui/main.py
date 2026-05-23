@@ -9162,6 +9162,134 @@ async def delete_portfolio_target(ticker: str, token: str = ""):
     return {"ok": True}
 
 
+@app.get("/api/dividends/monte-carlo")
+async def div_monte_carlo(token: str = ""):
+    """5-year income simulation — 1000 paths, returns p5/p25/p50/p75/p95 per year."""
+    check_token(token)
+    if not DB_URL:
+        return {"error": "no db"}
+    try:
+        import numpy as np
+    except ImportError:
+        return {"error": "numpy not available"}
+    try:
+        pool = await _get_db_pool()
+        rows = await pool.fetch("""
+            SELECT ticker,
+                   EXTRACT(YEAR FROM pay_date)::int AS yr,
+                   SUM(total_received)              AS ann_income
+            FROM dividend_history
+            WHERE pay_date IS NOT NULL AND total_received > 0
+            GROUP BY ticker, EXTRACT(YEAR FROM pay_date)::int
+            ORDER BY ticker, yr
+        """)
+        from collections import defaultdict
+        by_ticker: dict = defaultdict(list)
+        for r in rows:
+            by_ticker[r["ticker"]].append((int(r["yr"]), float(r["ann_income"] or 0)))
+
+        growth_rates: list = []
+        current_annual = 0.0
+        for _t, year_data in by_ticker.items():
+            year_data.sort()
+            amounts = [a for _, a in year_data]
+            if len(amounts) >= 2:
+                for i in range(1, len(amounts)):
+                    if amounts[i - 1] > 0:
+                        growth_rates.append(amounts[i] / amounts[i - 1] - 1)
+            if amounts:
+                current_annual += amounts[-1]
+
+        if current_annual <= 0:
+            return {"error": "no income history"}
+
+        arr = np.array(growth_rates) if growth_rates else np.array([0.05])
+        mu = float(np.mean(arr))
+        sigma = float(np.std(arr)) if len(arr) > 1 else 0.12
+        mu = max(-0.20, min(0.25, mu))
+        sigma = max(0.01, min(0.40, sigma))
+
+        N_SIMS, N_YEARS = 1000, 5
+        rng = np.random.default_rng(42)
+        g = rng.normal(mu, sigma, size=(N_SIMS, N_YEARS))
+        cum = np.cumprod(1.0 + g, axis=1)
+        sims = current_annual * cum
+        result: dict = {
+            "years": list(range(1, N_YEARS + 1)),
+            "current_annual": round(current_annual, 2),
+            "mu": round(mu, 4),
+            "sigma": round(sigma, 4),
+        }
+        for pct in [5, 25, 50, 75, 95]:
+            result[f"p{pct}"] = [round(float(v), 2) for v in np.percentile(sims, pct, axis=0)]
+        return result
+    except Exception as e:
+        log.warning("div.monte_carlo_error", error=str(e))
+        return {"error": str(e)}
+
+
+@app.get("/api/dividends/sustainability")
+async def div_sustainability(token: str = "", tickers: str = ""):
+    """EPS TTM from Polygon for payout-ratio sustainability scoring. Cached 6h."""
+    check_token(token)
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()] if tickers else []
+    if not ticker_list:
+        return {}
+    api_key = os.environ.get("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {}
+
+    cache_key = "div:sustainability:" + ",".join(sorted(ticker_list))
+    _r = None
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    sem = asyncio.Semaphore(5)
+
+    async def _fetch_eps(sym: str) -> tuple:
+        async with sem:
+            try:
+                import aiohttp as _aiohttp
+                url = (
+                    f"https://api.polygon.io/vX/reference/financials"
+                    f"?ticker={sym}&timeframe=quarterly&limit=4"
+                    f"&sort=period_of_report_date&order=desc&apiKey={api_key}"
+                )
+                async with _aiohttp.ClientSession() as sess:
+                    async with sess.get(url, timeout=_aiohttp.ClientTimeout(total=8)) as resp:
+                        if resp.status != 200:
+                            return sym, None
+                        data = await resp.json()
+                results = (data.get("results") or [])[:4]
+                eps_ttm = sum(
+                    float(
+                        (r.get("financials", {})
+                         .get("income_statement", {})
+                         .get("basic_earnings_per_share", {})
+                         .get("value") or 0)
+                    )
+                    for r in results
+                )
+                return sym, round(eps_ttm, 4)
+            except Exception:
+                return sym, None
+
+    pairs = await asyncio.gather(*[_fetch_eps(sym) for sym in ticker_list])
+    result = {sym: {"eps_ttm": eps} for sym, eps in pairs}
+
+    try:
+        if _r:
+            await _r.setex(cache_key, 21600, json.dumps(result))
+    except Exception:
+        pass
+    return result
+
+
 # ── Options Dashboard API ─────────────────────────────────────────────────────
 
 def _days_between(d1, d2=None) -> int:

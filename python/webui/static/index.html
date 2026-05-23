@@ -2138,6 +2138,18 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- Monte Carlo Income Distribution -->
+      <div class="card" style="margin-bottom:16px" id="div-mc-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-mc-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">Income Distribution · 5-Year Monte Carlo</span>
+          <span id="div-mc-subtitle" style="font-size:11px;color:var(--muted)">1,000 simulation paths</span>
+        </div>
+        <div id="div-mc-body" style="padding:16px 16px 8px">
+          <svg id="div-mc-svg" viewBox="0 0 900 200" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;overflow:visible"></svg>
+          <div id="div-mc-legend" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:11px;color:var(--muted)"></div>
+        </div>
+      </div>
+
       <!-- Holdings Table -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
@@ -2179,6 +2191,18 @@ select option{background:var(--surface2)}
         </div>
         <div id="div-goal-body" style="padding:12px 16px">
           <div id="div-goal-content" style="font-size:12px;color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
+      <!-- DRIP Compound Projection -->
+      <div class="card" style="margin-bottom:16px" id="div-drip-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-drip-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">DRIP Compound Projection · 10 Years</span>
+          <span id="div-drip-subtitle" style="font-size:11px;color:var(--muted)">reinvesting vs keeping shares constant</span>
+        </div>
+        <div id="div-drip-body" style="padding:16px 16px 8px">
+          <svg id="div-drip-svg" viewBox="0 0 900 180" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;overflow:visible"></svg>
+          <div id="div-drip-legend" style="display:flex;gap:20px;flex-wrap:wrap;margin-top:6px;font-size:11px"></div>
         </div>
       </div>
 
@@ -14829,7 +14853,7 @@ async function loadDividendPage(forceRefresh = false) {
     if (forceRefresh) {
       await apiFetch(`/api/dividends/refresh?token=${encodeURIComponent(token)}`, { method: 'POST' });
     }
-    const [holdings, forecast, history, upcoming, acctStats, growthStreaks, targets] = await Promise.all([
+    const [holdings, forecast, history, upcoming, acctStats, growthStreaks, targets, monteCarlo] = await Promise.all([
       apiFetch(`/api/dividends/holdings?token=${encodeURIComponent(token)}`),
       apiFetch(`/api/dividends/forecast?token=${encodeURIComponent(token)}`),
       apiFetch(`/api/dividends/history?token=${encodeURIComponent(token)}&limit=500`),
@@ -14837,17 +14861,31 @@ async function loadDividendPage(forceRefresh = false) {
       apiFetch(`/api/dividends/account-stats?token=${encodeURIComponent(token)}`).catch(() => null),
       apiFetch(`/api/dividends/growth-streaks?token=${encodeURIComponent(token)}`).catch(() => ({})),
       apiFetch(`/api/dividends/targets?token=${encodeURIComponent(token)}`).catch(() => []),
+      apiFetch(`/api/dividends/monte-carlo?token=${encodeURIComponent(token)}`).catch(() => null),
     ]);
     _divGrowthStreaks = growthStreaks || {};
     _divGoalTargets  = targets || [];
+    _divMonteCarlo   = monteCarlo?.error ? null : monteCarlo;
     _divData = holdings;
     _divForecast = forecast;
     _divUpcomingRaw = upcoming;
     _divActiveAccount = '';
     _divRenderHistory(history.records || []);   // must set _divHistoryRecords before filter
     _divApplyFilter();                           // renders bar, holdings, upcoming, pies
+    _divRenderMonteCarlo(_divMonteCarlo);
     _divRenderDiagnostics(acctStats, forecast);
     status.textContent = `Updated ${_fmtTime(new Date())}`;
+    // Fetch sustainability scores in background (needs tickers from loaded holdings)
+    const allTickers = [...new Set(
+      (holdings.accounts||[]).flatMap(a => (a.positions||[]).filter(p => p.is_dividend_payer).map(p => p.symbol))
+    )];
+    if (allTickers.length) {
+      apiFetch(`/api/dividends/sustainability?token=${encodeURIComponent(token)}&tickers=${encodeURIComponent(allTickers.join(','))}`)
+        .then(sus => {
+          _divSustainability = sus || {};
+          _divRenderHoldings(_divFilterAccounts(_divData?.accounts || []));
+        }).catch(() => {});
+    }
   } catch(e) {
     status.textContent = 'Error: ' + e.message;
     toast('error', 'Dividends', e.message);
@@ -14955,6 +14993,8 @@ let _divActiveAccount = '';
 let _divUpcomingRaw = null;
 let _divGrowthStreaks = {};
 let _divGoalTargets = [];
+let _divSustainability = {};
+let _divMonteCarlo = null;
 
 function _divRenderAccountCards(accounts) {
   const container = document.getElementById('div-account-cards');
@@ -15198,6 +15238,7 @@ function _divApplyFilter() {
   });
   _divRenderAvgDown(filtered);
   _divRenderGoalAllocation(filtered, _divGoalTargets, computed.totalValue);
+  _divRenderDrip(filtered, computed);
 }
 
 function _divFreqLabel(f) {
@@ -15238,9 +15279,30 @@ function _divRenderHoldings(accounts) {
         ? `<span title="${streak}yr dividend growth" style="font-size:9px;color:var(--blue);margin-left:3px">↑${streak}yr</span>`
         : '';
 
+      // Sustainability dot — payout ratio vs EPS TTM
+      const sus = _divSustainability[p.symbol];
+      let susDot = '';
+      if (sus && isPayer) {
+        const epsTtm = sus.eps_ttm;
+        if (epsTtm === null || epsTtm === undefined) {
+          susDot = `<span title="Sustainability unknown" style="font-size:9px;color:var(--muted);margin-left:3px">●</span>`;
+        } else if (epsTtm <= 0) {
+          susDot = `<span title="Negative EPS — dividend at risk" style="font-size:9px;color:var(--red);margin-left:3px">●</span>`;
+        } else {
+          const payout = far / epsTtm * 100;
+          if (payout < 50) {
+            susDot = `<span title="Payout ${payout.toFixed(0)}% — sustainable" style="font-size:9px;color:var(--green);margin-left:3px">●</span>`;
+          } else if (payout < 75) {
+            susDot = `<span title="Payout ${payout.toFixed(0)}% — moderate risk" style="font-size:9px;color:#f59e0b;margin-left:3px">●</span>`;
+          } else {
+            susDot = `<span title="Payout ${payout.toFixed(0)}% — elevated risk" style="font-size:9px;color:var(--red);margin-left:3px">●</span>`;
+          }
+        }
+      }
+
       rows.push(`<tr style="${dim}">
         <td><span class="chip chip-muted" style="font-size:10px" title="${_escHtml(acct.label)}">${_escHtml(acctName)}</span></td>
-        <td style="font-weight:700;cursor:pointer;color:var(--blue)" onclick="_divToggleFundamentals('${_escHtml(p.symbol)}',${rid},${far})" title="Click for fundamentals">${_escHtml(p.symbol)}${streakBadge} <span style="font-size:9px;opacity:.6">▾</span></td>
+        <td style="font-weight:700;cursor:pointer;color:var(--blue)" onclick="_divToggleFundamentals('${_escHtml(p.symbol)}',${rid},${far})" title="Click for fundamentals">${_escHtml(p.symbol)}${streakBadge}${susDot} <span style="font-size:9px;opacity:.6">▾</span></td>
         <td style="font-size:11px;color:var(--muted)">${_escHtml(p.sector||'—')}</td>
         <td>${qty.toLocaleString()}</td>
         <td style="font-size:11px;color:var(--muted)">${cost > 0 ? _divFmt$(cost) : '—'}</td>
@@ -15538,6 +15600,182 @@ async function _divDeleteTarget(ticker) {
     }
     toast('success', 'Removed', `${ticker} target removed`);
   } catch(e) { toast('error', 'Failed', e.message); }
+}
+
+// ── Monte Carlo Fan Chart ─────────────────────────────────────────────────────
+function _divRenderMonteCarlo(mc) {
+  const svg = document.getElementById('div-mc-svg');
+  const legend = document.getElementById('div-mc-legend');
+  const subtitle = document.getElementById('div-mc-subtitle');
+  if (!svg) return;
+  svg.innerHTML = '';
+  if (!mc || !mc.p50) {
+    svg.innerHTML = '<text x="450" y="100" text-anchor="middle" fill="var(--muted)" font-size="13">No dividend history data available for simulation</text>';
+    if (legend) legend.innerHTML = '';
+    return;
+  }
+
+  const W=900, H=200, pt=20, pr=20, pb=40, pl=68;
+  const iW=W-pl-pr, iH=H-pt-pb;
+  const ns='http://www.w3.org/2000/svg';
+  const mk = (tag,attrs,text) => {
+    const el = document.createElementNS(ns,tag);
+    Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k,v));
+    if (text!=null) el.textContent=text;
+    return el;
+  };
+
+  const years = mc.years; // [1..5]
+  const allVals = [...mc.p5, ...mc.p95, mc.current_annual];
+  const maxV = Math.max(...allVals) * 1.05;
+  const minV = Math.max(0, Math.min(...allVals) * 0.95);
+
+  const xPts = [0, ...years]; // include year 0 = current
+  const allXVals = [mc.current_annual, ...mc.p50]; // year 0 anchor
+
+  const xScale = i => pl + (i / years.length) * iW;
+  const yScale = v => pt + iH - ((v - minV) / (maxV - minV || 1)) * iH;
+
+  // Gridlines
+  const yTicks = 4;
+  for (let i=0; i<=yTicks; i++) {
+    const v = minV + (maxV - minV) * i / yTicks;
+    const y = yScale(v);
+    svg.appendChild(mk('line', {x1:pl,y1:y,x2:W-pr,y2:y,stroke:'var(--border)',opacity:.4,'stroke-width':'0.5'}));
+    svg.appendChild(mk('text', {x:pl-6,y:y+4,'text-anchor':'end',fill:'var(--muted)','font-size':'10'}, '$'+Math.round(v).toLocaleString()));
+  }
+  // Year axis
+  years.forEach((yr, i) => {
+    const x = xScale(i+1);
+    svg.appendChild(mk('text', {x,y:H-pb+16,'text-anchor':'middle',fill:'var(--muted)','font-size':'10'}, `Yr+${yr}`));
+  });
+
+  // Build point arrays (including year-0 anchor at current_annual)
+  const pts = (arr) => {
+    const combined = [mc.current_annual, ...arr];
+    return combined.map((v,i) => `${xScale(i)},${yScale(v)}`).join(' ');
+  };
+  const ptsRev = (arr) => {
+    const combined = [mc.current_annual, ...arr];
+    return [...combined].reverse().map((v,i) => `${xScale(combined.length-1-i)},${yScale(v)}`).join(' ');
+  };
+
+  // p5–p95 outer band
+  svg.appendChild(mk('polygon', {
+    points: pts(mc.p5) + ' ' + ptsRev(mc.p95),
+    fill:'var(--blue)',opacity:'0.08'
+  }));
+  // p25–p75 inner band
+  svg.appendChild(mk('polygon', {
+    points: pts(mc.p25) + ' ' + ptsRev(mc.p75),
+    fill:'var(--blue)',opacity:'0.18'
+  }));
+  // p50 median line
+  const medPts = [mc.current_annual, ...mc.p50].map((v,i)=>`${xScale(i)},${yScale(v)}`).join(' ');
+  svg.appendChild(mk('polyline', {
+    points: medPts, fill:'none', stroke:'var(--blue)', 'stroke-width':'2', 'stroke-linejoin':'round'
+  }));
+  // Year 0 dot (current)
+  svg.appendChild(mk('circle', {cx:xScale(0),cy:yScale(mc.current_annual),r:'4',fill:'var(--blue)'}));
+  // Labels on median
+  mc.p50.forEach((v,i) => {
+    svg.appendChild(mk('text', {x:xScale(i+1),y:yScale(v)-8,'text-anchor':'middle',fill:'var(--blue)','font-size':'10','font-weight':'600'},
+      '$'+Math.round(v).toLocaleString()));
+  });
+
+  // X axis label
+  svg.appendChild(mk('text', {x:xScale(0),y:H-pb+16,'text-anchor':'middle',fill:'var(--muted)','font-size':'10'}, 'Now'));
+
+  if (subtitle) {
+    const g = (mc.mu*100).toFixed(1);
+    const s = (mc.sigma*100).toFixed(1);
+    subtitle.textContent = `1,000 paths · avg growth ${g>0?'+':''}${g}%/yr · σ=${s}% · current $${Math.round(mc.current_annual).toLocaleString()}/yr`;
+  }
+  if (legend) legend.innerHTML =
+    `<span style="color:var(--blue)">— Median</span>` +
+    `<span style="background:color-mix(in srgb,var(--blue) 36%,transparent);padding:1px 8px;border-radius:3px">p25–p75</span>` +
+    `<span style="background:color-mix(in srgb,var(--blue) 15%,transparent);padding:1px 8px;border-radius:3px">p5–p95</span>`;
+}
+
+// ── DRIP Compound Projection ──────────────────────────────────────────────────
+function _divRenderDrip(accounts, computed) {
+  const svg = document.getElementById('div-drip-svg');
+  const legend = document.getElementById('div-drip-legend');
+  const subtitle = document.getElementById('div-drip-subtitle');
+  if (!svg) return;
+  svg.innerHTML = '';
+
+  const annIncome = computed?.annIncome || 0;
+  const totalValue = computed?.totalValue || 0;
+  if (annIncome <= 0 || totalValue <= 0) {
+    svg.innerHTML = '<text x="450" y="90" text-anchor="middle" fill="var(--muted)" font-size="13">No dividend income data to project</text>';
+    if (legend) legend.innerHTML = '';
+    return;
+  }
+
+  const G = 0.05;       // assumed 5%/yr dividend growth rate
+  const portYield = annIncome / totalValue;
+  const N = 10;
+
+  const dripIncome = [], noDripIncome = [];
+  for (let y = 1; y <= N; y++) {
+    noDripIncome.push(annIncome * Math.pow(1 + G, y));
+    dripIncome.push(annIncome * Math.pow(1 + G + portYield, y));
+  }
+
+  const W=900, H=180, pt=16, pr=20, pb=40, pl=68;
+  const iW=W-pl-pr, iH=H-pt-pb;
+  const ns='http://www.w3.org/2000/svg';
+  const mk = (tag,attrs,text) => {
+    const el = document.createElementNS(ns,tag);
+    Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k,v));
+    if (text!=null) el.textContent=text;
+    return el;
+  };
+
+  const allVals = [annIncome, ...dripIncome, ...noDripIncome];
+  const maxV = Math.max(...allVals) * 1.05;
+  const xScale = i => pl + (i / N) * iW;
+  const yScale = v => pt + iH - (v / maxV) * iH;
+
+  // Gridlines
+  for (let i=0; i<=4; i++) {
+    const v = maxV * i / 4;
+    const y = yScale(v);
+    svg.appendChild(mk('line', {x1:pl,y1:y,x2:W-pr,y2:y,stroke:'var(--border)',opacity:.4,'stroke-width':'0.5'}));
+    svg.appendChild(mk('text', {x:pl-6,y:y+4,'text-anchor':'end',fill:'var(--muted)','font-size':'10'}, '$'+Math.round(v).toLocaleString()));
+  }
+  for (let i=1; i<=N; i++) {
+    svg.appendChild(mk('text', {x:xScale(i),y:H-pb+16,'text-anchor':'middle',fill:'var(--muted)','font-size':'10'}, `Yr${i}`));
+  }
+
+  const mkLine = (arr, col) => {
+    const combined = [annIncome, ...arr];
+    const pts = combined.map((v,i) => `${xScale(i)},${yScale(v)}`).join(' ');
+    svg.appendChild(mk('polyline', {points:pts,fill:'none',stroke:col,'stroke-width':'2','stroke-linejoin':'round'}));
+  };
+
+  mkLine(noDripIncome, 'var(--muted)');
+  mkLine(dripIncome, 'var(--green)');
+
+  // Year 10 labels
+  const d10 = dripIncome[N-1], n10 = noDripIncome[N-1];
+  svg.appendChild(mk('text', {x:xScale(N)+4,y:yScale(d10)+4,fill:'var(--green)','font-size':'10','font-weight':'600'},
+    '$'+Math.round(d10).toLocaleString()));
+  svg.appendChild(mk('text', {x:xScale(N)+4,y:yScale(n10)+4,fill:'var(--muted)','font-size':'10'},
+    '$'+Math.round(n10).toLocaleString()));
+
+  // Now dot
+  svg.appendChild(mk('circle', {cx:xScale(0),cy:yScale(annIncome),r:'3',fill:'var(--fg)'}));
+
+  const bonus = d10 - n10;
+  const bonusPct = (bonus / n10 * 100).toFixed(0);
+  if (subtitle) {
+    subtitle.textContent = `DRIP adds $${Math.round(bonus).toLocaleString()} (+${bonusPct}%) by year 10 · assumed ${(G*100).toFixed(0)}%/yr growth · ${(portYield*100).toFixed(1)}% yield`;
+  }
+  if (legend) legend.innerHTML =
+    `<span style="color:var(--green);font-weight:600">— DRIP (reinvest dividends)</span>` +
+    `<span style="color:var(--muted)">— No DRIP (constant shares)</span>`;
 }
 
 // ── Bar Chart ─────────────────────────────────────────────────────────────────

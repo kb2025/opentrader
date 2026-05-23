@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.83] - 2026-05-23
+
+### Added
+- Dividend Dashboard: Monte Carlo Income Distribution — 1,000-path 5-year simulation from historical dividend growth rates; SVG fan chart with p5/p25/p50/p75/p95 confidence bands; backend `/api/dividends/monte-carlo` uses numpy (already available as pandas dep)
+- Dividend Dashboard: Dividend Sustainability Score — colored dot badge (●) in ticker cell; green <50% payout ratio, amber 50–75%, red >75% or negative EPS; batch Polygon EPS-TTM calls with Semaphore(5) + 6h Redis cache via `/api/dividends/sustainability`
+- Dividend Dashboard: DRIP Compound Projection — 10-year two-line SVG chart comparing reinvested vs constant-share income; pure frontend computation using portfolio yield as DRIP compounding factor; shows year-10 bonus income and percentage uplift
+
 ## [3.7.82] - 2026-05-23
 
 ### Fixed
