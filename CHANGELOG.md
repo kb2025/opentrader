@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.82] - 2026-05-23
+
+### Fixed
+- Average Down Calculator / Unrealized P&L / YOC: Webull positions expose `avg_entry_price` (per share) instead of `cost_basis` (total); cost was always 0, silently dropping every Webull position from all three features; now computes `cost_basis = avg_entry_price × qty` as fallback when `cost_basis` is missing
+
 ## [3.7.81] - 2026-05-23
 
 ### Fixed

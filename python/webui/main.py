@@ -8340,6 +8340,11 @@ async def div_holdings(token: str = ""):
             if qty <= 0:
                 continue
             cost = float(p.get("cost_basis") or p.get("cost") or 0)
+            if not cost:
+                # Webull (and some others) expose avg_entry_price per share, not total cost_basis
+                avg_ep = float(p.get("avg_entry_price") or 0)
+                if avg_ep > 0 and qty > 0:
+                    cost = round(avg_ep * qty, 2)
             price= float(p.get("current_price") or p.get("last_price") or p.get("mark") or 0)
             mval = float(p.get("market_value") or (qty * price))
             if not price and qty > 0 and mval > 0:
