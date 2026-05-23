@@ -2206,6 +2206,93 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- Historical DRIP Simulation -->
+      <div class="card" style="margin-bottom:16px" id="div-drip-hist-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-drip-hist-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">Historical DRIP Simulation</span>
+          <span id="div-drip-hist-subtitle" style="font-size:11px;color:var(--muted)">actual payments reinvested at real prices</span>
+        </div>
+        <div id="div-drip-hist-body" style="display:none;padding:12px 16px">
+          <div id="div-drip-hist-content" style="font-size:12px;color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Dividend Calendar -->
+      <div class="card" style="margin-bottom:16px" id="div-calendar-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-calendar-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">Dividend Calendar · 12 Months</span>
+          <span id="div-calendar-subtitle" style="font-size:11px;color:var(--muted)">projected pay dates by month</span>
+        </div>
+        <div id="div-calendar-body" style="display:none;padding:12px 16px">
+          <div id="div-calendar-content" style="font-size:12px;color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Monthly Seasonality -->
+      <div class="card" style="margin-bottom:16px" id="div-season-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-season-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">Monthly Income Seasonality</span>
+          <span id="div-season-subtitle" style="font-size:11px;color:var(--muted)">historical range by month</span>
+        </div>
+        <div id="div-season-body" style="display:none;padding:16px 16px 8px">
+          <svg id="div-season-svg" viewBox="0 0 900 180" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;overflow:visible"></svg>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--muted)" id="div-season-legend"></div>
+        </div>
+      </div>
+
+      <!-- Dividend Quality Scores -->
+      <div class="card" style="margin-bottom:16px" id="div-scores-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-scores-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">Dividend Quality Scores</span>
+          <span id="div-scores-subtitle" style="font-size:11px;color:var(--muted)">CAGR · EWM growth · consistency</span>
+        </div>
+        <div id="div-scores-body" style="display:none" class="card-body table-wrap" style="padding:0">
+          <table id="div-scores-table">
+            <thead><tr>
+              <th>Ticker</th><th style="text-align:right">CAGR</th><th style="text-align:right">EWM Growth</th>
+              <th style="text-align:right">Consistency</th><th style="text-align:right">Cuts</th><th style="text-align:right">Yrs Tracked</th>
+            </tr></thead>
+            <tbody id="div-scores-body-rows"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Ex-Date Price Patterns -->
+      <div class="card" style="margin-bottom:16px" id="div-timing-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-timing-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">Ex-Date Price Patterns</span>
+          <span id="div-timing-subtitle" style="font-size:11px;color:var(--muted)">21-day pre / 14-day post average drift</span>
+        </div>
+        <div id="div-timing-body" style="display:none" class="card-body table-wrap" style="padding:0">
+          <table>
+            <thead><tr>
+              <th>Ticker</th><th style="text-align:right">Pre-Ex Drift</th><th style="text-align:right">Post-Ex Drift</th>
+              <th style="text-align:right">Ex-Dates Used</th><th>Last Ex-Date</th>
+            </tr></thead>
+            <tbody id="div-timing-body-rows"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Dividend Quality Screener -->
+      <div class="card" style="margin-bottom:16px" id="div-screener-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-screener-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">Dividend Quality Screener</span>
+          <span id="div-screener-subtitle" style="font-size:11px;color:var(--muted)">composite percentile rank across 5 factors</span>
+        </div>
+        <div id="div-screener-body" style="display:none" class="card-body table-wrap" style="padding:0">
+          <table>
+            <thead><tr>
+              <th>#</th><th>Ticker</th>
+              <th style="text-align:right">Composite</th>
+              <th style="text-align:right">Yield</th><th style="text-align:right">CAGR</th>
+              <th style="text-align:right">Consistency</th><th style="text-align:right">Payout</th><th style="text-align:right">Cuts</th>
+            </tr></thead>
+            <tbody id="div-screener-body-rows"><tr><td colspan="8" class="empty-state">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- History Table + Chart -->
       <div class="card">
         <div class="card-header">
@@ -14863,6 +14950,13 @@ async function loadDividendPage(forceRefresh = false) {
       apiFetch(`/api/dividends/targets?token=${encodeURIComponent(token)}`).catch(() => []),
       apiFetch(`/api/dividends/monte-carlo?token=${encodeURIComponent(token)}`).catch(() => null),
     ]);
+    // New harvest-inspired features — load in background (non-blocking)
+    apiFetch(`/api/dividends/quality-scores?token=${encodeURIComponent(token)}`).then(qs => _divRenderQualityScores(qs || {})).catch(() => {});
+    apiFetch(`/api/dividends/seasonality?token=${encodeURIComponent(token)}`).then(s => _divRenderSeasonality(s?.months || {})).catch(() => {});
+    apiFetch(`/api/dividends/calendar?token=${encodeURIComponent(token)}`).then(c => _divRenderCalendar(c || {})).catch(() => {});
+    apiFetch(`/api/dividends/drip-historical?token=${encodeURIComponent(token)}`).then(d => _divRenderDripHistorical(d || {})).catch(() => {});
+    apiFetch(`/api/dividends/timing?token=${encodeURIComponent(token)}`).then(t => _divRenderTiming(t || {})).catch(() => {});
+    apiFetch(`/api/dividends/screener?token=${encodeURIComponent(token)}`).then(sc => _divRenderScreener(sc || [])).catch(() => {});
     _divGrowthStreaks = growthStreaks || {};
     _divGoalTargets  = targets || [];
     _divMonteCarlo   = monteCarlo?.error ? null : monteCarlo;
@@ -15776,6 +15870,256 @@ function _divRenderDrip(accounts, computed) {
   if (legend) legend.innerHTML =
     `<span style="color:var(--green);font-weight:600">— DRIP (reinvest dividends)</span>` +
     `<span style="color:var(--muted)">— No DRIP (constant shares)</span>`;
+}
+
+// ── Quality Scores ────────────────────────────────────────────────────────────
+function _divRenderQualityScores(data) {
+  const tbody = document.getElementById('div-scores-body-rows');
+  const sub   = document.getElementById('div-scores-subtitle');
+  if (!tbody) return;
+  const tickers = Object.keys(data);
+  if (!tickers.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No dividend history in DB — run Backfill first</td></tr>';
+    return;
+  }
+  tickers.sort((a, b) => (data[b].cagr || -1) - (data[a].cagr || -1));
+  const pct = v => v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
+  const col  = v => v == null ? '' : v > 0 ? 'color:var(--green)' : v < 0 ? 'color:var(--red)' : '';
+  tbody.innerHTML = tickers.map(sym => {
+    const d = data[sym];
+    return `<tr>
+      <td><strong>${_escHtml(sym)}</strong></td>
+      <td style="text-align:right;${col(d.cagr)}">${pct(d.cagr)}</td>
+      <td style="text-align:right;${col(d.ewm_growth)}">${pct(d.ewm_growth)}</td>
+      <td style="text-align:right">${d.consistency != null ? (d.consistency * 100).toFixed(0) + '%' : '—'}</td>
+      <td style="text-align:right;${d.cuts > 0 ? 'color:var(--red)' : 'color:var(--green)'}">${d.cuts ?? '—'}</td>
+      <td style="text-align:right;color:var(--muted)">${d.years_tracked ?? '—'}</td>
+    </tr>`;
+  }).join('');
+  if (sub) sub.textContent = `${tickers.length} tickers · sorted by CAGR`;
+}
+
+// ── Seasonality SVG ───────────────────────────────────────────────────────────
+function _divRenderSeasonality(months) {
+  const svg  = document.getElementById('div-season-svg');
+  const leg  = document.getElementById('div-season-legend');
+  const sub  = document.getElementById('div-season-subtitle');
+  if (!svg) return;
+  const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const ns = 'http://www.w3.org/2000/svg';
+  svg.innerHTML = '';
+  const W=900, H=180, pt=10, pr=10, pb=36, pl=52;
+  const iW=W-pl-pr, iH=H-pt-pb;
+  const vals = Object.values(months);
+  if (!vals.length || vals.every(v => !v.mean)) {
+    const t = document.createElementNS(ns,'text');
+    t.setAttribute('x','450'); t.setAttribute('y','90');
+    t.setAttribute('text-anchor','middle'); t.setAttribute('fill','var(--muted)'); t.setAttribute('font-size','13');
+    t.textContent = 'Need ≥2 years of dividend history for seasonality';
+    svg.appendChild(t); return;
+  }
+  const maxVal = Math.max(...Array.from({length:12},(_,i) => months[i+1]?.max || 0), 1);
+  const x  = i => pl + i * (iW / 12) + iW / 24;
+  const bw = iW / 12 * 0.6;
+  const y  = v => pt + iH - (v / maxVal * iH);
+
+  // P25–P75 band + mean bar per month
+  for (let i = 0; i < 12; i++) {
+    const m   = months[i + 1];
+    if (!m) continue;
+    const cx  = x(i);
+    // IQR band
+    if (m.p75 > 0) {
+      const band = document.createElementNS(ns, 'rect');
+      band.setAttribute('x', cx - bw / 2);
+      band.setAttribute('y', y(m.p75));
+      band.setAttribute('width', bw);
+      band.setAttribute('height', Math.max(1, y(m.p25) - y(m.p75)));
+      band.setAttribute('fill', 'var(--blue)');
+      band.setAttribute('opacity', '0.18');
+      svg.appendChild(band);
+    }
+    // Mean bar
+    if (m.mean > 0) {
+      const bar = document.createElementNS(ns, 'rect');
+      bar.setAttribute('x', cx - bw / 2);
+      bar.setAttribute('y', y(m.mean));
+      bar.setAttribute('width', bw);
+      bar.setAttribute('height', Math.max(1, iH - (y(m.mean) - pt)));
+      bar.setAttribute('fill', 'var(--blue)');
+      bar.setAttribute('opacity', '0.7');
+      svg.appendChild(bar);
+      // Label
+      const lbl = document.createElementNS(ns, 'text');
+      lbl.setAttribute('x', cx); lbl.setAttribute('y', y(m.mean) - 3);
+      lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('font-size', '9');
+      lbl.setAttribute('fill', 'var(--muted)');
+      lbl.textContent = '$' + m.mean.toFixed(0);
+      svg.appendChild(lbl);
+    }
+    // Month label
+    const ml = document.createElementNS(ns, 'text');
+    ml.setAttribute('x', cx); ml.setAttribute('y', H - pb + 14);
+    ml.setAttribute('text-anchor', 'middle'); ml.setAttribute('font-size', '10');
+    ml.setAttribute('fill', 'var(--muted)');
+    ml.textContent = MO[i];
+    svg.appendChild(ml);
+  }
+  // Y axis ticks
+  for (let t2 = 0; t2 <= 4; t2++) {
+    const v = maxVal * t2 / 4;
+    const yy = y(v);
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', pl); line.setAttribute('x2', W - pr);
+    line.setAttribute('y1', yy); line.setAttribute('y2', yy);
+    line.setAttribute('stroke', 'var(--border)'); line.setAttribute('stroke-width', '0.5');
+    svg.appendChild(line);
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', pl - 4); lbl.setAttribute('y', yy + 3);
+    lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('font-size', '9');
+    lbl.setAttribute('fill', 'var(--muted)');
+    lbl.textContent = '$' + v.toFixed(0);
+    svg.appendChild(lbl);
+  }
+  if (leg) leg.innerHTML =
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:var(--blue);opacity:0.7;display:inline-block"></span>Mean</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:var(--blue);opacity:0.18;display:inline-block"></span>P25–P75 range</span>';
+  const nYears = Math.max(...Object.values(months).map(m => m.n || 0));
+  if (sub) sub.textContent = `${nYears} year${nYears !== 1 ? 's' : ''} of history`;
+}
+
+// ── Dividend Calendar ─────────────────────────────────────────────────────────
+function _divRenderCalendar(data) {
+  const el  = document.getElementById('div-calendar-content');
+  const sub = document.getElementById('div-calendar-subtitle');
+  if (!el) return;
+  const months = data.months || {};
+  const keys   = Object.keys(months).sort();
+  if (!keys.length) {
+    el.innerHTML = '<span style="color:var(--muted)">No projected payments — ensure dividend metadata is loaded</span>';
+    return;
+  }
+  const MO_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let totalTickers = new Set();
+  const html = keys.map(mk => {
+    const [yr, mo] = mk.split('-');
+    const label = MO_LABELS[parseInt(mo) - 1] + ' ' + yr;
+    const events = months[mk] || [];
+    events.forEach(e => totalTickers.add(e.ticker));
+    const monthTotal = events.reduce((s, e) => s + (e.est_total || 0), 0);
+    const chips = events.map(e => {
+      const color = e.freq === 'monthly' ? 'var(--blue)' : e.freq === 'quarterly' ? 'var(--green)' : 'var(--yellow)';
+      return `<span title="${_escHtml(e.ticker)}: $${(e.aps||0).toFixed(4)}/sh × ${(e.qty||0).toFixed(0)}sh = $${(e.est_total||0).toFixed(2)}${e.ex_date ? ' · ex ' + e.ex_date : ''}" style="display:inline-flex;align-items:center;gap:3px;background:${color}22;border:1px solid ${color}44;border-radius:4px;padding:2px 6px;font-size:11px;cursor:default">
+        <span style="color:${color};font-weight:700">${_escHtml(e.ticker)}</span>
+        <span style="color:var(--muted)">$${(e.est_total||0).toFixed(0)}</span>
+      </span>`;
+    }).join(' ');
+    return `<div style="margin-bottom:12px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+        <span style="font-weight:700;font-size:12px;min-width:60px">${label}</span>
+        <span style="font-size:11px;color:var(--green)">$${monthTotal.toFixed(0)} est.</span>
+        <span style="font-size:10px;color:var(--muted)">${events.length} payment${events.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">${chips || '<span style="color:var(--muted);font-size:11px">—</span>'}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML = html;
+  if (sub) sub.textContent = `${totalTickers.size} tickers · ${keys.length} months projected`;
+}
+
+// ── Historical DRIP Simulation ────────────────────────────────────────────────
+function _divRenderDripHistorical(data) {
+  const el  = document.getElementById('div-drip-hist-content');
+  const sub = document.getElementById('div-drip-hist-subtitle');
+  if (!el) return;
+  if (data.error) { el.innerHTML = `<span style="color:var(--red)">${_escHtml(data.error)}</span>`; return; }
+  const tickers = data.tickers || {};
+  const keys    = Object.keys(tickers);
+  if (!keys.length) {
+    el.innerHTML = '<span style="color:var(--muted)">No dividend history — run Backfill first</span>';
+    return;
+  }
+  const totalDrip  = data.total_drip_value || 0;
+  const totalCash  = keys.reduce((s, k) => s + (tickers[k].total_dividends_received || 0), 0);
+  const totalShares = keys.reduce((s, k) => s + (tickers[k].drip_shares || 0), 0);
+  const modeLabel  = data.mode === 'historical' ? 'using real Polygon close prices' : 'price data unavailable';
+  if (sub) sub.textContent = `${modeLabel} · $${totalDrip.toFixed(2)} total reinvestment value`;
+  const rows = keys.sort((a, b) => (tickers[b].drip_value || 0) - (tickers[a].drip_value || 0)).map(sym => {
+    const d = tickers[sym];
+    return `<tr>
+      <td><strong>${_escHtml(sym)}</strong></td>
+      <td style="text-align:right">$${(d.total_dividends_received||0).toFixed(2)}</td>
+      <td style="text-align:right">${(d.drip_shares||0).toFixed(4)}</td>
+      <td style="text-align:right">$${(d.current_price||0).toFixed(2)}</td>
+      <td style="text-align:right;color:var(--green);font-weight:600">$${(d.drip_value||0).toFixed(2)}</td>
+      <td style="text-align:right;color:var(--muted)">${d.payments||0}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="display:flex;gap:24px;margin-bottom:12px;flex-wrap:wrap">
+      <div><span style="color:var(--muted);font-size:11px">Total Cash Received</span><br><strong style="font-size:16px">$${totalCash.toFixed(2)}</strong></div>
+      <div><span style="color:var(--muted);font-size:11px">DRIP Shares Accumulated</span><br><strong style="font-size:16px">${totalShares.toFixed(4)}</strong></div>
+      <div><span style="color:var(--muted);font-size:11px">DRIP Portfolio Value</span><br><strong style="font-size:16px;color:var(--green)">$${totalDrip.toFixed(2)}</strong></div>
+    </div>
+    <div class="table-wrap" style="padding:0"><table>
+      <thead><tr><th>Ticker</th><th style="text-align:right">Cash Received</th><th style="text-align:right">DRIP Shares</th><th style="text-align:right">Cur Price</th><th style="text-align:right">DRIP Value</th><th style="text-align:right">Payments</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+// ── Ex-Date Price Patterns ────────────────────────────────────────────────────
+function _divRenderTiming(data) {
+  const tbody = document.getElementById('div-timing-body-rows');
+  const sub   = document.getElementById('div-timing-subtitle');
+  if (!tbody) return;
+  const tickers = Object.keys(data);
+  if (!tickers.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No data — requires Polygon API key</td></tr>';
+    return;
+  }
+  tickers.sort((a, b) => (data[b].avg_pre_drift || 0) - (data[a].avg_pre_drift || 0));
+  const pct = v => v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
+  const col = v => v == null ? '' : v > 0 ? 'color:var(--green)' : v < 0 ? 'color:var(--red)' : '';
+  tbody.innerHTML = tickers.map(sym => {
+    const d = data[sym];
+    return `<tr>
+      <td><strong>${_escHtml(sym)}</strong></td>
+      <td style="text-align:right;${col(d.avg_pre_drift)}">${pct(d.avg_pre_drift)}</td>
+      <td style="text-align:right;${col(d.avg_post_drift)}">${pct(d.avg_post_drift)}</td>
+      <td style="text-align:right;color:var(--muted)">${d.ex_dates_used ?? '—'}</td>
+      <td style="color:var(--muted)">${d.last_ex_date ?? '—'}</td>
+    </tr>`;
+  }).join('');
+  if (sub) sub.textContent = `${tickers.length} tickers · 21-day pre / 14-day post ex-date drift`;
+}
+
+// ── Dividend Quality Screener ─────────────────────────────────────────────────
+function _divRenderScreener(rows) {
+  const tbody = document.getElementById('div-screener-body-rows');
+  const sub   = document.getElementById('div-screener-subtitle');
+  if (!tbody) return;
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No dividend payers — check holdings or backfill history</td></tr>';
+    return;
+  }
+  const scoreBadge = v => {
+    if (v == null) return '—';
+    const color = v >= 70 ? 'var(--green)' : v >= 40 ? 'var(--yellow)' : 'var(--red)';
+    return `<span style="display:inline-block;min-width:36px;text-align:center;padding:1px 5px;border-radius:4px;background:${color}22;color:${color};font-weight:700;font-size:11px">${v.toFixed(0)}</span>`;
+  };
+  const rankCol = v => v == null ? '—' : `<span style="color:${v >= 70 ? 'var(--green)' : v >= 40 ? 'var(--muted)' : 'var(--red)'}">${v.toFixed(0)}</span>`;
+  const pctFmt = v => v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
+  tbody.innerHTML = rows.map((r, i) => `<tr>
+    <td style="color:var(--muted);font-size:11px">${i + 1}</td>
+    <td><strong>${_escHtml(r.ticker)}</strong></td>
+    <td style="text-align:right">${scoreBadge(r.composite)}</td>
+    <td style="text-align:right" title="Yield: ${(r.yield*100||0).toFixed(2)}%">${rankCol(r.yield_rank)}</td>
+    <td style="text-align:right" title="CAGR: ${pctFmt(r.cagr)}">${rankCol(r.cagr_rank)}</td>
+    <td style="text-align:right" title="Consistency: ${r.consistency != null ? (r.consistency*100).toFixed(0)+'%' : '—'}">${rankCol(r.consist_rank)}</td>
+    <td style="text-align:right" title="Payout: ${r.payout_ratio != null ? (r.payout_ratio*100).toFixed(0)+'%' : '—'}">${rankCol(r.payout_rank)}</td>
+    <td style="text-align:right" title="Dividend cuts: ${r.cuts ?? '—'}">${rankCol(r.cuts_rank)}</td>
+  </tr>`).join('');
+  if (sub) sub.textContent = `${rows.length} tickers · composite = avg of yield/CAGR/consistency/payout/cuts percentile ranks`;
 }
 
 // ── Bar Chart ─────────────────────────────────────────────────────────────────

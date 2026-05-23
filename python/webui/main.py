@@ -9290,6 +9290,582 @@ async def div_sustainability(token: str = "", tickers: str = ""):
     return result
 
 
+@app.get("/api/dividends/quality-scores")
+async def div_quality_scores(token: str = ""):
+    """Per-ticker dividend quality: CAGR, EWM growth, consistency, cut count. Cached 6h."""
+    check_token(token)
+    if not DB_URL:
+        return {}
+    cache_key = "div:quality_scores:v1"
+    _r = None
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+    try:
+        pool = await _get_db_pool()
+        rows = await pool.fetch("""
+            SELECT ticker,
+                   EXTRACT(YEAR FROM pay_date)::int AS yr,
+                   SUM(total_received) AS ann_income
+            FROM dividend_history
+            WHERE pay_date IS NOT NULL AND total_received > 0
+            GROUP BY ticker, EXTRACT(YEAR FROM pay_date)::int
+            ORDER BY ticker, yr
+        """)
+        from collections import defaultdict
+        by_ticker: dict = defaultdict(list)
+        for r in rows:
+            by_ticker[r["ticker"]].append((int(r["yr"]), float(r["ann_income"] or 0)))
+        result = {}
+        for ticker, year_data in by_ticker.items():
+            year_data.sort()
+            n = len(year_data)
+            amounts = [a for _, a in year_data]
+            cagr = None
+            if n >= 2 and amounts[0] > 0:
+                cagr = round((amounts[-1] / amounts[0]) ** (1 / (n - 1)) - 1, 4)
+            growth_rates = [
+                amounts[i] / amounts[i - 1] - 1
+                for i in range(1, n) if amounts[i - 1] > 0
+            ]
+            ewm_growth = None
+            if growth_rates:
+                com = 0.5
+                alpha = 1 / (1 + com)
+                w_sum, v_sum = 0.0, 0.0
+                for i, g in enumerate(growth_rates):
+                    w = (1 - alpha) ** (len(growth_rates) - 1 - i)
+                    w_sum += w
+                    v_sum += w * g
+                ewm_growth = round(v_sum / w_sum, 4) if w_sum else None
+            first_yr, last_yr = year_data[0][0], year_data[-1][0]
+            span = max(1, last_yr - first_yr + 1)
+            consistency = round(n / span, 3)
+            cuts = sum(1 for i in range(1, n) if amounts[i] < amounts[i - 1] * 0.99)
+            result[ticker] = {
+                "cagr":          cagr,
+                "ewm_growth":    ewm_growth,
+                "consistency":   consistency,
+                "cuts":          cuts,
+                "years_tracked": n,
+                "current_annual": round(amounts[-1], 2),
+            }
+        try:
+            if _r:
+                await _r.setex(cache_key, 21600, json.dumps(result))
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        log.warning("div.quality_scores_error", error=str(e))
+        return {}
+
+
+@app.get("/api/dividends/timing")
+async def div_timing(token: str = ""):
+    """Pre/post ex-dividend price patterns for held tickers via Polygon OHLCV. Cached 24h."""
+    check_token(token)
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {}
+    cache_key = "div:timing:v1"
+    _r = None
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+    try:
+        holdings = await div_holdings(token=token)
+        tickers = list({
+            p.get("symbol", "").upper()
+            for acct in holdings.get("accounts", [])
+            for p in acct.get("positions", [])
+            if p.get("is_dividend_payer")
+        })[:20]
+        if not tickers:
+            return {}
+        import aiohttp as _aiohttp
+        sem = asyncio.Semaphore(4)
+
+        async def _analyze(sym: str) -> tuple:
+            async with sem:
+                try:
+                    async with _aiohttp.ClientSession() as sess:
+                        url = (
+                            f"https://api.polygon.io/v3/reference/dividends"
+                            f"?ticker={sym}&limit=12&sort=ex_dividend_date&order=desc&apiKey={api_key}"
+                        )
+                        async with sess.get(url, timeout=_aiohttp.ClientTimeout(total=8)) as resp:
+                            if resp.status != 200:
+                                return sym, None
+                            div_data = await resp.json()
+                    ex_dates = [
+                        r["ex_dividend_date"]
+                        for r in (div_data.get("results") or [])
+                        if r.get("ex_dividend_date")
+                    ][:8]
+                    if not ex_dates:
+                        return sym, None
+                    newest_ex = _date.fromisoformat(ex_dates[0])
+                    oldest_ex = _date.fromisoformat(ex_dates[-1])
+                    from_str = (oldest_ex - timedelta(days=40)).isoformat()
+                    to_str   = (newest_ex + timedelta(days=35)).isoformat()
+                    async with _aiohttp.ClientSession() as sess:
+                        url = (
+                            f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+                            f"/{from_str}/{to_str}?adjusted=true&sort=asc&limit=500&apiKey={api_key}"
+                        )
+                        async with sess.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                            if resp.status != 200:
+                                return sym, None
+                            ohlcv = await resp.json()
+                    bars = ohlcv.get("results") or []
+                    if not bars:
+                        return sym, None
+                    price_map = {
+                        _date.fromtimestamp(b["t"] / 1000).isoformat(): b["c"]
+                        for b in bars
+                    }
+
+                    def _nearest(target: _date) -> float | None:
+                        for d in range(0, 5):
+                            for cand in [target + timedelta(days=d), target - timedelta(days=d)]:
+                                v = price_map.get(cand.isoformat())
+                                if v:
+                                    return v
+                        return None
+
+                    pre_drifts, post_drifts = [], []
+                    for ex_str in ex_dates:
+                        ex_d = _date.fromisoformat(ex_str)
+                        ex_p   = _nearest(ex_d)
+                        pre_p  = _nearest(ex_d - timedelta(days=21))
+                        post_p = _nearest(ex_d + timedelta(days=14))
+                        if ex_p and pre_p and pre_p > 0:
+                            pre_drifts.append((ex_p - pre_p) / pre_p)
+                        if post_p and ex_p and ex_p > 0:
+                            post_drifts.append((post_p - ex_p) / ex_p)
+                    if not pre_drifts:
+                        return sym, None
+                    return sym, {
+                        "avg_pre_drift":  round(sum(pre_drifts) / len(pre_drifts), 4),
+                        "avg_post_drift": round(sum(post_drifts) / len(post_drifts), 4) if post_drifts else None,
+                        "ex_dates_used":  len(pre_drifts),
+                        "last_ex_date":   ex_dates[0],
+                    }
+                except Exception as exc:
+                    log.debug("div_timing.ticker_error", sym=sym, error=str(exc))
+                    return sym, None
+
+        pairs = await asyncio.gather(*[_analyze(sym) for sym in tickers])
+        result = {sym: data for sym, data in pairs if data}
+        try:
+            if _r:
+                await _r.setex(cache_key, 86400, json.dumps(result))
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        log.warning("div.timing_error", error=str(e))
+        return {}
+
+
+@app.get("/api/dividends/drip-historical")
+async def div_drip_historical(token: str = ""):
+    """Historical DRIP: actual payments × real Polygon close prices → lot accumulation. Cached 4h."""
+    check_token(token)
+    if not DB_URL:
+        return {}
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    cache_key = "div:drip_hist:v1"
+    _r = None
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+    try:
+        pool = await _get_db_pool()
+        rows = await pool.fetch("""
+            SELECT ticker, pay_date, amount_per_share, qty, total_received
+            FROM dividend_history
+            WHERE pay_date IS NOT NULL AND total_received > 0 AND qty > 0
+            ORDER BY ticker, pay_date ASC
+        """)
+        from collections import defaultdict
+        by_ticker: dict = defaultdict(list)
+        for r in rows:
+            by_ticker[r["ticker"]].append({
+                "pay_date": r["pay_date"].isoformat(),
+                "aps":      float(r["amount_per_share"] or 0),
+                "qty":      float(r["qty"]),
+                "received": float(r["total_received"] or 0),
+            })
+        if not by_ticker:
+            return {"tickers": {}, "total_drip_value": 0}
+        holdings = await div_holdings(token=token)
+        current_positions: dict = {}
+        for acct in holdings.get("accounts", []):
+            for p in acct.get("positions", []):
+                sym = p.get("symbol", "").upper()
+                if sym:
+                    if sym not in current_positions:
+                        current_positions[sym] = {"qty": 0, "cost": 0, "price": 0}
+                    current_positions[sym]["qty"]   += float(p.get("qty") or 0)
+                    current_positions[sym]["cost"]  += float(p.get("cost_basis") or 0)
+                    current_positions[sym]["price"]  = float(p.get("current_price") or 0)
+        import aiohttp as _aiohttp
+        sem = asyncio.Semaphore(4)
+
+        async def _fetch_ticker_prices(sym: str, payments: list) -> tuple:
+            async with sem:
+                try:
+                    dates = [p["pay_date"] for p in payments]
+                    from_str = (
+                        _date.fromisoformat(min(dates)) - timedelta(days=3)
+                    ).isoformat()
+                    to_str = (
+                        _date.fromisoformat(max(dates)) + timedelta(days=3)
+                    ).isoformat()
+                    url = (
+                        f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+                        f"/{from_str}/{to_str}?adjusted=true&sort=asc&limit=500&apiKey={api_key}"
+                    )
+                    async with _aiohttp.ClientSession() as sess:
+                        async with sess.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                            if resp.status != 200:
+                                return sym, {}
+                            data = await resp.json()
+                    return sym, {
+                        _date.fromtimestamp(b["t"] / 1000).isoformat(): b["c"]
+                        for b in (data.get("results") or [])
+                    }
+                except Exception:
+                    return sym, {}
+
+        if api_key:
+            price_results = await asyncio.gather(*[
+                _fetch_ticker_prices(sym, pays)
+                for sym, pays in by_ticker.items()
+            ])
+            price_maps = dict(price_results)
+        else:
+            price_maps = {}
+
+        def _nearest_price(pmap: dict, target_str: str) -> float | None:
+            target = _date.fromisoformat(target_str)
+            for d in range(0, 5):
+                for cand in [target + timedelta(days=d), target - timedelta(days=d)]:
+                    v = pmap.get(cand.isoformat())
+                    if v:
+                        return v
+            return None
+
+        ticker_results = {}
+        total_drip_value = 0.0
+        for ticker, payments in by_ticker.items():
+            pmap     = price_maps.get(ticker, {})
+            pos      = current_positions.get(ticker, {})
+            cur_price = pos.get("price", 0)
+            drip_shares = 0.0
+            drip_cost   = 0.0
+            total_cash  = 0.0
+            detail = []
+            for pay in payments:
+                received = pay["received"]
+                total_cash += received
+                price = _nearest_price(pmap, pay["pay_date"])
+                if price and price > 0:
+                    new_shares  = received / price
+                    drip_shares += new_shares
+                    drip_cost   += received
+                    detail.append({
+                        "date":          pay["pay_date"],
+                        "received":      round(received, 2),
+                        "price":         round(price, 2),
+                        "shares_bought": round(new_shares, 4),
+                    })
+            drip_value = round(drip_shares * cur_price, 2) if cur_price else 0
+            total_drip_value += drip_value
+            ticker_results[ticker] = {
+                "total_dividends_received": round(total_cash, 2),
+                "drip_shares":  round(drip_shares, 4),
+                "drip_cost":    round(drip_cost, 2),
+                "drip_value":   drip_value,
+                "current_price": round(cur_price, 2),
+                "payments":     len(payments),
+                "detail":       detail[-6:],
+            }
+        result = {
+            "tickers": ticker_results,
+            "total_drip_value": round(total_drip_value, 2),
+            "mode": "historical" if api_key else "cash_only",
+        }
+        try:
+            if _r:
+                await _r.setex(cache_key, 14400, json.dumps(result))
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        log.warning("div.drip_historical_error", error=str(e))
+        return {"error": str(e)}
+
+
+@app.get("/api/dividends/calendar")
+async def div_calendar(token: str = ""):
+    """12-month dividend calendar: projected pay/ex-dates per ticker. Cached 6h."""
+    check_token(token)
+    if not DB_URL:
+        return {"months": {}, "as_of": _date.today().isoformat()}
+    cache_key = "div:calendar:v1"
+    _r = None
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+    try:
+        holdings = await div_holdings(token=token)
+        ticker_qty: dict = {}
+        for acct in holdings.get("accounts", []):
+            for p in acct.get("positions", []):
+                sym = p.get("symbol", "").upper()
+                qty = float(p.get("qty") or 0)
+                if sym and qty > 0 and p.get("is_dividend_payer"):
+                    ticker_qty[sym] = ticker_qty.get(sym, 0) + qty
+        if not ticker_qty:
+            return {"months": {}, "as_of": _date.today().isoformat()}
+        meta = await _div_get_meta(list(ticker_qty.keys()))
+        today = _date.today()
+        freq_days = {"annual": 365, "semi-annual": 183, "quarterly": 91, "monthly": 30}
+        months: dict = {}
+        for ticker, qty in ticker_qty.items():
+            m = meta.get(ticker, {})
+            if not m:
+                continue
+            freq_str = (m.get("frequency") or "quarterly").lower()
+            interval = freq_days.get(freq_str, 91)
+            payments_per_year = round(365 / interval)
+            aps = float(m.get("annual_dividend") or 0) / payments_per_year if m.get("annual_dividend") else 0
+            pay_date = _div_parse_date(m.get("pay_date"))
+            ex_date  = _div_parse_date(m.get("ex_date"))
+            if not pay_date:
+                continue
+            proj_pay = pay_date
+            proj_ex  = ex_date
+            events_added = 0
+            while events_added < 14:
+                if proj_pay < today - timedelta(days=15):
+                    proj_pay += timedelta(days=interval)
+                    if proj_ex:
+                        proj_ex += timedelta(days=interval)
+                    continue
+                if proj_pay > today + timedelta(days=375):
+                    break
+                mk = proj_pay.strftime("%Y-%m")
+                if mk not in months:
+                    months[mk] = []
+                months[mk].append({
+                    "ticker":    ticker,
+                    "qty":       qty,
+                    "aps":       round(aps, 4),
+                    "est_total": round(aps * qty, 2),
+                    "pay_date":  proj_pay.isoformat(),
+                    "ex_date":   proj_ex.isoformat() if proj_ex else None,
+                    "freq":      freq_str,
+                })
+                proj_pay += timedelta(days=interval)
+                if proj_ex:
+                    proj_ex += timedelta(days=interval)
+                events_added += 1
+        result = {"months": dict(sorted(months.items())), "as_of": today.isoformat()}
+        try:
+            if _r:
+                await _r.setex(cache_key, 21600, json.dumps(result))
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        log.warning("div.calendar_error", error=str(e))
+        return {"months": {}, "as_of": _date.today().isoformat()}
+
+
+@app.get("/api/dividends/seasonality")
+async def div_seasonality(token: str = ""):
+    """Monthly income seasonality: per-month totals across years → mean/p25/p50/p75. Cached 6h."""
+    check_token(token)
+    if not DB_URL:
+        return {}
+    cache_key = "div:seasonality:v1"
+    _r = None
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+    try:
+        pool = await _get_db_pool()
+        rows = await pool.fetch("""
+            SELECT EXTRACT(YEAR  FROM pay_date)::int AS yr,
+                   EXTRACT(MONTH FROM pay_date)::int AS mo,
+                   SUM(total_received)               AS total
+            FROM dividend_history
+            WHERE pay_date IS NOT NULL AND total_received > 0
+            GROUP BY yr, mo
+            ORDER BY yr, mo
+        """)
+        from collections import defaultdict
+        by_month: dict = defaultdict(list)
+        for r in rows:
+            by_month[int(r["mo"])].append(float(r["total"] or 0))
+
+        def _pct(arr, p):
+            idx = (len(arr) - 1) * p / 100
+            lo, hi = int(idx), min(int(idx) + 1, len(arr) - 1)
+            return arr[lo] + (arr[hi] - arr[lo]) * (idx - lo)
+
+        months_data = {}
+        for mo in range(1, 13):
+            vals = by_month.get(mo, [])
+            if not vals:
+                months_data[mo] = {"mean": 0, "p25": 0, "p50": 0, "p75": 0, "min": 0, "max": 0, "n": 0}
+                continue
+            sv = sorted(vals)
+            months_data[mo] = {
+                "mean": round(sum(sv) / len(sv), 2),
+                "p25":  round(_pct(sv, 25), 2),
+                "p50":  round(_pct(sv, 50), 2),
+                "p75":  round(_pct(sv, 75), 2),
+                "min":  round(sv[0], 2),
+                "max":  round(sv[-1], 2),
+                "n":    len(sv),
+            }
+        result = {"months": months_data}
+        try:
+            if _r:
+                await _r.setex(cache_key, 21600, json.dumps(result))
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        log.warning("div.seasonality_error", error=str(e))
+        return {}
+
+
+@app.get("/api/dividends/screener")
+async def div_screener(token: str = ""):
+    """Multi-factor dividend quality screener: percentile-ranked scores for held tickers. Cached 6h."""
+    check_token(token)
+    if not DB_URL:
+        return []
+    cache_key = "div:screener:v1"
+    _r = None
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+    try:
+        holdings = await div_holdings(token=token)
+        ticker_data: dict = {}
+        for acct in holdings.get("accounts", []):
+            for p in acct.get("positions", []):
+                sym = p.get("symbol", "").upper()
+                if not sym or not p.get("is_dividend_payer"):
+                    continue
+                if sym not in ticker_data:
+                    ticker_data[sym] = {
+                        "yield":      float(p.get("div_yield") or 0),
+                        "ann_income": float(p.get("annual_income") or 0),
+                        "qty":        0,
+                        "mkt_value":  0,
+                    }
+                ticker_data[sym]["qty"]      += float(p.get("qty") or 0)
+                ticker_data[sym]["mkt_value"] += float(p.get("market_value") or 0)
+        if not ticker_data:
+            return []
+        quality, sustain = await asyncio.gather(
+            div_quality_scores(token=token),
+            div_sustainability(token=token, tickers=",".join(ticker_data.keys())),
+        )
+        rows = []
+        for sym, td in ticker_data.items():
+            qs  = quality.get(sym, {})
+            sus = sustain.get(sym, {})
+            eps = float(sus.get("eps_ttm") or 0)
+            ann_div_per_share = td["ann_income"] / td["qty"] if td["qty"] > 0 else 0
+            payout = round(ann_div_per_share / eps, 3) if eps > 0 else None
+            rows.append({
+                "ticker":        sym,
+                "yield":         td["yield"],
+                "cagr":          qs.get("cagr"),
+                "ewm_growth":    qs.get("ewm_growth"),
+                "consistency":   qs.get("consistency"),
+                "cuts":          qs.get("cuts", 0),
+                "years_tracked": qs.get("years_tracked", 0),
+                "payout_ratio":  payout,
+                "eps_ttm":       round(eps, 2) if eps else None,
+                "ann_income":    td["ann_income"],
+                "mkt_value":     td["mkt_value"],
+            })
+
+        def _rank(vals, higher_is_better=True):
+            valid = sorted(v for v in vals if v is not None)
+            if not valid:
+                return [None] * len(vals)
+            out = []
+            for v in vals:
+                if v is None:
+                    out.append(None)
+                    continue
+                idx = valid.index(v)
+                pct = idx / max(1, len(valid) - 1) * 100
+                out.append(round(pct if higher_is_better else 100 - pct, 1))
+            return out
+
+        yield_rank   = _rank([r["yield"] for r in rows], True)
+        cagr_rank    = _rank([r["cagr"] for r in rows], True)
+        consist_rank = _rank([r["consistency"] for r in rows], True)
+        cuts_rank    = _rank([r["cuts"] for r in rows], False)
+        payout_rank  = _rank([r["payout_ratio"] for r in rows], False)
+        for i, row in enumerate(rows):
+            parts = [s for s in [yield_rank[i], cagr_rank[i], consist_rank[i], cuts_rank[i], payout_rank[i]] if s is not None]
+            row.update({
+                "yield_rank":   yield_rank[i],
+                "cagr_rank":    cagr_rank[i],
+                "consist_rank": consist_rank[i],
+                "cuts_rank":    cuts_rank[i],
+                "payout_rank":  payout_rank[i],
+                "composite":    round(sum(parts) / len(parts), 1) if parts else None,
+            })
+        rows.sort(key=lambda r: -(r["composite"] or 0))
+        try:
+            if _r:
+                await _r.setex(cache_key, 21600, json.dumps(rows))
+        except Exception:
+            pass
+        return rows
+    except Exception as e:
+        log.warning("div.screener_error", error=str(e))
+        return []
+
+
 # ── Options Dashboard API ─────────────────────────────────────────────────────
 
 def _days_between(d1, d2=None) -> int:

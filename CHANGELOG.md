@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.84] - 2026-05-23
+
+### Added
+- Dividend Dashboard: **Dividend Quality Scores** — per-ticker CAGR, EWM-weighted growth rate (com=0.5), consistency ratio, and cut count computed from dividend_history; collapsible card sorted by CAGR; 6h Redis cache (`/api/dividends/quality-scores`)
+- Dividend Dashboard: **Ex-Date Price Patterns** — fetches last 8 Polygon ex-dates per held ticker, pulls OHLCV around each, computes average 21-day pre-ex drift and 14-day post-ex drift; green/red colored table; 24h cache (`/api/dividends/timing`)
+- Dividend Dashboard: **Historical DRIP Simulation** — replays actual dividend_history payments at real Polygon close prices to compute lot accumulation and current reinvestment value per ticker; summary stats + per-ticker table; 4h cache (`/api/dividends/drip-historical`)
+- Dividend Dashboard: **Dividend Calendar** — projects 12 months of ex-dates and pay-dates forward per held ticker using dividend_meta frequency + last pay date; chip display grouped by month with estimated totals; 6h cache (`/api/dividends/calendar`)
+- Dividend Dashboard: **Monthly Income Seasonality** — groups dividend_history by month-of-year across all tracked years, computes mean/p25/p50/p75/min/max; SVG bar chart with IQR band overlay; 6h cache (`/api/dividends/seasonality`)
+- Dividend Dashboard: **Dividend Quality Screener** — composite percentile rank across 5 factors (yield, CAGR, consistency, cuts, payout ratio) for all held dividend payers; ranked table with per-factor color-coded scores; 6h cache (`/api/dividends/screener`)
+
 ## [3.7.83] - 2026-05-23
 
 ### Added
