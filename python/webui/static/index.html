@@ -2489,6 +2489,24 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- Chain Analytics: Max Pain / GEX / IV Smile / OI Heatmap -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Chain Analytics</span>
+          <span style="font-size:11px;color:var(--muted)">Max Pain · GEX · Zero Gamma · IV Smile · OI Heatmap</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center;flex-wrap:wrap">
+            <input id="chain-ticker" class="btn btn-ghost btn-sm" style="width:80px;text-transform:uppercase" placeholder="AAPL" />
+            <select id="chain-expiry" class="btn btn-ghost btn-sm" style="min-width:120px">
+              <option value="">Nearest expiry</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="loadChainAnalytics()">Load Chain</button>
+          </div>
+        </div>
+        <div id="chain-analytics-body" class="card-body" style="padding:14px 16px">
+          <div style="font-size:12px;color:var(--muted)">Enter a ticker to load chain analytics.</div>
+        </div>
+      </div>
+
     </div><!-- /page-trading-options -->
 
     <!-- ════════════════════════════════════════
@@ -18762,6 +18780,267 @@ function _renderNavChart(cont, series) {
       <polyline points="${pts}" fill="none" stroke="${lineColor}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
       <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3" fill="${lineColor}"/>
     </svg>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Chain Analytics: Max Pain · GEX · Zero Gamma · IV Smile · OI Heatmap
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadChainAnalytics() {
+  const ticker = (document.getElementById('chain-ticker')?.value || '').trim().toUpperCase();
+  if (!ticker) return;
+  const expiry = document.getElementById('chain-expiry')?.value || '';
+  const el     = document.getElementById('chain-analytics-body');
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Fetching chain data…</div>';
+
+  const d = await apiFetch(`/api/options/chain-analytics?ticker=${ticker}&expiry=${expiry}&token=${getToken()}`);
+  if (!d || d.error) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error || 'No data'}</div>`;
+    return;
+  }
+
+  // Populate expiry dropdown on first load
+  const expiryEl = document.getElementById('chain-expiry');
+  if (d.available_expiries?.length) {
+    const cur = expiryEl.value;
+    expiryEl.innerHTML = '<option value="">Nearest expiry</option>'
+      + d.available_expiries.map(e => `<option value="${e}"${e===cur||e===d.expiry?' selected':''}>${e}</option>`).join('');
+  }
+
+  _renderChainAnalytics(el, d);
+}
+
+function _chainSvgPath(vals, W, H, padX, padY) {
+  const valid = vals.filter(v => v != null && isFinite(v));
+  if (!valid.length) return '';
+  const mn = Math.min(...valid), mx = Math.max(...valid);
+  const rng = mx - mn || 1;
+  const n   = vals.length;
+  let path = '', skip = true;
+  vals.forEach((v, i) => {
+    if (v == null || !isFinite(v)) { skip = true; return; }
+    const x = (padX + (i / Math.max(n-1,1)) * (W - padX*2)).toFixed(1);
+    const y = (padY + (1 - (v - mn) / rng) * (H - padY*2)).toFixed(1);
+    path += (skip ? 'M' : 'L') + x + ',' + y;
+    skip = false;
+  });
+  return path;
+}
+
+function _chainYZeroLine(W, H, padX, padY, vals) {
+  const valid = vals.filter(v => v != null && isFinite(v));
+  if (!valid.length) return '';
+  const mn = Math.min(...valid, 0), mx = Math.max(...valid, 0);
+  const rng = mx - mn || 1;
+  const y   = (padY + (1 - (0 - mn) / rng) * (H - padY*2)).toFixed(1);
+  return `<line x1="${padX}" y1="${y}" x2="${W-padX}" y2="${y}" stroke="#475569" stroke-width="0.7" stroke-dasharray="3,2"/>`;
+}
+
+function _chainXLabel(i, n, val, W, padX, H) {
+  const x = (padX + (i / Math.max(n-1,1)) * (W - padX*2)).toFixed(1);
+  return `<text x="${x}" y="${H-2}" font-size="8" text-anchor="middle" fill="#64748b">${val}</text>`;
+}
+
+function _renderChainAnalytics(el, d) {
+  const rows   = d.strikes || [];
+  if (!rows.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No strike data returned.</div>'; return; }
+
+  const W = 860, padX = 38, padYsm = 8, padYlg = 12;
+
+  // Limit to strikes within ±30% of spot for readability (or all if spot unknown)
+  const spot     = d.spot || 0;
+  const filtered = spot > 0
+    ? rows.filter(r => r.strike >= spot * 0.70 && r.strike <= spot * 1.30)
+    : rows;
+  const display  = filtered.length >= 5 ? filtered : rows;  // fallback to all if too few
+
+  const strikes  = display.map(r => r.strike);
+  const n        = strikes.length;
+  const stepX    = Math.max(1, Math.floor(n / 8));
+  const xLabels  = strikes.map((s, i) =>
+    (i % stepX === 0 || i === n-1) ? `<text x="${(padX+(i/Math.max(n-1,1))*(W-padX*2)).toFixed(1)}" y="__H__" font-size="8" text-anchor="middle" fill="#64748b">${s}</text>` : ''
+  ).join('');
+
+  // ── Summary badges ─────────────────────────────────────────────────────────
+  const mpColor  = '#22d3ee';
+  const zgColor  = '#a78bfa';
+  const gexColor = d.gex_regime === 'positive' ? '#34d399' : '#f87171';
+  const gexLabel = d.gex_regime === 'positive' ? '▲ Positive GEX (vol suppression)' : '▼ Negative GEX (vol amplification)';
+  const fmtGex   = v => { const a = Math.abs(v); return a >= 1e9 ? `${(v/1e9).toFixed(2)}B` : a >= 1e6 ? `${(v/1e6).toFixed(1)}M` : `${(v/1e3).toFixed(0)}K`; };
+
+  const badges = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:110px">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px">Max Pain</div>
+        <div style="font-size:20px;font-weight:700;color:${mpColor}">$${d.max_pain ?? '—'}</div>
+        <div style="font-size:9px;color:var(--muted)">option expiry target</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:110px">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px">Zero Gamma</div>
+        <div style="font-size:20px;font-weight:700;color:${zgColor}">$${d.zero_gamma ?? '—'}</div>
+        <div style="font-size:9px;color:var(--muted)">GEX crossover pivot</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:160px">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px">Net GEX</div>
+        <div style="font-size:20px;font-weight:700;color:${gexColor}">${fmtGex(d.net_gex)}</div>
+        <div style="font-size:9px;color:${gexColor}">${gexLabel}</div>
+      </div>
+      ${spot ? `<div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:90px">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px">Spot</div>
+        <div style="font-size:20px;font-weight:700">$${spot.toFixed(2)}</div>
+        <div style="font-size:9px;color:var(--muted)">${d.expiry}</div>
+      </div>` : ''}
+    </div>`;
+
+  // ── Helper: vertical annotation lines for max pain + zero gamma ───────────
+  function _annLines(vals, H, padY, showH) {
+    const mn = Math.min(...vals.filter(isFinite)), mx = Math.max(...vals.filter(isFinite));
+    const rng = mx - mn || 1;
+    const _xs = v => (padX + ((v - mn) / rng) * (W - padX*2)).toFixed(1);
+    let lines = '';
+    if (d.max_pain != null) {
+      const x = _xs(d.max_pain);
+      lines += `<line x1="${x}" y1="${padY}" x2="${x}" y2="${showH - padY}" stroke="${mpColor}" stroke-width="1.2" stroke-dasharray="4,3"/>
+                <text x="${x}" y="${padY+8}" font-size="7" fill="${mpColor}" text-anchor="middle">MP</text>`;
+    }
+    if (d.zero_gamma != null) {
+      const x = _xs(d.zero_gamma);
+      lines += `<line x1="${x}" y1="${padY}" x2="${x}" y2="${showH - padY}" stroke="${zgColor}" stroke-width="1.2" stroke-dasharray="4,3"/>
+                <text x="${x}" y="${padY+8}" font-size="7" fill="${zgColor}" text-anchor="middle">0γ</text>`;
+    }
+    if (spot > 0) {
+      const x = _xs(spot);
+      lines += `<line x1="${x}" y1="${padY}" x2="${x}" y2="${showH - padY}" stroke="#94a3b8" stroke-width="0.8"/>`;
+    }
+    return lines;
+  }
+
+  // ── 1. OI Distribution heatmap (grouped bars) ──────────────────────────────
+  const oiH = 120;
+  const callOIs = display.map(r => r.call_oi);
+  const putOIs  = display.map(r => r.put_oi);
+  const maxOI   = Math.max(...callOIs, ...putOIs, 1);
+  const bw      = Math.max(1.5, ((W - padX*2) / n) * 0.42);
+  const oiBars  = display.map((r, i) => {
+    const x    = padX + (i / Math.max(n-1,1)) * (W - padX*2);
+    const cH   = ((r.call_oi / maxOI) * (oiH - padYsm*2 - 14)).toFixed(1);
+    const pH   = ((r.put_oi  / maxOI) * (oiH - padYsm*2 - 14)).toFixed(1);
+    const base = oiH - padYsm - 14;
+    return `<rect x="${(x-bw).toFixed(1)}" y="${(base - cH).toFixed(1)}" width="${bw.toFixed(1)}" height="${cH}" fill="#34d399" fill-opacity="0.75"/>
+            <rect x="${x.toFixed(1)}"       y="${(base - pH).toFixed(1)}" width="${bw.toFixed(1)}" height="${pH}" fill="#f87171" fill-opacity="0.75"/>`;
+  }).join('');
+  const oiXLabels = xLabels.replace(/__H__/g, (oiH-3).toString());
+  const oiAnnLines = _annLines(strikes, oiH, padYsm, oiH);
+
+  // ── 2. GEX per strike (bars + net line) ────────────────────────────────────
+  const gexH     = 130;
+  const callGEXs = display.map(r => r.call_gex);
+  const putGEXs  = display.map(r => r.put_gex);
+  const netGEXs  = display.map(r => r.net_gex);
+  const allGEX   = [...callGEXs, ...putGEXs, ...netGEXs];
+  const gexMn    = Math.min(...allGEX, 0), gexMx = Math.max(...allGEX, 0);
+  const gexRng   = gexMx - gexMn || 1;
+  const gexYs    = v => (padYlg + (1 - (v - gexMn) / gexRng) * (gexH - padYlg*2)).toFixed(1);
+  const zeroY    = gexYs(0);
+  const gbw      = Math.max(1.5, ((W - padX*2) / n) * 0.42);
+
+  const gexBars = display.map((r, i) => {
+    const x   = padX + (i / Math.max(n-1,1)) * (W - padX*2);
+    const cy1 = gexYs(r.call_gex), cy2 = zeroY;
+    const py1 = gexYs(r.put_gex),  py2 = zeroY;
+    const cTop = Math.min(parseFloat(cy1), parseFloat(cy2));
+    const cHt  = Math.abs(parseFloat(cy1) - parseFloat(cy2));
+    const pTop = Math.min(parseFloat(py1), parseFloat(py2));
+    const pHt  = Math.abs(parseFloat(py1) - parseFloat(py2));
+    return `<rect x="${(x-gbw).toFixed(1)}" y="${cTop.toFixed(1)}" width="${gbw.toFixed(1)}" height="${Math.max(0.5,cHt).toFixed(1)}" fill="#34d399" fill-opacity="0.65"/>
+            <rect x="${x.toFixed(1)}"        y="${pTop.toFixed(1)}" width="${gbw.toFixed(1)}" height="${Math.max(0.5,pHt).toFixed(1)}" fill="#f87171" fill-opacity="0.65"/>`;
+  }).join('');
+  const netPath   = _chainSvgPath(netGEXs.map(v => v), W, gexH, padX, padYlg);
+  const gexXLabels = xLabels.replace(/__H__/g, (gexH-3).toString());
+  const gexAnnLines = _annLines(strikes, gexH, padYlg, gexH);
+
+  // ── 3. IV Smile ────────────────────────────────────────────────────────────
+  const ivH    = 110;
+  const callIVs = display.map(r => r.call_iv || null);
+  const putIVs  = display.map(r => r.put_iv  || null);
+  const allIV   = [...callIVs, ...putIVs].filter(v => v != null);
+  const ivMn    = Math.min(...allIV), ivMx = Math.max(...allIV);
+  const ivPath  = (vals) => {
+    const mn = ivMn, mx = ivMx, rng = mx - mn || 1;
+    let path = '', skip = true;
+    vals.forEach((v, i) => {
+      if (v == null) { skip = true; return; }
+      const x = (padX + (i / Math.max(n-1,1)) * (W - padX*2)).toFixed(1);
+      const y = (padYlg + (1 - (v - mn) / rng) * (ivH - padYlg*2)).toFixed(1);
+      path += (skip ? 'M' : 'L') + x + ',' + y;
+      skip = false;
+    });
+    return path;
+  };
+  const callIVPath = ivPath(callIVs);
+  const putIVPath  = ivPath(putIVs);
+  const ivXLabels  = xLabels.replace(/__H__/g, (ivH-3).toString());
+  const ivAnnLines = _annLines(strikes, ivH, padYlg, ivH);
+  // Y-axis IV labels
+  const ivYLabels = [ivMn, (ivMn+ivMx)/2, ivMx].map(v => {
+    const y = (padYlg + (1 - (v-ivMn)/(ivMx-ivMn||1)) * (ivH-padYlg*2)).toFixed(1);
+    return `<text x="2" y="${parseFloat(y)+3}" font-size="7" fill="#64748b">${v.toFixed(0)}%</text>`;
+  }).join('');
+
+  el.innerHTML = badges + `
+    <div style="display:grid;grid-template-columns:1fr;gap:14px">
+
+      <!-- OI Distribution -->
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Open Interest by Strike</div>
+        <svg viewBox="0 0 ${W} ${oiH}" style="width:100%;max-height:${oiH}px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+          ${oiAnnLines}
+          ${oiBars}
+          ${oiXLabels}
+        </svg>
+        <div style="display:flex;gap:16px;font-size:9px;color:var(--muted);margin-top:3px">
+          <span><span style="color:#34d399">▮</span> Call OI</span>
+          <span><span style="color:#f87171">▮</span> Put OI</span>
+          <span><span style="color:${mpColor}">╌</span> Max Pain</span>
+          <span><span style="color:${zgColor}">╌</span> Zero Gamma</span>
+          <span><span style="color:#94a3b8">─</span> Spot</span>
+        </div>
+      </div>
+
+      <!-- GEX per strike -->
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Gamma Exposure (GEX) by Strike</div>
+        <svg viewBox="0 0 ${W} ${gexH}" style="width:100%;max-height:${gexH}px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+          <line x1="${padX}" y1="${zeroY}" x2="${W-padX}" y2="${zeroY}" stroke="#475569" stroke-width="0.7" stroke-dasharray="3,2"/>
+          ${gexAnnLines}
+          ${gexBars}
+          <path d="${netPath}" fill="none" stroke="#f59e0b" stroke-width="1.5"/>
+          ${gexXLabels}
+        </svg>
+        <div style="display:flex;gap:16px;font-size:9px;color:var(--muted);margin-top:3px">
+          <span><span style="color:#34d399">▮</span> Call GEX</span>
+          <span><span style="color:#f87171">▮</span> Put GEX</span>
+          <span><span style="color:#f59e0b">━</span> Net GEX</span>
+        </div>
+      </div>
+
+      <!-- IV Smile -->
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">IV Smile / Skew</div>
+        <svg viewBox="0 0 ${W} ${ivH}" style="width:100%;max-height:${ivH}px;background:var(--bg);border-radius:4px;border:1px solid var(--border)">
+          ${ivYLabels}
+          ${ivAnnLines}
+          <path d="${callIVPath}" fill="none" stroke="#34d399" stroke-width="1.8"/>
+          <path d="${putIVPath}"  fill="none" stroke="#f87171" stroke-width="1.8"/>
+          ${ivXLabels}
+        </svg>
+        <div style="display:flex;gap:16px;font-size:9px;color:var(--muted);margin-top:3px">
+          <span><span style="color:#34d399">━</span> Call IV</span>
+          <span><span style="color:#f87171">━</span> Put IV</span>
+        </div>
+      </div>
+
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

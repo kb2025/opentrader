@@ -13118,6 +13118,216 @@ async def get_options_expiry_calendar(mode: str = "live"):
     return {"calendar": calendar, "today": today.isoformat()}
 
 
+# ── Chain Analytics: Max Pain / GEX / Zero Gamma / IV Smile / OI Heatmap ────
+
+@app.get("/api/options/chain-analytics")
+async def options_chain_analytics(ticker: str, expiry: str = "", token: str = ""):
+    """
+    Full-chain analytics for a given underlying and expiry date.
+    Computes: Max Pain, GEX per strike, Zero Gamma level, IV Smile, OI distribution.
+    Fetches from Polygon v3/snapshot/options. Cached 30 min.
+    """
+    check_token(token)
+    sym     = ticker.upper()
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {"error": "No Polygon API key configured"}
+
+    cache_key = f"options:chain_analytics:{sym}:{expiry}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    try:
+        import aiohttp as _ah
+        from datetime import date as _date
+
+        # ── Fetch underlying spot price ────────────────────────────────────────
+        # Try: prev-close agg → last trade → zero fallback
+        spot = 0.0
+        try:
+            from datetime import date as _date, timedelta as _td
+            today_s = _date.today().isoformat()
+            from_s  = (_date.today() - _td(days=5)).isoformat()
+            agg_url = (
+                f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+                f"/{from_s}/{today_s}?adjusted=true&sort=desc&limit=1&apiKey={api_key}"
+            )
+            async with _ah.ClientSession() as s:
+                async with s.get(agg_url, timeout=_ah.ClientTimeout(total=6)) as r:
+                    if r.status == 200:
+                        dj = await r.json()
+                        bars = dj.get("results") or []
+                        if bars:
+                            spot = float(bars[0].get("c") or 0)
+        except Exception:
+            pass
+        # last-trade fallback
+        if not spot:
+            try:
+                async with _ah.ClientSession() as s:
+                    async with s.get(
+                        f"https://api.polygon.io/v2/last/trade/{sym}?apiKey={api_key}",
+                        timeout=_ah.ClientTimeout(total=6),
+                    ) as r:
+                        if r.status == 200:
+                            dj = await r.json()
+                            spot = float((dj.get("results") or {}).get("p") or 0)
+            except Exception:
+                pass
+
+        # ── Fetch full options chain ───────────────────────────────────────────
+        # Pull calls + puts for the requested expiry (or nearest if blank)
+        async def _fetch_contracts(contract_type: str) -> list[dict]:
+            contracts: list[dict] = []
+            url = (
+                f"https://api.polygon.io/v3/snapshot/options/{sym}"
+                f"?contract_type={contract_type}&limit=250"
+            )
+            if expiry:
+                url += f"&expiration_date={expiry}"
+            url += f"&apiKey={api_key}"
+            async with _ah.ClientSession() as s:
+                while url:
+                    async with s.get(url, timeout=_ah.ClientTimeout(total=12)) as r:
+                        if r.status != 200:
+                            break
+                        data = await r.json()
+                    contracts.extend(data.get("results") or [])
+                    next_url = data.get("next_url")
+                    url = (next_url + f"&apiKey={api_key}") if next_url else None
+            return contracts
+
+        calls_raw, puts_raw = await asyncio.gather(
+            _fetch_contracts("call"),
+            _fetch_contracts("put"),
+        )
+
+        if not calls_raw and not puts_raw:
+            return {"error": f"No chain data for {sym}"}
+
+        # ── Determine expiry used (nearest if not specified) ───────────────────
+        all_expiries: set[str] = set()
+        for c in calls_raw + puts_raw:
+            e = (c.get("details") or {}).get("expiration_date", "")
+            if e:
+                all_expiries.add(e)
+        if not expiry and all_expiries:
+            expiry = min(e for e in all_expiries if e >= _date.today().isoformat())
+
+        # Filter to chosen expiry
+        def _exp(c): return (c.get("details") or {}).get("expiration_date", "")
+        if expiry:
+            calls_raw = [c for c in calls_raw if _exp(c) == expiry]
+            puts_raw  = [c for c in puts_raw  if _exp(c) == expiry]
+
+        def _parse(contracts: list[dict], side: str) -> dict[float, dict]:
+            out: dict[float, dict] = {}
+            for c in contracts:
+                det   = c.get("details") or {}
+                k     = float(det.get("strike_price") or 0)
+                if not k:
+                    continue
+                g     = c.get("greeks") or {}
+                gamma = abs(float(g.get("gamma") or 0))
+                iv    = float(c.get("implied_volatility") or 0)
+                oi    = int(c.get("open_interest") or 0)
+                out[k] = {
+                    "strike": k,
+                    f"{side}_gamma": gamma,
+                    f"{side}_iv":    round(iv * 100, 2),   # percent
+                    f"{side}_oi":    oi,
+                }
+            return out
+
+        call_data = _parse(calls_raw, "call")
+        put_data  = _parse(puts_raw,  "put")
+
+        # ── Build per-strike merged rows ───────────────────────────────────────
+        all_strikes = sorted(set(call_data) | set(put_data))
+        rows: list[dict] = []
+        for k in all_strikes:
+            cd = call_data.get(k, {})
+            pd = put_data.get(k,  {})
+            c_gamma = cd.get("call_gamma", 0)
+            p_gamma = pd.get("put_gamma",  0)
+            c_oi    = cd.get("call_oi",    0)
+            p_oi    = pd.get("put_oi",     0)
+            # GEX: dealers short options → call GEX positive, put GEX negative
+            c_gex   = round(c_oi * c_gamma * 100 * (spot or 1), 0)
+            p_gex   = round(-p_oi * p_gamma * 100 * (spot or 1), 0)
+            rows.append({
+                "strike":   k,
+                "call_oi":  c_oi,
+                "put_oi":   p_oi,
+                "call_iv":  cd.get("call_iv", 0),
+                "put_iv":   pd.get("put_iv",  0),
+                "call_gex": c_gex,
+                "put_gex":  p_gex,
+                "net_gex":  c_gex + p_gex,
+            })
+
+        # ── Max Pain ───────────────────────────────────────────────────────────
+        # Strike where total $ value of ITM options is minimised (MM max profit)
+        max_pain_strike = None
+        min_pain = float("inf")
+        for candidate in all_strikes:
+            pain = 0.0
+            for k in all_strikes:
+                cd = call_data.get(k, {}); pd = put_data.get(k, {})
+                if k < candidate:   # ITM call
+                    pain += (candidate - k) * cd.get("call_oi", 0) * 100
+                if k > candidate:   # ITM put
+                    pain += (k - candidate) * pd.get("put_oi",  0) * 100
+            if pain < min_pain:
+                min_pain = pain
+                max_pain_strike = candidate
+
+        # ── Net GEX + Zero Gamma ──────────────────────────────────────────────
+        net_gex_total = sum(r["net_gex"] for r in rows)
+
+        # Zero gamma = strike where cumulative GEX (sorted asc) crosses zero
+        zero_gamma = None
+        cum = 0.0
+        prev_cum = 0.0
+        prev_strike = None
+        for r in rows:
+            cum += r["net_gex"]
+            if prev_strike is not None and prev_cum * cum < 0:
+                # Linear interpolation of the crossover strike
+                frac = abs(prev_cum) / (abs(prev_cum) + abs(cum))
+                zero_gamma = round(prev_strike + frac * (r["strike"] - prev_strike), 2)
+                break
+            prev_cum    = cum
+            prev_strike = r["strike"]
+
+        result = {
+            "ticker":           sym,
+            "expiry":           expiry,
+            "spot":             spot,
+            "max_pain":         max_pain_strike,
+            "zero_gamma":       zero_gamma,
+            "net_gex":          round(net_gex_total, 0),
+            "gex_regime":       "positive" if net_gex_total >= 0 else "negative",
+            "strikes":          rows,
+            "available_expiries": sorted(all_expiries),
+        }
+        try:
+            if _r:
+                await _r.setex(cache_key, 1800, json.dumps(result))
+        except Exception:
+            pass
+        return result
+
+    except Exception as e:
+        log.warning("options.chain_analytics_error", ticker=sym, error=str(e))
+        return {"error": str(e)}
+
+
 # ── Daily P&L / loss limit ────────────────────────────────────────────────────
 
 @app.get("/api/trading/daily-pnl")

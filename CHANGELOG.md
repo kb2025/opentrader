@@ -3,6 +3,17 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.90] - 2026-05-23
+
+### Added
+- **Chain Analytics panel** on Options Dashboard (Gold-options-terminal-inspired): new collapsible card with ticker + expiry selector, loads all 5 metrics from a single `/api/options/chain-analytics` endpoint (cached 30 min)
+- **Max Pain** — computes the strike where aggregate option $ value is minimised (where market makers collect maximum premium); displayed as badge + vertical annotation line on all charts
+- **GEX (Gamma Exposure) heatmap** — per-strike call GEX (green bars) and put GEX (red bars) with net GEX overlay line; net GEX total with positive/negative regime label (positive = vol suppression, negative = vol amplification)
+- **Zero Gamma level** — interpolated strike where cumulative GEX crosses zero; shown as badge + annotation line; acts as intraday support/resistance pivot
+- **IV Smile / Skew chart** — call IV and put IV plotted as separate lines across all strikes; Y-axis labelled in %; reveals skew, kink, and ATM vs OTM vol premium
+- **OI Distribution heatmap** — grouped call/put open interest bars per strike; all charts annotated with Max Pain, Zero Gamma, and current spot price lines
+- Spot price fetch uses Polygon prev-close agg with last-trade fallback; all charts scoped to ±30% of spot for readability
+
 ## [3.7.89] - 2026-05-23
 
 ### Fixed
