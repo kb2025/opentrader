@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.79] - 2026-05-23
+
+### Fixed
+- Dividend Holdings fundamentals panel: P/E ratio, EPS, and payout ratio were always blank because `shared.mcp_client` (which imports the `mcp` package) fails silently in the webui container; replaced earnings fetch with a direct Polygon `/vX/reference/financials` REST call (sum of last 4 quarters = EPS TTM), no MCP SDK needed
+
 ## [3.7.78] - 2026-05-23
 
 ### Added

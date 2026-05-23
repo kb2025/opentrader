@@ -13190,7 +13190,40 @@ async def get_trader_fundamentals(ticker: str, token: str = ""):
         except Exception as ex:
             log.warning("fundamentals.polygon_error", ticker=sym, error=str(ex))
 
-    # ── 2. Upcoming dividend (massive.com) ─────────────────────────────────────
+    # ── 2. Quarterly financials — EPS TTM (last 4 quarters summed) ───────────
+    earnings: dict = {}
+    if api_key:
+        try:
+            import aiohttp as _aiohttp
+            url = (
+                f"https://api.polygon.io/vX/reference/financials"
+                f"?ticker={sym}&timeframe=quarterly&limit=4"
+                f"&sort=period_of_report_date&order=desc&apiKey={api_key}"
+            )
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        fin_results = (await resp.json()).get("results", [])
+                        eps_ttm = 0.0
+                        rev_ttm = 0.0
+                        quarters_counted = 0
+                        for q in fin_results:
+                            inc = (q.get("financials") or {}).get("income_statement") or {}
+                            eps_q = (inc.get("basic_earnings_per_share") or {}).get("value")
+                            rev_q = (inc.get("revenues") or {}).get("value")
+                            if eps_q is not None:
+                                eps_ttm += float(eps_q)
+                                quarters_counted += 1
+                            if rev_q is not None:
+                                rev_ttm += float(rev_q)
+                        if quarters_counted > 0:
+                            earnings["eps"] = round(eps_ttm, 4)
+                        if rev_ttm > 0:
+                            earnings["revenue_ttm"] = round(rev_ttm, 0)
+        except Exception as ex:
+            log.warning("fundamentals.polygon_financials_error", ticker=sym, error=str(ex))
+
+    # ── 3. Upcoming dividend (massive.com) ─────────────────────────────────────
     div: dict = {}
     if api_key:
         try:
@@ -13225,8 +13258,7 @@ async def get_trader_fundamentals(ticker: str, token: str = ""):
         except Exception as ex:
             log.warning("fundamentals.massive_div_error", ticker=sym, error=str(ex))
 
-    # ── 3. Earnings date via Massive MCP ──────────────────────────────────────
-    earnings: dict = {}
+    # ── 5. Earnings date via Massive MCP (fills gaps: earnings_date, eps if missing) ──
     try:
         from shared.mcp_client import call_mcp_tool as _call_mcp, MASSIVE_MCP_URL as _MASSIVE_URL
         raw_earn = await _call_mcp(_MASSIVE_URL, "get_earnings", {"ticker": sym, "limit": 8})
