@@ -4,7 +4,7 @@ Walk-forward trained RandomForest + GradientBoosting + Ridge models that
 produce a directional confidence score from OHLCV features. Blended with
 the rule-based scorer output as a weighted composite before LLM refinement.
 
-Feature set (24):
+Feature set (26):
   ret_5, ret_10, ret_20          — price momentum at 3 short lookbacks
   ret_21, ret_63, ret_126,
   ret_252                        — 1-month, 1-quarter, 6-month, 1-year returns
@@ -23,6 +23,8 @@ Feature set (24):
   atr_pct                        — ATR(14) / price (volatility proxy)
   candle_body                    — (close-open)/(high-low) candle shape
   bid_ask_proxy                  — (close-low)/(high-low) buying pressure proxy
+  open_gap                       — (open - prev_close)/prev_close: overnight gap (retail/emotional move)
+  intraday_ret                   — (close - open)/open: intraday return (smart money proxy, SMFI-inspired)
 
 Walk-forward:
   Fetch 2 years daily OHLCV → engineer features → create binary labels
@@ -152,6 +154,12 @@ def _engineer_features(df: "pd.DataFrame") -> "pd.DataFrame":
     # Bid/ask proxy: buying pressure = (close - low) / (high - low)
     # Approximates where price closed within the bar's range (1=full buying, 0=full selling)
     f["bid_ask_proxy"] = (close - low) / hl_safe
+
+    # Smart Money Flow decomposition (daily approximation of SMFI):
+    # Split each day's return into overnight gap (retail/emotional) and intraday move (institutional)
+    prev_close        = close.shift(1)
+    f["open_gap"]     = (open_ - prev_close) / prev_close.replace(0, float("nan"))
+    f["intraday_ret"] = (close - open_) / open_.replace(0, float("nan"))
 
     return f
 

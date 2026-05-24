@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.2] - 2026-05-24
+
+### Added
+- **SMFI-inspired features in ML predictor**: added `open_gap` (feature 25) and `intraday_ret` (feature 26) to `ml_predictor._engineer_features()`; daily-bar approximation of the Smart Money Flow Index — `open_gap = (open − prev_close) / prev_close` captures the overnight emotional/retail reaction to news, `intraday_ret = (close − open) / open` captures the intraday institutional move; the ensemble can now weight these independently to detect divergence (e.g. gap up + intraday sell-off = distribution)
+
 ## [3.8.1] - 2026-05-24
 
 ### Added
