@@ -13340,18 +13340,19 @@ async def get_portfolio_greeks(mode: str = "live"):
     pool = await _get_db_pool()
     rows = await pool.fetch(
         """SELECT account_label, underlying, option_type, qty,
-                  delta, theta, vega, gamma, expiration_date, strike
+                  delta, theta, vega, gamma, rho, volga, expiration_date, strike
            FROM option_positions
            WHERE status = 'active' AND mode = $1""",
         mode,
     )
-    totals = {"delta": 0.0, "theta": 0.0, "vega": 0.0, "gamma": 0.0}
+    _GREEKS = ("delta", "theta", "vega", "gamma", "rho", "volga")
+    totals = {g: 0.0 for g in _GREEKS}
     per_account: dict = {}
     per_underlying: dict = {}
     for r in rows:
         qty = float(r["qty"] or 0)
         mult = qty * 100   # 1 contract = 100 shares
-        for g in ("delta", "theta", "vega", "gamma"):
+        for g in _GREEKS:
             val = r[g]
             if val is None:
                 continue
@@ -13359,8 +13360,8 @@ async def get_portfolio_greeks(mode: str = "live"):
             totals[g] += v
             acct = r["account_label"]
             under = r["underlying"]
-            per_account.setdefault(acct, {"delta": 0.0, "theta": 0.0, "vega": 0.0, "gamma": 0.0})
-            per_underlying.setdefault(under, {"delta": 0.0, "theta": 0.0, "vega": 0.0, "gamma": 0.0})
+            per_account.setdefault(acct, {g2: 0.0 for g2 in _GREEKS})
+            per_underlying.setdefault(under, {g2: 0.0 for g2 in _GREEKS})
             per_account[acct][g] += v
             per_underlying[under][g] += v
 

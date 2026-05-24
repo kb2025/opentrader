@@ -383,18 +383,24 @@ async def _score_roll_candidates(
 
 
 def _bs_greeks(S: float, K: float, T: float, sigma: float,
-               r: float = 0.05, option_type: str = "call") -> dict:
+               r: float = 0.05, option_type: str = "call",
+               q: float = 0.0) -> dict:
     """
     Black-Scholes Greeks using stdlib math only (no scipy).
-    Returns dict with delta, gamma, theta (per calendar day), vega (per 1% IV move).
+    Includes continuous dividend yield q (default 0).
+    Returns delta, gamma, theta (per calendar day), vega (per 1% IV),
+            rho (per 1% rate move), volga (vega sensitivity to vol).
     """
     import math
-    out = {"delta": None, "gamma": None, "theta": None, "vega": None}
+    out = {"delta": None, "gamma": None, "theta": None, "vega": None,
+           "rho": None, "volga": None}
     if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
         return out
     try:
-        sqrt_T = math.sqrt(T)
-        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
+        sqrt_T  = math.sqrt(T)
+        eq_T    = math.exp(-q * T)
+        er_T    = math.exp(-r * T)
+        d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
         d2 = d1 - sigma * sqrt_T
         def ncdf(x):
             return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
@@ -403,20 +409,29 @@ def _bs_greeks(S: float, K: float, T: float, sigma: float,
         n_d1  = ncdf(d1)
         n_d2  = ncdf(d2)
         np_d1 = npdf(d1)
+        vega_raw = S * eq_T * np_d1 * sqrt_T          # raw vega (per unit vol)
         if option_type == "call":
-            delta = n_d1
-            theta = ((-S * np_d1 * sigma / (2.0 * sqrt_T))
-                     - r * K * math.exp(-r * T) * n_d2) / 365.0
+            delta = eq_T * n_d1
+            theta = ((-S * eq_T * np_d1 * sigma / (2.0 * sqrt_T))
+                     + q * S * eq_T * n_d1
+                     - r * K * er_T * n_d2) / 365.0
+            rho_raw = K * T * er_T * n_d2              # per unit rate
         else:
-            delta = n_d1 - 1.0
-            theta = ((-S * np_d1 * sigma / (2.0 * sqrt_T))
-                     + r * K * math.exp(-r * T) * ncdf(-d2)) / 365.0
-        gamma = np_d1 / (S * sigma * sqrt_T)
-        vega  = S * np_d1 * sqrt_T / 100.0   # per 1% change in IV
+            delta = -eq_T * ncdf(-d1)
+            theta = ((-S * eq_T * np_d1 * sigma / (2.0 * sqrt_T))
+                     - q * S * eq_T * ncdf(-d1)
+                     + r * K * er_T * ncdf(-d2)) / 365.0
+            rho_raw = -K * T * er_T * ncdf(-d2)
+        gamma = eq_T * np_d1 / (S * sigma * sqrt_T)
+        vega  = vega_raw / 100.0                       # per 1% change in IV
+        rho   = rho_raw  / 100.0                       # per 1% change in rate
+        volga = vega * d1 * d2 / sigma                 # vega convexity (Vomma)
         out["delta"] = round(delta, 4)
         out["gamma"] = round(gamma, 6)
         out["theta"] = round(theta, 4)
         out["vega"]  = round(vega,  4)
+        out["rho"]   = round(rho,   4)
+        out["volga"] = round(volga, 4)
     except Exception:
         pass
     return out
@@ -438,21 +453,22 @@ def _intrinsic_value(S: float, K: float, option_type: str) -> float:
 
 
 def _bs_price(S: float, K: float, T: float, sigma: float,
-              r: float = 0.045, option_type: str = "call") -> Optional[float]:
-    """Black-Scholes theoretical price (intrinsic + time value)."""
+              r: float = 0.045, option_type: str = "call",
+              q: float = 0.0) -> Optional[float]:
+    """Black-Scholes theoretical price including continuous dividend yield q."""
     import math
     if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
         return _intrinsic_value(S, K, option_type)
     try:
         sqrt_T = math.sqrt(T)
-        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
+        d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
         d2 = d1 - sigma * sqrt_T
         def ncdf(x):
             return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
         if option_type == "call":
-            price = S * ncdf(d1) - K * math.exp(-r * T) * ncdf(d2)
+            price = S * math.exp(-q * T) * ncdf(d1) - K * math.exp(-r * T) * ncdf(d2)
         else:
-            price = K * math.exp(-r * T) * ncdf(-d2) - S * ncdf(-d1)
+            price = K * math.exp(-r * T) * ncdf(-d2) - S * math.exp(-q * T) * ncdf(-d1)
         return round(max(price, _intrinsic_value(S, K, option_type)), 4)
     except Exception:
         return None
@@ -624,6 +640,8 @@ async def _fetch_option_chain_details(
         vega  = float(greeks_snap["vega"])  if greeks_snap.get("vega")  is not None else None
 
         # Fallback: compute B-S Greeks from IV if Polygon didn't return them
+        rho   = None
+        volga = None
         if delta is None and current_underlying_price > 0 and contract_strike > 0:
             iv = float(snap.get("implied_volatility") or 0)
             if iv > 0:
@@ -631,6 +649,7 @@ async def _fetch_option_chain_details(
                 g = _bs_greeks(current_underlying_price, contract_strike, T, iv,
                                option_type=opt_type)
                 delta, gamma, theta, vega = g["delta"], g["gamma"], g["theta"], g["vega"]
+                rho, volga = g["rho"], g["volga"]
 
         # Scoring
         day_snap = snap.get("day") or {}
@@ -668,6 +687,8 @@ async def _fetch_option_chain_details(
                 "gamma":           gamma,
                 "theta":           theta,
                 "vega":            vega,
+                "rho":             rho,
+                "volga":           volga,
             }
 
     return best
@@ -1365,7 +1386,7 @@ class OptionsMonitor(BaseAgent):
 
         # ── Enrich contract details via Yahoo option chain ─────────────────────
         # Runs whenever: type unknown, strike missing, expiry missing, or no delta yet
-        delta = theta = vega = gamma = None
+        delta = theta = vega = gamma = rho = volga = None
         current_opt_price = bp["current_price"]
         # Use only the live price — entry_price is stale and causes wrong expiry matches
         # for decayed options (e.g. deep-OTM near expiry matched against a later expiry
@@ -1408,6 +1429,8 @@ class OptionsMonitor(BaseAgent):
                 theta = chain_details.get("theta")
                 vega  = chain_details.get("vega")
                 gamma = chain_details.get("gamma")
+                rho   = chain_details.get("rho")
+                volga = chain_details.get("volga")
                 log.info("options_monitor.chain_enriched", contract=contract_symbol,
                          strike=strike, option_type=option_type, delta=delta,
                          theta=theta, vega=vega, gamma=gamma)
@@ -1438,6 +1461,16 @@ class OptionsMonitor(BaseAgent):
         if gamma is None and existing and existing.get("gamma") is not None:
             try:
                 gamma = float(existing["gamma"])
+            except Exception:
+                pass
+        if rho is None and existing and existing.get("rho") is not None:
+            try:
+                rho = float(existing["rho"])
+            except Exception:
+                pass
+        if volga is None and existing and existing.get("volga") is not None:
+            try:
+                volga = float(existing["volga"])
             except Exception:
                 pass
 
@@ -1511,6 +1544,8 @@ class OptionsMonitor(BaseAgent):
                     theta               = $18::NUMERIC,
                     vega                = $19::NUMERIC,
                     gamma               = $20::NUMERIC,
+                    rho                 = $21::NUMERIC,
+                    volga               = $22::NUMERIC,
                     option_type         = CASE WHEN option_type='unknown' AND $14::TEXT IS NOT NULL
                                               THEN $14::TEXT ELSE option_type END,
                     strike              = COALESCE($15::NUMERIC, strike),
@@ -1537,6 +1572,8 @@ class OptionsMonitor(BaseAgent):
                 theta,              # $18
                 vega,               # $19
                 gamma,              # $20
+                rho,                # $21
+                volga,              # $22
             )
         else:
             # New position
@@ -1547,14 +1584,14 @@ class OptionsMonitor(BaseAgent):
                     qty, entry_price, underlying_entry, entry_date,
                     atr_14, atr_calculated_at,
                     level_emergency, level_exit_alert, level_roll_1, level_roll_2, level_roll_3,
-                    extra_roll_levels, next_earnings_date, last_scan_at, raw, delta, theta, vega, gamma
+                    extra_roll_levels, next_earnings_date, last_scan_at, raw, delta, theta, vega, gamma, rho, volga
                 ) VALUES (
                     $1,$2,$3,$4::NUMERIC,$5,
                     $6,$7,$8,$9,
                     $10::NUMERIC,$11::NUMERIC,$12::NUMERIC,$13,
                     $14::NUMERIC, CASE WHEN $14::NUMERIC IS NOT NULL THEN NOW() ELSE NULL END,
                     $15::NUMERIC,$16::NUMERIC,$17::NUMERIC,$18::NUMERIC,$19::NUMERIC,
-                    $20::JSONB,$21,NOW(),$22::JSONB,$23::NUMERIC,$24::NUMERIC,$25::NUMERIC,$26::NUMERIC
+                    $20::JSONB,$21,NOW(),$22::JSONB,$23::NUMERIC,$24::NUMERIC,$25::NUMERIC,$26::NUMERIC,$27::NUMERIC,$28::NUMERIC
                 ) ON CONFLICT (contract_symbol, account_label) WHERE status='active'
                 DO UPDATE SET
                     qty=$10::NUMERIC, atr_14=$14::NUMERIC,
@@ -1566,6 +1603,7 @@ class OptionsMonitor(BaseAgent):
                     extra_roll_levels=$20::JSONB, next_earnings_date=$21,
                     last_scan_at=NOW(), updated_at=NOW(), raw=$22::JSONB,
                     delta=$23::NUMERIC, theta=$24::NUMERIC, vega=$25::NUMERIC, gamma=$26::NUMERIC,
+                    rho=$27::NUMERIC, volga=$28::NUMERIC,
                     option_type = CASE WHEN option_positions.option_type='unknown' AND $3 IS NOT NULL AND $3 != 'unknown'
                                       THEN $3 ELSE option_positions.option_type END,
                     strike = COALESCE($4::NUMERIC, option_positions.strike),
@@ -1580,7 +1618,7 @@ class OptionsMonitor(BaseAgent):
                 json.dumps(levels.get("extra_roll_levels", [])),
                 earnings_date,
                 json.dumps(bp["raw"]),
-                delta, theta, vega, gamma,
+                delta, theta, vega, gamma, rho, volga,
             )
             log.info("options_monitor.position_imported",
                      contract=contract_symbol, account=account_label, underlying=underlying)

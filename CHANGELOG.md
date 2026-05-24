@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.4] - 2026-05-24
+
+### Added
+- **Extended B-S Greeks — Rho and Volga**: `_bs_greeks()` now returns `rho` (∂price/∂r per 1% rate move) and `volga` (∂²price/∂σ², vega convexity) in addition to delta/gamma/theta/vega; both are persisted to `option_positions` and aggregated in `/api/options/portfolio-greeks`
+- **Dividend yield in B-S pricing**: `_bs_greeks()` and `_bs_price()` now accept a `q` parameter (continuous dividend yield, default 0); d1/d2, delta, and theta formulas corrected to use `r - q`, eliminating systematic mispricing on dividend-paying stocks
+
 ## [3.8.3] - 2026-05-24
 
 ### Added
