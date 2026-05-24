@@ -51,6 +51,11 @@ MAX_EXTRA_ROLLS      = 7   # gives rolls at +3 … +9 ATR
 # Default option type for Webull non-OCC positions where type isn't in raw data.
 # Set to "put" if you hold puts, or "unknown" to search both (may misidentify).
 WEBULL_DEFAULT_OPTION_TYPE = os.getenv("WEBULL_DEFAULT_OPTION_TYPE", "call")
+# OI wall detector — minimum OI at a strike to qualify as a wall, and drop threshold
+OI_WALL_MIN_OI         = int(os.getenv("OI_WALL_MIN_OI", "3000"))
+OI_WALL_DROP_THRESHOLD = float(os.getenv("OI_WALL_DROP_PCT", "0.40"))
+# TTL for OI wall Redis cache — 2× the scan interval so one missed scan doesn't clear state
+OI_WALL_CACHE_TTL      = SCAN_INTERVAL_MIN * 60 * 2
 
 
 def _parse_option_expiry(raw) -> Optional[date]:
@@ -1134,7 +1139,140 @@ class OptionsMonitor(BaseAgent):
                          contract=row["contract_symbol"], account=row["account_label"],
                          last_price=last_cp, pnl=pnl)
 
+        # ── 3. Scan OI walls for each active underlying ───────────────────────
+        await self._scan_oi_walls(pool)
+
         log.info("options_monitor.scan_complete")
+
+    async def _scan_oi_walls(self, pool: asyncpg.Pool):
+        """
+        Scan options chains for collapsing OI walls (Item 1: OI Wall Detector).
+        An OI wall is a strike with >= OI_WALL_MIN_OI open interest.
+        When a wall drops >= OI_WALL_DROP_THRESHOLD between scans, fire an alert
+        and write a signal to the DB.
+        Confidence = oi_size_pct×0.40 + drop_speed×0.35 + price_proximity×0.25
+        """
+        if not POLYGON_API_KEY:
+            return
+
+        rows = await pool.fetch(
+            "SELECT DISTINCT underlying FROM option_positions WHERE status='active'"
+        )
+        underlyings = [r["underlying"] for r in rows]
+        if not underlyings:
+            return
+
+        import aiohttp as _ah
+
+        for underlying in underlyings:
+            try:
+                url = (
+                    f"https://api.polygon.io/v3/snapshot/options/{underlying.upper()}"
+                    f"?limit=250&apiKey={POLYGON_API_KEY}"
+                )
+                async with _ah.ClientSession() as sess:
+                    async with sess.get(url, timeout=_ah.ClientTimeout(total=15)) as resp:
+                        if resp.status != 200:
+                            continue
+                        data = await resp.json()
+
+                snaps = data.get("results") or []
+                if not snaps:
+                    continue
+
+                # Aggregate OI by strike across calls and puts
+                strike_oi: dict[str, int] = {}
+                for snap in snaps:
+                    details = snap.get("details") or {}
+                    strike  = details.get("strike_price")
+                    oi      = int(snap.get("open_interest") or 0)
+                    if strike and oi > 0:
+                        key = str(float(strike))
+                        strike_oi[key] = strike_oi.get(key, 0) + oi
+
+                if not strike_oi:
+                    continue
+
+                max_oi = max(strike_oi.values())
+                current_price = await _fetch_underlying_price(underlying)
+
+                redis_key = f"options:oi_walls:{underlying}"
+                prev_raw  = await self.redis.get(redis_key)
+                prev_walls: dict[str, int] = json.loads(prev_raw) if prev_raw else {}
+
+                for strike_key, oi in strike_oi.items():
+                    if oi < OI_WALL_MIN_OI:
+                        continue
+                    prev_oi = prev_walls.get(strike_key, 0)
+                    if prev_oi <= 0:
+                        continue
+
+                    drop_pct = (prev_oi - oi) / prev_oi
+                    if drop_pct < OI_WALL_DROP_THRESHOLD:
+                        continue
+
+                    strike_f = float(strike_key)
+                    # Confidence: oi_size_pct×0.40 + drop_speed×0.35 + proximity×0.25
+                    oi_size_pct = min(1.0, oi / max_oi)
+                    speed_score = min(1.0, drop_pct)
+                    proximity   = 0.5
+                    if current_price and current_price > 0:
+                        pct_away = abs(strike_f - current_price) / current_price
+                        proximity = max(0.0, 1.0 - pct_away * 10)
+
+                    confidence  = round(oi_size_pct * 0.40 + speed_score * 0.35 + proximity * 0.25, 3)
+                    direction   = "bullish" if strike_f < (current_price or strike_f) else "bearish"
+
+                    log.warning(
+                        "options_monitor.oi_wall_collapse",
+                        underlying=underlying, strike=strike_f,
+                        prev_oi=prev_oi, current_oi=oi,
+                        drop_pct=round(drop_pct * 100, 1),
+                        confidence=confidence,
+                    )
+
+                    # Alert to Redis
+                    try:
+                        await self.redis.xadd(
+                            STREAMS.get("alerts", "system.alerts"),
+                            {
+                                "source":  "options-monitor",
+                                "level":   "warning",
+                                "title":   f"OI Wall Collapsing: {underlying} ${strike_f:.0f}",
+                                "message": (
+                                    f"Strike ${strike_f:.0f} OI dropped {drop_pct*100:.0f}% "
+                                    f"({prev_oi:,} → {oi:,}) | Confidence {confidence:.2f}"
+                                ),
+                                "ticker":  underlying,
+                            },
+                            maxlen=5_000,
+                        )
+                    except Exception:
+                        pass
+
+                    # Write to signals table (stocks/options only — no crypto)
+                    try:
+                        await pool.execute(
+                            """INSERT INTO signals (source, ticker, direction, confidence, payload)
+                               VALUES ('oi_wall', $1, $2, $3::NUMERIC, $4::JSONB)""",
+                            underlying, direction, confidence,
+                            json.dumps({
+                                "strike":     strike_f,
+                                "prev_oi":    prev_oi,
+                                "current_oi": oi,
+                                "drop_pct":   round(drop_pct * 100, 1),
+                                "asset_class": "option",
+                            }),
+                        )
+                    except Exception as _dbe:
+                        log.debug("options_monitor.oi_wall_db_error", error=str(_dbe))
+
+                # Persist current scan as baseline for next comparison
+                new_walls = {k: v for k, v in strike_oi.items() if v >= OI_WALL_MIN_OI}
+                await self.redis.setex(redis_key, OI_WALL_CACHE_TTL, json.dumps(new_walls))
+
+            except Exception as _oe:
+                log.error("options_monitor.oi_wall_scan_error", underlying=underlying, error=str(_oe))
 
     async def _process_position(self, pool: asyncpg.Pool, bp: dict):
         contract_symbol = bp["contract_symbol"]

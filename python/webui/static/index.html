@@ -623,6 +623,19 @@ select option{background:var(--surface2)}
           </div>
         </div>
       </div>
+
+      <!-- Signal Timeline Panel -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">
+          <span class="card-title">Signal Timeline</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:8px">ML · OI Wall · Options ATR</span>
+          <button class="btn btn-ghost btn-xs" onclick="loadSignalTimeline()" style="margin-left:auto">&#8635;</button>
+        </div>
+        <div id="signal-timeline-body" class="card-body">
+          <div class="empty-state">Loading signals…</div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ════════════════════════════════════════
@@ -5000,7 +5013,7 @@ function navigate(pageId) {
 
   // Lazy-load page data on first visit
   switch(pageId) {
-    case 'page-platform-dashboard': loadPlatformDailyPnl(); break;
+    case 'page-platform-dashboard': loadPlatformDailyPnl(); loadSignalTimeline(); break;
     case 'page-platform-agents':    loadAgentsPage();    break;
     case 'page-platform-scheduler': _initSchedThead(); loadSchedulerPage(); break;
     case 'page-platform-reports':   loadReportsPage(); break;
@@ -5247,6 +5260,104 @@ async function loadPlatformDailyPnl() {
   } catch(_) {
     el.textContent = '—';
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Signal Timeline (Item 5)
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadSignalTimeline() {
+  const el = document.getElementById('signal-timeline-body');
+  if (!el) return;
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
+  try {
+    const d = await apiFetch(`/api/signals/recent?limit=40&token=${getToken()}`);
+    _renderSignalTimeline(d);
+  } catch(e) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted)">Error: ${e.message||e}</div>`;
+  }
+}
+
+function _renderSignalTimeline(d) {
+  const el = document.getElementById('signal-timeline-body');
+  if (!el) return;
+  const sigs = d?.signals || [];
+  if (!sigs.length) {
+    el.innerHTML = '<div class="empty-state">No signals recorded yet</div>';
+    return;
+  }
+  const sourceLabel = {
+    'ml_predictor':  'ML',
+    'oi_wall':       'OI Wall',
+    'options_monitor':'Options',
+    'imbalance':     'Imbalance',
+  };
+  const sourceColor = {
+    'ml_predictor':  '#818cf8',
+    'oi_wall':       '#f59e0b',
+    'options_monitor':'#34d399',
+    'imbalance':     '#22d3ee',
+  };
+  const dirArrow = dir => {
+    const d = (dir||'').toLowerCase();
+    if (d==='bullish'||d==='long'||d==='buy') return '<span style="color:#34d399">&#9650;</span>';
+    if (d==='bearish'||d==='short'||d==='sell') return '<span style="color:#f87171">&#9660;</span>';
+    return '<span style="color:var(--muted)">&#8212;</span>';
+  };
+  const confBar = (c) => {
+    if (c == null) return '<span style="color:var(--muted);font-size:10px">—</span>';
+    const pct = Math.round(c * 100);
+    const col = pct >= 70 ? '#34d399' : pct >= 45 ? '#f59e0b' : '#f87171';
+    return `<span style="display:inline-flex;align-items:center;gap:4px">
+      <span style="display:inline-block;width:40px;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden">
+        <span style="display:block;width:${pct}%;height:100%;background:${col};border-radius:3px"></span>
+      </span>
+      <span style="font-size:10px;color:${col}">${pct}%</span>
+    </span>`;
+  };
+  const fmtTs = ts => {
+    if (!ts) return '—';
+    try {
+      const d = new Date(ts);
+      const now = new Date();
+      const diffMs = now - d;
+      if (diffMs < 60000) return 'just now';
+      if (diffMs < 3600000) return `${Math.floor(diffMs/60000)}m ago`;
+      if (diffMs < 86400000) return `${Math.floor(diffMs/3600000)}h ago`;
+      return d.toLocaleDateString();
+    } catch(_) { return ts.slice(0,16); }
+  };
+  el.innerHTML = `
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="color:var(--muted);font-size:11px">
+        <th style="text-align:left;padding:4px 8px 4px 0;white-space:nowrap">Time</th>
+        <th style="text-align:left;padding:4px 8px">Source</th>
+        <th style="text-align:left;padding:4px 8px">Ticker</th>
+        <th style="text-align:center;padding:4px 8px">Dir</th>
+        <th style="padding:4px 8px;min-width:80px">Confidence</th>
+        <th style="text-align:left;padding:4px 8px;max-width:200px">Detail</th>
+      </tr></thead>
+      <tbody>
+      ${sigs.map(s => {
+        const src = s.source || 'unknown';
+        const srcCol = sourceColor[src] || 'var(--muted)';
+        const srcLbl = sourceLabel[src] || src;
+        const note = s.payload?.notes || s.payload?.event || '';
+        const noteTxt = note ? `<span style="color:var(--muted);font-size:10px">${String(note).slice(0,60)}</span>` : '';
+        return `<tr style="border-top:1px solid var(--border)">
+          <td style="padding:5px 8px 5px 0;white-space:nowrap;color:var(--muted);font-size:11px">${fmtTs(s.ts)}</td>
+          <td style="padding:5px 8px">
+            <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${srcCol}22;color:${srcCol}">${srcLbl}</span>
+          </td>
+          <td style="padding:5px 8px;font-weight:600">${s.ticker||'—'}</td>
+          <td style="text-align:center;padding:5px 8px">${dirArrow(s.direction)}</td>
+          <td style="padding:5px 8px">${confBar(s.confidence)}</td>
+          <td style="padding:5px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${noteTxt}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -21527,6 +21638,17 @@ function _analyticsRenderTSMOM(d) {
   }
   const dirColor = {'LONG':'#34d399','SHORT':'#f87171','FLAT':'var(--muted)'};
   const fmtPct = v => v > 0 ? `+${v.toFixed(1)}%` : `${v.toFixed(1)}%`;
+  const confBar = (c) => {
+    if (c == null) return '';
+    const pct = Math.round(c * 100);
+    const col = pct >= 70 ? '#34d399' : pct >= 45 ? '#f59e0b' : '#f87171';
+    return `<div style="display:flex;align-items:center;gap:5px">
+      <div style="flex:1;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;min-width:40px">
+        <div style="width:${pct}%;height:100%;background:${col};border-radius:3px"></div>
+      </div>
+      <span style="font-size:10px;color:${col};width:26px;text-align:right">${pct}%</span>
+    </div>`;
+  };
   el.innerHTML = `
     <div style="font-size:10px;color:var(--muted);margin-bottom:8px">
       Target vol: ${d.target_vol_pct}% · Flat threshold: ±${d.flat_threshold_pct}% · Position size = signal × min(2×, target_vol/realized_vol)
@@ -21539,9 +21661,10 @@ function _analyticsRenderTSMOM(d) {
         <th style="text-align:right;padding:4px 8px">Ann Vol</th>
         <th style="text-align:center;padding:4px 8px">Signal</th>
         <th style="text-align:right;padding:4px 8px">Pos Size</th>
+        <th style="padding:4px 8px;min-width:80px">Confidence</th>
       </tr></thead>
       <tbody>
-      ${sigs.map(s => s.error ? `<tr><td colspan="5" style="color:var(--muted);font-size:11px;padding:3px 0">${s.sym}: ${s.error}</td></tr>` :
+      ${sigs.map(s => s.error ? `<tr><td colspan="6" style="color:var(--muted);font-size:11px;padding:3px 0">${s.sym}: ${s.error}</td></tr>` :
         `<tr style="border-top:1px solid var(--border)">
           <td style="padding:5px 8px 5px 0;font-weight:600">${s.sym}</td>
           <td style="text-align:right;padding:5px 8px;color:${s.momentum>=0?'#34d399':'#f87171'}">${fmtPct(s.momentum)}</td>
@@ -21550,6 +21673,7 @@ function _analyticsRenderTSMOM(d) {
             <span style="font-weight:700;font-size:11px;color:${dirColor[s.direction]}">${s.direction}</span>
           </td>
           <td style="text-align:right;padding:5px 8px;font-weight:600">${s.pos_size?.toFixed(3)}×</td>
+          <td style="padding:5px 8px">${confBar(s.confidence)}</td>
         </tr>`
       ).join('')}
       </tbody>

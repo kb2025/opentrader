@@ -4,7 +4,7 @@ Walk-forward trained RandomForest + GradientBoosting + Ridge models that
 produce a directional confidence score from OHLCV features. Blended with
 the rule-based scorer output as a weighted composite before LLM refinement.
 
-Feature set (21):
+Feature set (22):
   ret_5, ret_10, ret_20          — price momentum at 3 short lookbacks
   ret_21, ret_63, ret_126,
   ret_252                        — 1-month, 1-quarter, 6-month, 1-year returns
@@ -20,6 +20,7 @@ Feature set (21):
   vol_momentum                   — volume × price change (force index proxy)
   atr_pct                        — ATR(14) / price (volatility proxy)
   candle_body                    — (close-open)/(high-low) candle shape
+  bid_ask_proxy                  — (close-low)/(high-low) buying pressure proxy
 
 Walk-forward:
   Fetch 2 years daily OHLCV → engineer features → create binary labels
@@ -128,6 +129,10 @@ def _engineer_features(df: "pd.DataFrame") -> "pd.DataFrame":
     # Candle body direction
     hl_safe      = (high - low).replace(0, float("nan"))
     f["candle_body"] = (close - open_) / hl_safe
+
+    # Bid/ask proxy: buying pressure = (close - low) / (high - low)
+    # Approximates where price closed within the bar's range (1=full buying, 0=full selling)
+    f["bid_ask_proxy"] = (close - low) / hl_safe
 
     return f
 

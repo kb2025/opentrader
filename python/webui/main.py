@@ -16416,6 +16416,18 @@ async def get_market_breadth(token: str = ""):
     return result
 
 
+def _compute_signal_confidence(strength: float, speed: float, proximity: float) -> float:
+    """
+    Three-factor weighted confidence score used across signal types.
+    strength×0.40 + speed×0.35 + proximity×0.25 → clamped to [0, 1].
+    """
+    return round(min(1.0, max(0.0,
+        float(strength)  * 0.40 +
+        float(speed)     * 0.35 +
+        float(proximity) * 0.25,
+    )), 3)
+
+
 @app.get("/api/analytics/tsmom")
 async def analytics_tsmom(mode: str = "live", token: str = ""):
     """
@@ -16496,13 +16508,22 @@ async def analytics_tsmom(mode: str = "live", token: str = ""):
 
             pos_size = signal * min(2.0, TARGET_VOL / vol_ann) if vol_ann > 0 else 0.0
 
+            # Signal confidence: strength from momentum magnitude, speed from
+            # distance above flat threshold, proximity neutral (no price context here)
+            mom_abs     = abs(mom * 100)
+            strength    = min(1.0, mom_abs / 30.0)     # 30% momentum = full strength
+            speed       = min(1.0, max(0.0, (mom_abs - FLAT_THRESHOLD * 100) / 10.0))
+            proximity   = abs(pos_size) / 2.0 if vol_ann > 0 else 0.5
+            confidence  = _compute_signal_confidence(strength, speed, min(1.0, proximity))
+
             return {
-                "sym":       sym,
-                "momentum":  round(mom * 100, 2),
-                "vol_ann":   round(vol_ann * 100, 2),
-                "signal":    signal,
-                "pos_size":  round(pos_size, 3),
-                "direction": "LONG" if signal > 0 else "SHORT" if signal < 0 else "FLAT",
+                "sym":        sym,
+                "momentum":   round(mom * 100, 2),
+                "vol_ann":    round(vol_ann * 100, 2),
+                "signal":     signal,
+                "pos_size":   round(pos_size, 3),
+                "direction":  "LONG" if signal > 0 else "SHORT" if signal < 0 else "FLAT",
+                "confidence": confidence,
             }
         except Exception as e:
             return {"sym": sym, "error": str(e)[:60]}
@@ -16516,6 +16537,196 @@ async def analytics_tsmom(mode: str = "live", token: str = ""):
     if _r:
         await _r.setex(cache_key, 1800, json.dumps(result))
     return result
+
+
+@app.get("/api/signals/imbalance")
+async def signals_imbalance(mode: str = "live", token: str = ""):
+    """
+    Bid/ask size imbalance for current portfolio holdings (stocks/options only).
+    Fetches Polygon quote snapshot per ticker and computes bid_size/(bid_size+ask_size).
+    >0.60 = bullish, <0.40 = bearish, else neutral.
+    Cached 5 min.
+    """
+    check_token(token)
+    cache_key = f"signals:imbalance:{mode}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    if not DB_URL:
+        return {"error": "no db"}
+
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        "SELECT DISTINCT symbol FROM positions WHERE mode=$1 AND qty>0",
+        mode,
+    )
+    tickers = [r["symbol"] for r in rows]
+    if not tickers:
+        return {"signals": [], "mode": mode}
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {"error": "no api key"}
+
+    import aiohttp as _ah
+
+    async def _fetch_imbalance(sym: str) -> dict:
+        url = (
+            f"https://api.polygon.io/v2/last/nbbo/{sym}"
+            f"?apiKey={api_key}"
+        )
+        try:
+            async with _ah.ClientSession() as sess:
+                async with sess.get(url, timeout=_ah.ClientTimeout(total=8)) as resp:
+                    if resp.status != 200:
+                        return {"sym": sym, "error": "no quote"}
+                    d = await resp.json()
+            res = d.get("results") or {}
+            bid_size = float(res.get("bs", res.get("bid_size", 0)) or 0)
+            ask_size = float(res.get("as", res.get("ask_size", 0)) or 0)
+            bid      = float(res.get("b", res.get("bid", 0)) or 0)
+            ask      = float(res.get("a", res.get("ask", 0)) or 0)
+            total    = bid_size + ask_size
+            if total <= 0:
+                return {"sym": sym, "error": "no size data"}
+            ratio     = bid_size / total
+            direction = "bullish" if ratio > 0.60 else "bearish" if ratio < 0.40 else "neutral"
+            spread    = round(ask - bid, 4) if bid > 0 and ask > 0 else None
+            # Confidence: ratio imbalance × volume magnitude × spread tightness
+            strength  = min(1.0, abs(ratio - 0.5) * 4)   # 0.75 ratio → strength=1
+            speed     = min(1.0, total / 500.0)           # 500+ lots = full speed
+            proximity = min(1.0, 1.0 / (1.0 + spread / bid)) if spread and bid > 0 else 0.5
+            confidence = _compute_signal_confidence(strength, speed, proximity)
+            return {
+                "sym":        sym,
+                "bid_size":   int(bid_size),
+                "ask_size":   int(ask_size),
+                "ratio":      round(ratio, 3),
+                "bid":        bid,
+                "ask":        ask,
+                "spread":     spread,
+                "direction":  direction,
+                "confidence": confidence,
+            }
+        except Exception as e:
+            return {"sym": sym, "error": str(e)[:50]}
+
+    raw = await asyncio.gather(*[_fetch_imbalance(t) for t in tickers])
+    signals = sorted(
+        [r for r in raw if not r.get("error")],
+        key=lambda x: abs(x.get("ratio", 0.5) - 0.5),
+        reverse=True,
+    )
+    errors = [r for r in raw if r.get("error")]
+
+    result = {"signals": signals, "errors": errors, "mode": mode}
+    if _r and signals:
+        await _r.setex(cache_key, 300, json.dumps(result))
+    return result
+
+
+@app.get("/api/signals/recent")
+async def signals_recent(limit: int = 50, token: str = ""):
+    """
+    Combined signal timeline: last N signals across all sources.
+    Sources: ML predictor (Redis stream), OI wall alerts (DB signals table),
+    options ATR alerts (DB option_trade_log), TSMOM (computed on demand).
+    Returns newest-first list with type, ticker, direction, confidence, ts.
+    """
+    check_token(token)
+    if limit > 200:
+        limit = 200
+
+    results = []
+
+    # ── 1. DB signals table (oi_wall, imbalance, etc.) ────────────────────────
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            rows = await pool.fetch(
+                """SELECT ts, source, ticker, direction, confidence, payload
+                   FROM signals
+                   ORDER BY ts DESC
+                   LIMIT $1""",
+                limit,
+            )
+            for r in rows:
+                payload = {}
+                try:
+                    payload = json.loads(r["payload"]) if r["payload"] else {}
+                except Exception:
+                    pass
+                results.append({
+                    "ts":         r["ts"].isoformat() if r["ts"] else None,
+                    "source":     r["source"],
+                    "ticker":     r["ticker"],
+                    "direction":  r["direction"],
+                    "confidence": float(r["confidence"]) if r["confidence"] is not None else None,
+                    "payload":    payload,
+                })
+        except Exception:
+            pass
+
+    # ── 2. Redis predictor signals stream ─────────────────────────────────────
+    try:
+        redis = await get_redis()
+        entries = await redis.xrevrange(STREAMS["signals"], "+", "-", count=limit)
+        for _id, fields in entries:
+            try:
+                ticker = (fields.get(b"ticker") or fields.get("ticker") or b"").decode() if isinstance(fields.get(b"ticker") or fields.get("ticker"), bytes) else str(fields.get(b"ticker") or fields.get("ticker") or "")
+                direction = (fields.get(b"direction") or fields.get("direction") or b"").decode() if isinstance(fields.get(b"direction") or fields.get("direction"), bytes) else str(fields.get(b"direction") or fields.get("direction") or "")
+                conf_raw = fields.get(b"confidence") or fields.get("confidence")
+                conf = float(conf_raw) if conf_raw else None
+                # Parse ts from stream ID (milliseconds)
+                ts_ms = int(str(_id.decode() if isinstance(_id, bytes) else _id).split("-")[0])
+                ts_str = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).isoformat()
+                if ticker:
+                    results.append({
+                        "ts":         ts_str,
+                        "source":     "ml_predictor",
+                        "ticker":     ticker,
+                        "direction":  direction,
+                        "confidence": conf,
+                        "payload":    {},
+                    })
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # ── 3. Recent options ATR alerts ───────────────────────────────────────────
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            alert_rows = await pool.fetch(
+                """SELECT ts, underlying as ticker, event_type, notes
+                   FROM option_trade_log
+                   WHERE event_type LIKE 'alert_%'
+                   ORDER BY ts DESC
+                   LIMIT $1""",
+                min(20, limit),
+            )
+            for r in alert_rows:
+                direction = "bearish" if "emergency" in r["event_type"] or "exit" in r["event_type"] else "bullish"
+                results.append({
+                    "ts":         r["ts"].isoformat() if r["ts"] else None,
+                    "source":     "options_monitor",
+                    "ticker":     r["ticker"],
+                    "direction":  direction,
+                    "confidence": None,
+                    "payload":    {"event": r["event_type"], "notes": r["notes"]},
+                })
+        except Exception:
+            pass
+
+    # Sort combined results by ts descending, return top N
+    results.sort(key=lambda x: x.get("ts") or "", reverse=True)
+    return {"signals": results[:limit], "count": len(results[:limit])}
 
 
 # ── Serve frontend ────────────────────────────────────────────────────────────

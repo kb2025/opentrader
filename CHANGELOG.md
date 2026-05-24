@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.94] - 2026-05-24
+
+### Added — AI-Trading-Alert-Bot features (items 1, 2, 3, 5)
+
+- **Options OI Wall Detector** (Item 1): `OptionsMonitor._scan_oi_walls()` scans every active underlying's Polygon options chain each scan cycle; identifies strikes with ≥3,000 OI; fires a Redis alert and writes a DB signal when any wall drops ≥40% between scans; confidence = oi_size_pct×0.40 + drop_speed×0.35 + price_proximity×0.25
+- **Bid/Ask Imbalance Signal** (Item 2): Added `bid_ask_proxy` feature (22nd ML feature) to `_engineer_features()` — `(close-low)/(high-low)` buying pressure proxy derived from OHLCV; new `/api/signals/imbalance` endpoint fetches Polygon NBBO quote per holding, computes `bid_size/(bid_size+ask_size)`, classifies >0.60 bullish / <0.40 bearish / else neutral, 5-min cache
+- **Signal Confidence Scorer** (Item 3): `_compute_signal_confidence(strength, speed, proximity)` helper using three-factor weighted score (0.40/0.35/0.25); wired into TSMOM signals and bid/ask imbalance; TSMOM table gains a colour-coded confidence bar column (green ≥70%, amber ≥45%, red otherwise)
+- **Signal Timeline Panel** (Item 5): `/api/signals/recent` endpoint merges DB `signals` table (OI wall, etc.), Redis predictor stream, and recent options ATR alerts into a unified newest-first list; Platform Dashboard now shows "Signal Timeline" card with source badge, direction arrow, confidence bar, and relative timestamp; stocks and options only — no crypto
+
 ## [3.7.93] - 2026-05-24
 
 ### Added — mini-bloomberg-terminal features (6 items)
