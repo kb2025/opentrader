@@ -518,6 +518,47 @@ def _binomial_american_price(S: float, K: float, T: float, sigma: float,
         return None
 
 
+def _binomial_greeks(S: float, K: float, T: float, sigma: float,
+                     r: float = 0.045, option_type: str = "call",
+                     q: float = 0.0, steps: int = 50) -> dict:
+    """
+    Finite-difference Greeks using the American CRR binomial tree.
+    delta/gamma/theta/vega/rho are computed via central differences — more accurate
+    than closed-form B-S for American options that carry early-exercise premium.
+    volga/vanna/charm/pop are taken from the B-S analytical result (negligible
+    early-exercise correction for these higher-order Greeks).
+    """
+    out = _bs_greeks(S, K, T, sigma, r, option_type, q)
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return out
+    try:
+        h  = S * 0.01            # ±1% spot shift for delta/gamma
+        dv = 0.001               # ±0.1% vol shift for vega
+        dr = 0.0001              # ±0.01% rate shift for rho
+        dt = 1.0 / 365.0         # 1 calendar day for theta
+
+        def _p(s=S, t=T, v=sigma, ri=r):
+            return _binomial_american_price(s, K, max(t, 1e-4), v, ri, option_type, q, steps) or 0.0
+
+        p0   = _p()
+        p_su = _p(s=S + h)
+        p_sd = _p(s=S - h)
+        p_t  = _p(t=T - dt)     # price 1 day closer to expiry
+        p_vu = _p(v=sigma + dv)
+        p_vd = _p(v=max(sigma - dv, 0.001))
+        p_ru = _p(ri=r + dr)
+        p_rd = _p(ri=max(r - dr, 0.0))
+
+        out["delta"] = round((p_su - p_sd) / (2.0 * h), 4)
+        out["gamma"] = round((p_su - 2.0 * p0 + p_sd) / (h ** 2), 6)
+        out["theta"] = round(p_t - p0, 4)               # Δ price per calendar day (negative = decay)
+        out["vega"]  = round((p_vu - p_vd) / (2.0 * dv) * 0.01, 4)  # per 1% vol
+        out["rho"]   = round((p_ru - p_rd) / (2.0 * dr) * 0.01, 4)  # per 1% rate
+    except Exception:
+        pass
+    return out
+
+
 async def _compute_option_mark(
     broker_price: float,
     contract_symbol: str,
@@ -693,8 +734,8 @@ async def _fetch_option_chain_details(
             iv = float(snap.get("implied_volatility") or 0)
             if iv > 0:
                 T = max((exp_d - date.today()).days, 1) / 365.0
-                g = _bs_greeks(current_underlying_price, contract_strike, T, iv,
-                               option_type=opt_type)
+                g = _binomial_greeks(current_underlying_price, contract_strike, T, iv,
+                                    option_type=opt_type)
                 delta, gamma, theta, vega = g["delta"], g["gamma"], g["theta"], g["vega"]
                 rho, volga = g["rho"], g["volga"]
                 vanna, charm, pop = g["vanna"], g["charm"], g["pop"]

@@ -19492,6 +19492,72 @@ function _renderChainAnalytics(el, d) {
         </div>
       </div>
 
+      ${(() => {
+        const hm = d.vol_heatmap;
+        if (!hm) return '';
+        // Flatten for color scale
+        const allC = hm.call_prices.flat().filter(v => v != null);
+        const minC = Math.min(...allC), maxC = Math.max(...allC, 0.01);
+        const allP = hm.put_prices.flat().filter(v => v != null);
+        const minP2 = Math.min(...allP), maxP2 = Math.max(...allP, 0.01);
+
+        // Color scale: deep blue → cyan → green → yellow → red
+        function hmColor(v, mn, mx) {
+          const stops = [[15,23,42],[30,100,180],[52,211,153],[251,191,36],[239,68,68]];
+          const range = mx - mn;
+          const t = range > 0 ? Math.max(0, Math.min(1, (v - mn) / range)) : 0.5;
+          const raw = t * (stops.length - 1);
+          const lo  = stops[Math.min(Math.floor(raw), stops.length - 1)];
+          const hi  = stops[Math.min(Math.ceil(raw),  stops.length - 1)];
+          const frac = raw - Math.floor(raw);
+          const r = Math.round(lo[0] + (hi[0]-lo[0])*frac);
+          const g = Math.round(lo[1] + (hi[1]-lo[1])*frac);
+          const b = Math.round(lo[2] + (hi[2]-lo[2])*frac);
+          const lum = 0.299*r + 0.587*g + 0.114*b;
+          return {bg: `rgb(${r},${g},${b})`, fg: lum > 128 ? '#0f172a' : '#f1f5f9'};
+        }
+
+        function buildTable(grid, mn, mx, title) {
+          const dte = Math.round(hm.T_years * 365);
+          let hdr = `<th style="font-size:9px;padding:2px 5px;color:var(--muted);text-align:left;white-space:nowrap">σ↓ / S→</th>`;
+          hm.spot_axis.forEach(s => {
+            const isCurrent = Math.abs(s - spot) === Math.min(...hm.spot_axis.map(x => Math.abs(x - spot)));
+            hdr += `<th style="font-size:8px;padding:2px 4px;text-align:center;color:${isCurrent?'#22d3ee':'var(--muted)'};font-weight:${isCurrent?700:400}">${s}</th>`;
+          });
+          let body = '';
+          grid.forEach((row, vi) => {
+            const vPct = hm.vol_axis[vi];
+            body += `<tr><td style="font-size:9px;padding:2px 6px;color:var(--muted);white-space:nowrap">${vPct}%</td>`;
+            row.forEach(price => {
+              const c = hmColor(price ?? 0, mn, mx);
+              body += `<td style="background:${c.bg};color:${c.fg};font-size:8.5px;padding:2px 4px;text-align:center;font-weight:600">${price != null ? price.toFixed(2) : '—'}</td>`;
+            });
+            body += '</tr>';
+          });
+          return `
+          <div>
+            <div style="font-size:9.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">
+              ${title} — K=${hm.atm_strike} · ${dte}d to expiry
+            </div>
+            <div style="overflow-x:auto;border-radius:4px;border:1px solid var(--border)">
+              <table style="border-collapse:collapse;min-width:100%">
+                <thead><tr>${hdr}</tr></thead>
+                <tbody>${body}</tbody>
+              </table>
+            </div>
+          </div>`;
+        }
+
+        return `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px">
+          ${buildTable(hm.call_prices, minC, maxC, 'Call Price Sensitivity')}
+          ${buildTable(hm.put_prices,  minP2, maxP2, 'Put Price Sensitivity')}
+        </div>
+        <div style="font-size:9px;color:var(--muted);margin-top:3px">
+          B-S European price across spot (±30%) × vol (5–150%) space · current spot column highlighted
+        </div>`;
+      })()}
+
     </div>`;
 }
 

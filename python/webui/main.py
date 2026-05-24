@@ -13699,6 +13699,53 @@ async def options_chain_analytics(ticker: str, expiry: str = "", token: str = ""
             except Exception:
                 pass
 
+        # ── Price sensitivity heatmap (B-S call price: spot × vol grid) ──────────
+        vol_heatmap = None
+        if spot > 0 and max_pain_strike:
+            try:
+                import math as _mh
+                _K = float(max_pain_strike)
+                _T = max(
+                    (
+                        __import__("datetime").date.fromisoformat(expiry) -
+                        __import__("datetime").date.today()
+                    ).days, 1
+                ) / 365.0 if expiry else 30 / 365.0
+
+                def _bs_hm(S, K, T, sig, r=0.045, opt="call"):
+                    if T <= 0 or sig <= 0 or S <= 0 or K <= 0:
+                        return round(max(0.0, S - K if opt == "call" else K - S), 2)
+                    try:
+                        st = _mh.sqrt(T)
+                        d1 = (_mh.log(S / K) + (r + 0.5 * sig ** 2) * T) / (sig * st)
+                        d2 = d1 - sig * st
+                        nc = lambda x: (1.0 + _mh.erf(x / _mh.sqrt(2.0))) / 2.0
+                        er = _mh.exp(-r * T)
+                        if opt == "call":
+                            return round(max(0.0, S * nc(d1) - K * er * nc(d2)), 2)
+                        return round(max(0.0, K * er * nc(-d2) - S * nc(-d1)), 2)
+                    except Exception:
+                        return None
+
+                _N_spot, _N_vol = 12, 10
+                spot_axis = [round(spot * (0.70 + i * 0.60 / (_N_spot - 1)), 2) for i in range(_N_spot)]
+                vol_axis  = [round(5 + i * 145 / (_N_vol - 1), 1) for i in range(_N_vol)]
+                call_grid, put_grid = [], []
+                for v_pct in vol_axis:
+                    sig = v_pct / 100.0
+                    call_grid.append([_bs_hm(s, _K, _T, sig, opt="call") for s in spot_axis])
+                    put_grid.append( [_bs_hm(s, _K, _T, sig, opt="put")  for s in spot_axis])
+                vol_heatmap = {
+                    "spot_axis":   spot_axis,
+                    "vol_axis":    vol_axis,
+                    "call_prices": call_grid,
+                    "put_prices":  put_grid,
+                    "atm_strike":  _K,
+                    "T_years":     round(_T, 4),
+                }
+            except Exception:
+                pass
+
         result = {
             "ticker":           sym,
             "expiry":           expiry,
@@ -13713,6 +13760,7 @@ async def options_chain_analytics(ticker: str, expiry: str = "", token: str = ""
             "iv_percentile":    iv_percentile,
             "iv_rank":          iv_rank,
             "iv_label":         iv_label,
+            "vol_heatmap":      vol_heatmap,
             "strikes":          rows,
             "available_expiries": sorted(all_expiries),
         }

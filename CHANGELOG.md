@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.6] - 2026-05-24
+
+### Added
+- **Finite-difference Greeks for American binomial tree**: `_binomial_greeks()` wraps `_binomial_american_price()` with central-difference FD to produce delta/gamma/theta/vega/rho that correctly capture early-exercise premium; volga/vanna/charm/pop remain B-S analytical (negligible early-exercise correction); used as the Greek source in `_fetch_option_chain_details()` replacing the B-S closed-form fallback for all equity options
+- **Price sensitivity heatmap in chain analytics**: `/api/options/chain-analytics` now returns `vol_heatmap` — a 12×10 grid of B-S call and put prices across spot (±30%) × vol (5–150%) space anchored at Max Pain strike and selected expiry; rendered in the chain analytics panel as two side-by-side color-coded tables (deep blue=cheap → red=expensive) with the current spot column highlighted
+
 ## [3.8.5] - 2026-05-24
 
 ### Added
