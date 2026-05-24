@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.7] - 2026-05-24
+
+### Added
+- **Iron Condor Builder on Options Dashboard**: new panel with four-column strike/premium inputs (Long Put wing · Short Put body · Short Call body · Long Call wing) + market params (spot, IV%, DTE); client-side SVG payoff diagram with green profit zone / red loss zone fills using SVG clipPath; break-even markers, per-leg vertical strike lines, current spot marker; stats row shows Max Profit, Max Loss (each wing separately), Net Credit, Break-even Lower/Upper, and risk-neutral PoP via B-S `N(-d2_sc) − N(-d2_sp)` formula
+
 ## [3.8.6] - 2026-05-24
 
 ### Added

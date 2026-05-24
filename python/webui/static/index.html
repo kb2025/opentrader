@@ -2587,6 +2587,79 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- Iron Condor Builder -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Iron Condor Builder</span>
+          <span style="font-size:11px;color:var(--muted)">Payoff diagram · Risk metrics · PoP</span>
+        </div>
+        <div class="card-body" style="padding:14px 16px">
+          <!-- Market params row -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,auto));gap:10px;margin-bottom:12px;align-items:end">
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Spot ($)</div>
+              <input id="ic-spot" type="number" step="0.01" placeholder="525.00"
+                style="width:100%;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px"/>
+            </div>
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">IV %</div>
+              <input id="ic-sigma" type="number" step="0.1" placeholder="18.0"
+                style="width:100%;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px"/>
+            </div>
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">DTE (days)</div>
+              <input id="ic-dte" type="number" step="1" placeholder="30"
+                style="width:100%;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px"/>
+            </div>
+          </div>
+          <!-- Strike + premium inputs — 4 columns -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+            <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
+              <div style="font-size:9px;font-weight:600;color:#fb923c;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Long Put (wing)</div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
+              <input id="ic-k-lp" type="number" step="0.5" placeholder="480"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+              <div style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Prem paid ($)</div>
+              <input id="ic-p-lp" type="number" step="0.01" placeholder="0.50"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+            </div>
+            <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
+              <div style="font-size:9px;font-weight:600;color:#f87171;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Short Put (body)</div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
+              <input id="ic-k-sp" type="number" step="0.5" placeholder="500"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+              <div style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Prem received ($)</div>
+              <input id="ic-p-sp" type="number" step="0.01" placeholder="2.00"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+            </div>
+            <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
+              <div style="font-size:9px;font-weight:600;color:#f87171;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Short Call (body)</div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
+              <input id="ic-k-sc" type="number" step="0.5" placeholder="550"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+              <div style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Prem received ($)</div>
+              <input id="ic-p-sc" type="number" step="0.01" placeholder="2.00"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+            </div>
+            <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
+              <div style="font-size:9px;font-weight:600;color:#fb923c;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Long Call (wing)</div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
+              <input id="ic-k-lc" type="number" step="0.5" placeholder="570"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+              <div style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Prem paid ($)</div>
+              <input id="ic-p-lc" type="number" step="0.01" placeholder="0.50"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <button onclick="_buildIronCondor()"
+              style="background:var(--blue);color:#fff;border:none;padding:7px 18px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Build Payoff</button>
+            <span style="font-size:10px;color:var(--muted)">K_lp &lt; K_sp &lt; Spot &lt; K_sc &lt; K_lc</span>
+          </div>
+          <div id="ic-result"></div>
+        </div>
+      </div>
+
     </div><!-- /page-trading-options -->
 
     <!-- ════════════════════════════════════════
@@ -24359,6 +24432,153 @@ function _mhCloseFullscreen() {
     overlay.remove();
   }
   if (_mhFsChart) { try { _mhFsChart.remove(); } catch(_){} _mhFsChart = null; }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Iron Condor Builder
+// ══════════════════════════════════════════════════════════════════════════════
+function _buildIronCondor() {
+  const gv  = id => parseFloat(document.getElementById(id).value) || 0;
+  const K_lp = gv('ic-k-lp'), K_sp = gv('ic-k-sp');
+  const K_sc = gv('ic-k-sc'), K_lc = gv('ic-k-lc');
+  const P_lp = gv('ic-p-lp'), P_sp = gv('ic-p-sp');
+  const P_sc = gv('ic-p-sc'), P_lc = gv('ic-p-lc');
+  const spot  = gv('ic-spot');
+  const sigma = gv('ic-sigma') / 100;
+  const T     = gv('ic-dte')   / 365;
+  const r     = 0.045;
+  const el    = document.getElementById('ic-result');
+
+  if (!K_lp || !K_sp || !K_sc || !K_lc) {
+    el.innerHTML = '<div style="color:#f87171;font-size:12px;margin-top:8px">Enter all four strikes to build payoff.</div>';
+    return;
+  }
+  if (K_lp >= K_sp || K_sp >= K_sc || K_sc >= K_lc) {
+    el.innerHTML = '<div style="color:#f87171;font-size:12px;margin-top:8px">Strike order must be: Long Put &lt; Short Put &lt; Short Call &lt; Long Call</div>';
+    return;
+  }
+
+  // Per-share credit; per-contract values multiply by 100
+  const net_ps    = P_sc + P_sp - P_lc - P_lp;  // net credit per share
+  const net       = net_ps * 100;                  // per contract
+  const beUpper   = K_sc + net_ps;
+  const beLower   = K_sp - net_ps;
+  const maxProfit = net;
+  const maxLossUpr = (K_lc - K_sc) * 100 - net;
+  const maxLossLwr = (K_sp - K_lp) * 100 - net;
+  const maxLoss    = Math.max(maxLossUpr, maxLossLwr);
+
+  // Risk-neutral PoP: prob spot stays between K_sp and K_sc
+  let pop = null;
+  if (spot > 0 && sigma > 0 && T > 0) {
+    const erfA = x => {
+      const s = x < 0 ? -1 : 1, ax = Math.abs(x);
+      const t = 1/(1+0.3275911*ax);
+      return s*(1-(0.254829592*t-0.284496736*t**2+1.421413741*t**3-1.453152027*t**4+1.061405429*t**5)*Math.exp(-ax*ax));
+    };
+    const ncdf = x => (1 + erfA(x/Math.sqrt(2)))/2;
+    const d2   = K => (Math.log(spot/K) + (r - 0.5*sigma**2)*T) / (sigma*Math.sqrt(T));
+    // P(K_sp ≤ S_T ≤ K_sc) = P(S_T ≤ K_sc) - P(S_T ≤ K_sp) = N(-d2_sc) - N(-d2_sp)
+    pop = Math.max(0, Math.min(1, ncdf(-d2(K_sc)) - ncdf(-d2(K_sp))));
+  }
+
+  // P&L curve — ×100 for per-contract dollars
+  const S_min = K_lp * 0.87, S_max = K_lc * 1.13;
+  const N_PTS = 300;
+  const pts = Array.from({length: N_PTS}, (_, i) => {
+    const S = S_min + (i/(N_PTS-1))*(S_max-S_min);
+    return {S, pnl: 100*(P_sc-Math.max(S-K_sc,0)+P_sp-Math.max(K_sp-S,0)+Math.max(S-K_lc,0)-P_lc+Math.max(K_lp-S,0)-P_lp)};
+  });
+
+  // SVG layout
+  const W = 860, H = 220, px = 52, py = 18;
+  const pnlVals = pts.map(p => p.pnl);
+  const rawMin  = Math.min(...pnlVals), rawMax = Math.max(...pnlVals);
+  const pad     = Math.max(Math.abs(rawMax), Math.abs(rawMin)) * 0.12;
+  const pnlMin  = rawMin - pad, pnlMax = rawMax + pad;
+  const pnlRng  = pnlMax - pnlMin || 1;
+  const xS      = S => +(px + (S-S_min)/(S_max-S_min)*(W-px*2)).toFixed(1);
+  const yS      = v => +(py + (1-(v-pnlMin)/pnlRng)*(H-py*2)).toFixed(1);
+  const zeroY   = yS(0);
+
+  // Paths
+  const ptStr    = pts.map((p,i) => `${i===0?'M':'L'}${xS(p.S)},${yS(p.pnl)}`).join(' ');
+  const closedPath = `${ptStr} L${xS(S_max)},${zeroY} L${xS(S_min)},${zeroY} Z`;
+
+  // Strike annotations
+  const legDefs = [
+    {k: K_lp, label: `LP $${K_lp}`, color: '#fb923c'},
+    {k: K_sp, label: `SP $${K_sp}`, color: '#f87171'},
+    {k: K_sc, label: `SC $${K_sc}`, color: '#f87171'},
+    {k: K_lc, label: `LC $${K_lc}`, color: '#fb923c'},
+  ];
+  const vLines = legDefs.map(({k, label, color}) => {
+    const x = xS(k);
+    return `<line x1="${x}" y1="${py}" x2="${x}" y2="${H-py}" stroke="${color}" stroke-width="1.1" stroke-dasharray="4,3" opacity="0.75"/>
+            <text x="${x}" y="${py-4}" font-size="8" fill="${color}" text-anchor="middle">${label}</text>`;
+  }).join('');
+
+  // Break-even markers
+  const beLines = [beLower, beUpper].filter(be => be > S_min && be < S_max).map(be => {
+    const x = xS(be);
+    return `<line x1="${x}" y1="${zeroY-8}" x2="${x}" y2="${zeroY+8}" stroke="#fbbf24" stroke-width="1.5"/>
+            <text x="${x}" y="${zeroY+17}" font-size="7" fill="#fbbf24" text-anchor="middle">BE $${be.toFixed(2)}</text>`;
+  }).join('');
+
+  // Spot marker
+  const spotSvg = (spot > S_min && spot < S_max)
+    ? `<line x1="${xS(spot)}" y1="${py}" x2="${xS(spot)}" y2="${H-py}" stroke="#94a3b8" stroke-width="0.9"/>
+       <text x="${xS(spot)}" y="${H-3}" font-size="7" fill="#94a3b8" text-anchor="middle">S $${spot.toFixed(2)}</text>`
+    : '';
+
+  // Max profit / loss lines
+  const mpy = yS(maxProfit), mly = yS(-maxLoss);
+  const horizLines = `
+    <line x1="${px}" y1="${mpy}" x2="${W-px}" y2="${mpy}" stroke="#34d399" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.6"/>
+    <text x="${W-px+3}" y="${mpy+4}" font-size="7" fill="#34d399">+$${maxProfit.toFixed(0)}</text>
+    <line x1="${px}" y1="${mly}" x2="${W-px}" y2="${mly}" stroke="#f87171" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.6"/>
+    <text x="${W-px+3}" y="${mly+4}" font-size="7" fill="#f87171">-$${maxLoss.toFixed(0)}</text>`;
+
+  // Y-axis labels
+  const yTickVals = [pnlMin, 0, pnlMax];
+  const yTicks = yTickVals.map(v =>
+    `<text x="${px-4}" y="${yS(v)+4}" font-size="8" fill="#64748b" text-anchor="end">$${v.toFixed(0)}</text>`
+  ).join('');
+
+  // X-axis labels
+  const xTicks = Array.from({length:7}, (_,i) => {
+    const S = S_min + i*(S_max-S_min)/6;
+    return `<text x="${xS(S)}" y="${H-2}" font-size="8" fill="#64748b" text-anchor="middle">${S.toFixed(0)}</text>`;
+  }).join('');
+
+  const uid = `ic${Date.now()}`;
+  const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:${H}px;background:var(--bg);border-radius:4px;border:1px solid var(--border);margin-top:4px">
+    <defs>
+      <clipPath id="${uid}p"><rect x="${px}" y="${py}" width="${W-px*2}" height="${Math.max(0, zeroY-py)}"/></clipPath>
+      <clipPath id="${uid}l"><rect x="${px}" y="${zeroY}" width="${W-px*2}" height="${Math.max(0, H-zeroY-py)}"/></clipPath>
+    </defs>
+    <path d="${closedPath}" fill="#34d399" fill-opacity="0.18" clip-path="url(#${uid}p)"/>
+    <path d="${closedPath}" fill="#f87171" fill-opacity="0.18" clip-path="url(#${uid}l)"/>
+    <line x1="${px}" y1="${zeroY}" x2="${W-px}" y2="${zeroY}" stroke="#475569" stroke-width="0.8"/>
+    ${vLines}${beLines}${spotSvg}${horizLines}
+    <path d="${ptStr}" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+    ${yTicks}${xTicks}
+  </svg>`;
+
+  // Stats row
+  const pct = v => `<strong style="color:${v>=0?'#34d399':'#f87171'}">${v>=0?'+':''}\$${v.toFixed(0)}</strong>`;
+  const stats = `<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:8px;font-size:12px;align-items:center">
+    <div><span style="color:var(--muted)">Max Profit:</span> ${pct(maxProfit)}</div>
+    <div><span style="color:var(--muted)">Max Loss (call wing):</span> ${pct(-maxLossUpr)}</div>
+    <div><span style="color:var(--muted)">Max Loss (put wing):</span> ${pct(-maxLossLwr)}</div>
+    <div><span style="color:var(--muted)">Net Credit:</span> ${pct(net)}</div>
+    <div><span style="color:var(--muted)">BE Lower:</span> <strong>$${beLower.toFixed(2)}</strong></div>
+    <div><span style="color:var(--muted)">BE Upper:</span> <strong>$${beUpper.toFixed(2)}</strong></div>
+    ${pop!=null?`<div><span style="color:var(--muted)">PoP (B-S):</span> <strong style="color:#22d3ee">${(pop*100).toFixed(1)}%</strong></div>`:''}
+  </div>`;
+
+  el.innerHTML = svg + stats;
 }
 
 
