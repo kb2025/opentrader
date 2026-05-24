@@ -9162,9 +9162,229 @@ async def delete_portfolio_target(ticker: str, token: str = ""):
     return {"ok": True}
 
 
+async def _detect_market_regime() -> dict:
+    """
+    Classify current SPX market regime (bull/bear) via GradientBoosting on 6yr weekly SPX.
+    Features: 4w/13w/26w/52w returns, 12w realized vol, RSI(14), cumulative return level.
+    Label: bull if SPX > +5% over next 13 weeks.  Cached 6h in Redis.
+    """
+    _r = None
+    try:
+        _r = await get_redis()
+        cached = await _r.get("market:ml_regime:latest")
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    try:
+        import numpy as np
+        from sklearn.ensemble import GradientBoostingClassifier
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.metrics import accuracy_score
+    except ImportError:
+        return {"regime": "unknown", "confidence": 0.5, "error": "sklearn unavailable"}
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {"regime": "unknown", "confidence": 0.5, "error": "no api key"}
+
+    try:
+        import aiohttp as _ah
+
+        # Fetch daily SPY bars (5yr) and aggregate to weekly closes
+        from_dt = (date.today() - timedelta(days=365 * 5 + 10)).isoformat()
+        url = (
+            f"https://api.polygon.io/v2/aggs/ticker/SPY/range/1/day"
+            f"/{from_dt}/{date.today().isoformat()}?adjusted=true&sort=asc&limit=1500&apiKey={api_key}"
+        )
+        async with _ah.ClientSession() as sess:
+            async with sess.get(url, timeout=_ah.ClientTimeout(total=20)) as resp:
+                if resp.status != 200:
+                    return {"regime": "unknown", "confidence": 0.5, "error": f"polygon {resp.status}"}
+                data = await resp.json()
+
+        daily_bars = data.get("results") or []
+        if len(daily_bars) < 200:
+            return {"regime": "unknown", "confidence": 0.5, "error": "insufficient data"}
+
+        # Aggregate to weekly (ISO week boundary — last bar in each week = weekly close)
+        from collections import OrderedDict as _OD
+        week_map: dict = _OD()
+        for b in daily_bars:
+            ts_ms   = b.get("t", 0)
+            wk_num  = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-W%W")
+            week_map[wk_num] = b   # last bar of the week wins
+
+        bars = list(week_map.values())
+        if len(bars) < 80:
+            return {"regime": "unknown", "confidence": 0.5, "error": "insufficient weekly bars"}
+
+        closes = np.array([float(b["c"]) for b in bars])
+        n      = len(closes)
+
+        def _wret(k):
+            r = np.full(n, np.nan)
+            r[k:] = closes[k:] / closes[:-k] - 1
+            return r
+
+        ret_4  = _wret(4)
+        ret_13 = _wret(13)
+        ret_26 = _wret(26)
+        ret_52 = _wret(52)
+
+        # 12-week realized volatility
+        vol_12 = np.full(n, np.nan)
+        for i in range(13, n):
+            wk = closes[i - 12:i] / closes[i - 13:i - 1] - 1
+            vol_12[i] = float(np.std(wk))
+
+        # Weekly RSI(14) via Wilder smoothing
+        delta  = np.diff(closes, prepend=closes[0])
+        gain   = np.maximum(delta, 0.0)
+        loss_v = np.maximum(-delta, 0.0)
+        rsi    = np.full(n, np.nan)
+        for i in range(14, n):
+            ag = float(np.mean(gain[i - 14:i]))
+            al = float(np.mean(loss_v[i - 14:i]))
+            rsi[i] = 100.0 if al == 0 else 100.0 - 100.0 / (1.0 + ag / al)
+
+        cum_ret = closes / closes[0] - 1  # level feature
+
+        # Label: 1=bull if +5% over next 13 weeks
+        fwd = np.full(n, np.nan)
+        fwd[:-13] = closes[13:] / closes[:-13] - 1
+        labels = (fwd > 0.05).astype(int)
+
+        X = np.column_stack([ret_4, ret_13, ret_26, ret_52, vol_12, rsi, cum_ret])
+
+        has_label = ~np.isnan(fwd)
+        has_label[-13:] = False
+        valid = ~np.any(np.isnan(X), axis=1) & has_label
+
+        X_cl = X[valid]
+        y_cl = labels[valid]
+
+        if len(X_cl) < 60:
+            return {"regime": "unknown", "confidence": 0.5, "error": "too few samples"}
+
+        n_tr   = int(len(X_cl) * 0.8)
+        scaler = StandardScaler()
+        X_tr_s  = scaler.fit_transform(X_cl[:n_tr])
+        X_val_s = scaler.transform(X_cl[n_tr:])
+
+        clf = GradientBoostingClassifier(n_estimators=80, learning_rate=0.05,
+                                          max_depth=3, subsample=0.8, random_state=42)
+        clf.fit(X_tr_s, y_cl[:n_tr])
+        val_acc = float(accuracy_score(y_cl[n_tr:], clf.predict(X_val_s)))
+
+        # Predict on most recent complete bar
+        last_x = X[-1:].copy()
+        if np.any(np.isnan(last_x)):
+            for idx in range(n - 1, 0, -1):
+                last_x = X[idx:idx + 1]
+                if not np.any(np.isnan(last_x)):
+                    break
+        p_bull     = float(clf.predict_proba(scaler.transform(last_x))[0, 1])
+        regime     = "bull" if p_bull >= 0.5 else "bear"
+        confidence = p_bull if regime == "bull" else 1.0 - p_bull
+
+        # History: last 52 weeks classified
+        valid_idxs = np.where(valid)[0]
+        history    = []
+        for vi in valid_idxs[-52:]:
+            xh = X[vi:vi + 1]
+            if np.any(np.isnan(xh)):
+                continue
+            pb    = float(clf.predict_proba(scaler.transform(xh))[0, 1])
+            ts    = bars[vi].get("t", 0)
+            dt_s  = date.fromtimestamp(ts / 1000).isoformat() if ts else ""
+            history.append({"date": dt_s, "p_bull": round(pb, 3),
+                             "regime": "bull" if pb >= 0.5 else "bear"})
+
+        result = {
+            "regime":       regime,
+            "confidence":   round(confidence, 3),
+            "p_bull":       round(p_bull, 3),
+            "val_accuracy": round(val_acc, 3),
+            "history":      history,
+            "features": {
+                "ret_4w":  round(float(ret_4[-1]),  4),
+                "ret_13w": round(float(ret_13[-1]), 4),
+                "ret_26w": round(float(ret_26[-1]), 4),
+                "ret_52w": round(float(ret_52[-1]), 4),
+                "vol_12w": round(float(vol_12[-1]), 4),
+                "rsi_14":  round(float(rsi[-1]),    2),
+            },
+        }
+        if _r:
+            await _r.setex("market:ml_regime:latest", 21600, json.dumps(result))
+        return result
+
+    except Exception as e:
+        log.warning("market_regime.error", error=str(e))
+        return {"regime": "unknown", "confidence": 0.5, "error": str(e)}
+
+
+@app.get("/api/retirement/glidepath")
+async def retirement_glidepath(
+    current_age: int = 35,
+    retirement_age: int = 65,
+    style: str = "moderate",
+    token: str = "",
+):
+    """
+    Age-based equity/bond glidepath from current_age through retirement_age + 20 years.
+
+    style:
+      aggressive   — equity = 120 − age (min 15%, max 95%)
+      moderate     — equity = 110 − age (min 15%, max 90%)
+      conservative — equity = 100 − age (min 15%, max 80%)
+    """
+    check_token(token)
+    current_age    = max(18, min(80, int(current_age)))
+    retirement_age = max(current_age + 1, min(90, int(retirement_age)))
+    style          = style.lower() if style.lower() in ("aggressive", "moderate", "conservative") else "moderate"
+    base           = {"aggressive": 120, "moderate": 110, "conservative": 100}[style]
+    max_eq         = {"aggressive": 95,  "moderate": 90,  "conservative": 80}[style]
+    end_age        = min(100, retirement_age + 20)
+
+    path = []
+    for age in range(current_age, end_age + 1):
+        equity_pct = max(15, min(max_eq, base - age))
+        path.append({
+            "age":        age,
+            "year":       age - current_age,
+            "equity_pct": equity_pct,
+            "bond_pct":   100 - equity_pct,
+            "retired":    age >= retirement_age,
+        })
+
+    return {
+        "current_age":    current_age,
+        "retirement_age": retirement_age,
+        "style":          style,
+        "path":           path,
+    }
+
+
 @app.get("/api/dividends/monte-carlo")
-async def div_monte_carlo(token: str = ""):
-    """5-year income simulation — 1000 paths, returns p5/p25/p50/p75/p95 per year."""
+async def div_monte_carlo(
+    token: str = "",
+    years: int = 10,
+    threshold: float = 0.0,
+    regime_aware: bool = False,
+):
+    """
+    Income simulation — 1,000 paths, returns p5/p25/p50/p75/p95 per year
+    plus shortfall / ruin-probability metrics (Item 1 — Target Date Fund pattern).
+
+    Parameters
+    ----------
+    years        : projection horizon (default 10, max 30)
+    threshold    : annual income floor below which a path counts as "shortfall"
+    regime_aware : when True, adjust mu/sigma based on ML market-regime classifier
+    """
     check_token(token)
     if not DB_URL:
         return {"error": "no db"}
@@ -9172,6 +9392,7 @@ async def div_monte_carlo(token: str = ""):
         import numpy as np
     except ImportError:
         return {"error": "numpy not available"}
+    years = max(1, min(int(years), 30))
     try:
         pool = await _get_db_pool()
         rows = await pool.fetch("""
@@ -9203,25 +9424,94 @@ async def div_monte_carlo(token: str = ""):
         if current_annual <= 0:
             return {"error": "no income history"}
 
-        arr = np.array(growth_rates) if growth_rates else np.array([0.05])
-        mu = float(np.mean(arr))
+        arr   = np.array(growth_rates) if growth_rates else np.array([0.05])
+        mu    = float(np.mean(arr))
         sigma = float(np.std(arr)) if len(arr) > 1 else 0.12
-        mu = max(-0.20, min(0.25, mu))
+        mu    = max(-0.20, min(0.25, mu))
         sigma = max(0.01, min(0.40, sigma))
 
-        N_SIMS, N_YEARS = 1000, 5
-        rng = np.random.default_rng(42)
-        g = rng.normal(mu, sigma, size=(N_SIMS, N_YEARS))
-        cum = np.cumprod(1.0 + g, axis=1)
-        sims = current_annual * cum
+        # ── Regime-aware adjustment ───────────────────────────────────────────
+        regime_info: dict = {}
+        if regime_aware:
+            regime_info = await _detect_market_regime()
+            rg = regime_info.get("regime", "unknown")
+            if rg == "bull":
+                mu    = 0.5 * mu + 0.5 * 0.10   # blend toward bull baseline
+                sigma = sigma * 0.75             # lower volatility in bull
+            elif rg == "bear":
+                mu    = 0.5 * mu + 0.5 * (-0.12)  # blend toward bear baseline
+                sigma = sigma * 1.40               # higher volatility in bear
+            mu    = max(-0.30, min(0.35, mu))
+            sigma = max(0.01, min(0.60, sigma))
+
+        N_SIMS = 1_000
+        rng    = np.random.default_rng(42)
+        g      = rng.normal(mu, sigma, size=(N_SIMS, years))
+        cum    = np.cumprod(1.0 + g, axis=1)
+        sims   = current_annual * cum          # shape (N_SIMS, years)
+
+        # ── Shortfall / ruin probability (Target Date Fund pattern) ───────────
+        floor = float(threshold)
+
+        # Year-by-year shortfall probability
+        shortfall_by_year = [
+            round(float(np.mean(sims[:, yr] < floor)) * 100, 2)
+            for yr in range(years)
+        ]
+
+        # Ever-shortfall: path hits floor at least once across the horizon
+        ever_shortfall_pct = round(
+            float(np.mean(np.any(sims < floor, axis=1))) * 100, 2
+        )
+
+        # Terminal ruin (shortfall in the final year)
+        terminal_shortfall_pct = round(
+            float(np.mean(sims[:, -1] < floor)) * 100, 2
+        )
+
+        # Median years until first shortfall (only paths that ever shortfall)
+        shortfall_year_idx = np.argmax(sims < floor, axis=1)  # first year below floor
+        paths_that_fail    = shortfall_year_idx[np.any(sims < floor, axis=1)]
+        median_years_to_shortfall = (
+            round(float(np.median(paths_that_fail + 1)), 1)
+            if len(paths_that_fail) > 0 else None
+        )
+
+        # Safe withdrawal rate: highest constant annual draw that keeps
+        # shortfall < 5 % of paths (binary search over integer amounts)
+        if current_annual > 0:
+            lo, hi = 0.0, current_annual * 2.0
+            for _ in range(20):
+                mid  = (lo + hi) / 2.0
+                fail = float(np.mean(np.any(sims < mid, axis=1)))
+                if fail < 0.05:
+                    lo = mid
+                else:
+                    hi = mid
+            safe_floor_95 = round(lo, 2)
+        else:
+            safe_floor_95 = 0.0
+
         result: dict = {
-            "years": list(range(1, N_YEARS + 1)),
+            "years":          list(range(1, years + 1)),
             "current_annual": round(current_annual, 2),
-            "mu": round(mu, 4),
-            "sigma": round(sigma, 4),
+            "mu":             round(mu, 4),
+            "sigma":          round(sigma, 4),
+            "n_sims":         N_SIMS,
+            "floor":          floor,
+            "regime_aware":   regime_aware,
+            "regime":         regime_info.get("regime", "none") if regime_aware else "none",
+            "regime_confidence": regime_info.get("confidence", 0.0) if regime_aware else 0.0,
+            # percentile bands
+            **{f"p{pct}": [round(float(v), 2) for v in np.percentile(sims, pct, axis=0)]
+               for pct in [5, 25, 50, 75, 95]},
+            # shortfall metrics
+            "shortfall_by_year":       shortfall_by_year,
+            "ever_shortfall_pct":      ever_shortfall_pct,
+            "terminal_shortfall_pct":  terminal_shortfall_pct,
+            "median_years_to_shortfall": median_years_to_shortfall,
+            "safe_floor_95":           safe_floor_95,
         }
-        for pct in [5, 25, 50, 75, 95]:
-            result[f"p{pct}"] = [round(float(v), 2) for v in np.percentile(sims, pct, axis=0)]
         return result
     except Exception as e:
         log.warning("div.monte_carlo_error", error=str(e))
@@ -12175,6 +12465,24 @@ async def get_macro_regime(history: bool = False):
         },
         "source": "db",
     }
+
+
+@app.get("/api/market/ml-regime")
+async def get_ml_regime(token: str = "", bust: bool = False):
+    """
+    ML-based SPX bull/bear market regime classifier.
+    Trains GradientBoosting on 6yr weekly SPX with 7 features (4w/13w/26w/52w returns,
+    12w realized vol, RSI-14, cumulative level). Label: +5% in next 13 weeks = bull.
+    Cached 6h. Use bust=true to force re-training.
+    """
+    check_token(token)
+    if bust:
+        try:
+            _r = await get_redis()
+            await _r.delete("market:ml_regime:latest")
+        except Exception:
+            pass
+    return await _detect_market_regime()
 
 
 @app.get("/api/market/macro-news")

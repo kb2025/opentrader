@@ -2145,12 +2145,79 @@ select option{background:var(--surface2)}
       <!-- Monte Carlo Income Distribution -->
       <div class="card" style="margin-bottom:16px" id="div-mc-card">
         <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-mc-body');b.style.display=b.style.display==='none'?'block':'none'">
-          <span class="card-title">Income Distribution · 5-Year Monte Carlo</span>
+          <span class="card-title">Income Distribution · Monte Carlo</span>
           <span id="div-mc-subtitle" style="font-size:11px;color:var(--muted)">1,000 simulation paths</span>
         </div>
         <div id="div-mc-body" style="padding:16px 16px 8px">
+          <!-- Controls -->
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px">
+              Horizon
+              <select id="div-mc-years" onchange="_divMcReload()" style="background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:3px 7px;font-size:11px">
+                <option value="5">5 yr</option><option value="10" selected>10 yr</option>
+                <option value="15">15 yr</option><option value="20">20 yr</option><option value="30">30 yr</option>
+              </select>
+            </label>
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px">
+              Income floor $
+              <input id="div-mc-floor" type="number" min="0" step="500" value="0"
+                style="width:90px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:3px 7px;font-size:11px"
+                onchange="_divMcReload()" placeholder="0 = ruin">
+            </label>
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input id="div-mc-regime" type="checkbox" onchange="_divMcReload()" style="accent-color:var(--blue)">
+              Regime-aware
+            </label>
+            <span id="div-mc-regime-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px"></span>
+            <button class="btn btn-ghost btn-sm" onclick="_divMcReload()">↻ Recalculate</button>
+          </div>
+          <!-- Shortfall summary badges -->
+          <div id="div-mc-shortfall" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px"></div>
+          <!-- Simulation chart -->
           <svg id="div-mc-svg" viewBox="0 0 900 200" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;overflow:visible"></svg>
+          <!-- Shortfall probability chart -->
+          <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px">Shortfall Probability by Year</div>
+          <svg id="div-mc-shortfall-svg" viewBox="0 0 900 80" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;overflow:visible"></svg>
           <div id="div-mc-legend" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:11px;color:var(--muted)"></div>
+        </div>
+      </div>
+
+      <!-- Retirement Glidepath -->
+      <div class="card" style="margin-bottom:16px" id="div-glide-card">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('div-glide-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span class="card-title">Retirement Glidepath</span>
+          <span id="div-glide-subtitle" style="font-size:11px;color:var(--muted)">equity → bond allocation over time</span>
+        </div>
+        <div id="div-glide-body" style="padding:16px 16px 8px">
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px">
+              Current age
+              <input id="div-glide-age" type="number" min="18" max="80" value="35"
+                style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:3px 7px;font-size:11px"
+                onchange="_glideReload()">
+            </label>
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px">
+              Retirement age
+              <input id="div-glide-ret" type="number" min="40" max="90" value="65"
+                style="width:60px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:3px 7px;font-size:11px"
+                onchange="_glideReload()">
+            </label>
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px">
+              Style
+              <select id="div-glide-style" onchange="_glideReload()" style="background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:3px 7px;font-size:11px">
+                <option value="aggressive">Aggressive</option>
+                <option value="moderate" selected>Moderate</option>
+                <option value="conservative">Conservative</option>
+              </select>
+            </label>
+          </div>
+          <div id="div-glide-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--muted)"></div>
+          <svg id="div-glide-svg" viewBox="0 0 900 200" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;overflow:visible"></svg>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:6px;font-size:11px">
+            <span><span style="display:inline-block;width:12px;height:3px;background:#22d3ee;vertical-align:middle;margin-right:4px"></span>Equity</span>
+            <span><span style="display:inline-block;width:12px;height:3px;background:#a78bfa;vertical-align:middle;margin-right:4px"></span>Bonds</span>
+            <span style="color:var(--muted);font-size:10px;margin-left:8px">Dashed line = retirement date</span>
+          </div>
         </div>
       </div>
 
@@ -15090,6 +15157,7 @@ async function loadDividendPage(forceRefresh = false) {
     _divRenderHistory(history.records || []);   // must set _divHistoryRecords before filter
     _divApplyFilter();                           // renders bar, holdings, upcoming, pies
     _divRenderMonteCarlo(_divMonteCarlo);
+    _glideReload();
     _divRenderDiagnostics(acctStats, forecast);
     status.textContent = `Updated ${_fmtTime(new Date())}`;
     // Fetch sustainability scores in background (needs tickers from loaded holdings)
@@ -15820,15 +15888,28 @@ async function _divDeleteTarget(ticker) {
 }
 
 // ── Monte Carlo Fan Chart ─────────────────────────────────────────────────────
+async function _divMcReload() {
+  const years   = document.getElementById('div-mc-years')?.value || '10';
+  const floor   = document.getElementById('div-mc-floor')?.value || '0';
+  const regime  = document.getElementById('div-mc-regime')?.checked ? '1' : '0';
+  const tok     = getToken();
+  const mc      = await apiFetch(`/api/dividends/monte-carlo?years=${years}&threshold=${floor}&regime_aware=${regime}&token=${encodeURIComponent(tok)}`).catch(() => null);
+  _divRenderMonteCarlo(mc);
+}
+
 function _divRenderMonteCarlo(mc) {
-  const svg = document.getElementById('div-mc-svg');
-  const legend = document.getElementById('div-mc-legend');
+  const svg      = document.getElementById('div-mc-svg');
+  const sfSvg    = document.getElementById('div-mc-shortfall-svg');
+  const sfBadges = document.getElementById('div-mc-shortfall');
+  const legend   = document.getElementById('div-mc-legend');
   const subtitle = document.getElementById('div-mc-subtitle');
   if (!svg) return;
   svg.innerHTML = '';
+  if (sfSvg) sfSvg.innerHTML = '';
   if (!mc || !mc.p50) {
     svg.innerHTML = '<text x="450" y="100" text-anchor="middle" fill="var(--muted)" font-size="13">No dividend history data available for simulation</text>';
     if (legend) legend.innerHTML = '';
+    if (sfBadges) sfBadges.innerHTML = '';
     return;
   }
 
@@ -15842,65 +15923,50 @@ function _divRenderMonteCarlo(mc) {
     return el;
   };
 
-  const years = mc.years; // [1..5]
+  const years = mc.years;
+  const nYears = years.length;
   const allVals = [...mc.p5, ...mc.p95, mc.current_annual];
   const maxV = Math.max(...allVals) * 1.05;
   const minV = Math.max(0, Math.min(...allVals) * 0.95);
-
-  const xPts = [0, ...years]; // include year 0 = current
-  const allXVals = [mc.current_annual, ...mc.p50]; // year 0 anchor
-
-  const xScale = i => pl + (i / years.length) * iW;
+  const xScale = i => pl + (i / nYears) * iW;
   const yScale = v => pt + iH - ((v - minV) / (maxV - minV || 1)) * iH;
 
-  // Gridlines
-  const yTicks = 4;
-  for (let i=0; i<=yTicks; i++) {
-    const v = minV + (maxV - minV) * i / yTicks;
+  // Step X for labels — show every 2nd or 5th label when many years
+  const labelStep = nYears > 15 ? 5 : nYears > 8 ? 2 : 1;
+
+  // Gridlines + Y axis
+  for (let i=0; i<=4; i++) {
+    const v = minV + (maxV - minV) * i / 4;
     const y = yScale(v);
     svg.appendChild(mk('line', {x1:pl,y1:y,x2:W-pr,y2:y,stroke:'var(--border)',opacity:.4,'stroke-width':'0.5'}));
     svg.appendChild(mk('text', {x:pl-6,y:y+4,'text-anchor':'end',fill:'var(--muted)','font-size':'10'}, '$'+Math.round(v).toLocaleString()));
   }
-  // Year axis
   years.forEach((yr, i) => {
-    const x = xScale(i+1);
-    svg.appendChild(mk('text', {x,y:H-pb+16,'text-anchor':'middle',fill:'var(--muted)','font-size':'10'}, `Yr+${yr}`));
+    if ((i+1) % labelStep !== 0 && i !== nYears-1) return;
+    svg.appendChild(mk('text', {x:xScale(i+1),y:H-pb+16,'text-anchor':'middle',fill:'var(--muted)','font-size':'10'}, `Yr+${yr}`));
   });
 
-  // Build point arrays (including year-0 anchor at current_annual)
-  const pts = (arr) => {
-    const combined = [mc.current_annual, ...arr];
-    return combined.map((v,i) => `${xScale(i)},${yScale(v)}`).join(' ');
-  };
-  const ptsRev = (arr) => {
-    const combined = [mc.current_annual, ...arr];
-    return [...combined].reverse().map((v,i) => `${xScale(combined.length-1-i)},${yScale(v)}`).join(' ');
-  };
+  // Floor threshold line
+  if (mc.floor > 0 && mc.floor > minV && mc.floor < maxV) {
+    const fy = yScale(mc.floor);
+    svg.appendChild(mk('line', {x1:pl,y1:fy,x2:W-pr,y2:fy,stroke:'#f87171','stroke-width':'1','stroke-dasharray':'4,3'}));
+    svg.appendChild(mk('text', {x:W-pr+2,y:fy+4,'font-size':'9',fill:'#f87171'}, `$${Math.round(mc.floor/1000)}k floor`));
+  }
 
-  // p5–p95 outer band
-  svg.appendChild(mk('polygon', {
-    points: pts(mc.p5) + ' ' + ptsRev(mc.p95),
-    fill:'var(--blue)',opacity:'0.08'
-  }));
-  // p25–p75 inner band
-  svg.appendChild(mk('polygon', {
-    points: pts(mc.p25) + ' ' + ptsRev(mc.p75),
-    fill:'var(--blue)',opacity:'0.18'
-  }));
-  // p50 median line
-  const medPts = [mc.current_annual, ...mc.p50].map((v,i)=>`${xScale(i)},${yScale(v)}`).join(' ');
-  svg.appendChild(mk('polyline', {
-    points: medPts, fill:'none', stroke:'var(--blue)', 'stroke-width':'2', 'stroke-linejoin':'round'
-  }));
-  // Year 0 dot (current)
+  const pts = arr => [mc.current_annual,...arr].map((v,i)=>`${xScale(i)},${yScale(v)}`).join(' ');
+  const ptsRev = arr => { const c=[mc.current_annual,...arr]; return [...c].reverse().map((v,i)=>`${xScale(c.length-1-i)},${yScale(v)}`).join(' '); };
+
+  svg.appendChild(mk('polygon', {points: pts(mc.p5)+' '+ptsRev(mc.p95), fill:'var(--blue)',opacity:'0.08'}));
+  svg.appendChild(mk('polygon', {points: pts(mc.p25)+' '+ptsRev(mc.p75), fill:'var(--blue)',opacity:'0.18'}));
+  const medPts = [mc.current_annual,...mc.p50].map((v,i)=>`${xScale(i)},${yScale(v)}`).join(' ');
+  svg.appendChild(mk('polyline', {points:medPts,fill:'none',stroke:'var(--blue)','stroke-width':'2','stroke-linejoin':'round'}));
   svg.appendChild(mk('circle', {cx:xScale(0),cy:yScale(mc.current_annual),r:'4',fill:'var(--blue)'}));
-  // Labels on median
+  // Sparse median labels
   mc.p50.forEach((v,i) => {
+    if ((i+1) % labelStep !== 0 && i !== nYears-1) return;
     svg.appendChild(mk('text', {x:xScale(i+1),y:yScale(v)-8,'text-anchor':'middle',fill:'var(--blue)','font-size':'10','font-weight':'600'},
       '$'+Math.round(v).toLocaleString()));
   });
-
-  // X axis label
   svg.appendChild(mk('text', {x:xScale(0),y:H-pb+16,'text-anchor':'middle',fill:'var(--muted)','font-size':'10'}, 'Now'));
 
   if (subtitle) {
@@ -15908,10 +15974,170 @@ function _divRenderMonteCarlo(mc) {
     const s = (mc.sigma*100).toFixed(1);
     subtitle.textContent = `1,000 paths · avg growth ${g>0?'+':''}${g}%/yr · σ=${s}% · current $${Math.round(mc.current_annual).toLocaleString()}/yr`;
   }
+
+  // ── Regime badge ──────────────────────────────────────────────────────────
+  const rgBadge = document.getElementById('div-mc-regime-badge');
+  if (rgBadge) {
+    if (mc.regime_aware && mc.regime && mc.regime !== 'none') {
+      const isBull = mc.regime === 'bull';
+      rgBadge.style.display = 'inline-block';
+      rgBadge.style.background = isBull ? '#064e3b' : '#450a0a';
+      rgBadge.style.color      = isBull ? '#34d399'  : '#f87171';
+      rgBadge.textContent = `${isBull ? '▲ BULL' : '▼ BEAR'} ${Math.round((mc.regime_confidence||0)*100)}%`;
+    } else {
+      rgBadge.style.display = 'none';
+    }
+  }
+
+  // ── Shortfall badges ────────────────────────────────────────────────────────
+  if (sfBadges && mc.ever_shortfall_pct != null) {
+    const riskColor = p => p < 5 ? '#34d399' : p < 20 ? '#f59e0b' : '#f87171';
+    const floorLabel = mc.floor > 0 ? `$${Math.round(mc.floor).toLocaleString()}/yr` : 'zero (ruin)';
+    const myttf = mc.median_years_to_shortfall != null ? `${mc.median_years_to_shortfall}y` : 'Never';
+    sfBadges.innerHTML = [
+      ['Ever below floor', `${mc.ever_shortfall_pct}%`, riskColor(mc.ever_shortfall_pct)],
+      ['Terminal year', `${mc.terminal_shortfall_pct}%`, riskColor(mc.terminal_shortfall_pct)],
+      ['Median yr to shortfall', myttf, mc.median_years_to_shortfall ? '#f59e0b' : '#34d399'],
+      ['Safe floor (95% paths)', `$${Math.round(mc.safe_floor_95).toLocaleString()}/yr`, '#22d3ee'],
+    ].map(([label, val, color]) =>
+      `<div style="background:var(--surface2,var(--surface));border-radius:8px;padding:7px 12px;text-align:center;min-width:120px">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:3px">${label}</div>
+        <div style="font-size:18px;font-weight:700;color:${color}">${val}</div>
+      </div>`
+    ).join('') + `<div style="font-size:10px;color:var(--muted);align-self:center">Floor: ${floorLabel}</div>`;
+  }
+
+  // ── Shortfall probability by year bar chart ─────────────────────────────────
+  if (sfSvg && mc.shortfall_by_year?.length) {
+    const sH=80, sPad=8, sBotPad=18;
+    const sfData = mc.shortfall_by_year;
+    const maxSF  = Math.max(...sfData, 1);
+    const bw     = Math.max(2, (W - pl - pr) / (sfData.length) - 2);
+    const sfNs   = 'http://www.w3.org/2000/svg';
+    const sfMk   = (tag,attrs,text) => { const e=document.createElementNS(sfNs,tag); Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v)); if(text!=null)e.textContent=text; return e; };
+    // Bg
+    sfSvg.appendChild(sfMk('rect',{x:0,y:0,width:W,height:sH,fill:'none'}));
+    // Zero line / top axis
+    sfSvg.appendChild(sfMk('line',{x1:pl,y1:sPad,x2:W-pr,y2:sPad,stroke:'var(--border)',opacity:.3,'stroke-width':'0.5'}));
+    // Reference lines at 5% and 20%
+    [5,20].forEach(ref => {
+      if (ref <= maxSF) {
+        const ry = sPad + (1 - ref/maxSF)*(sH - sPad - sBotPad);
+        sfSvg.appendChild(sfMk('line',{x1:pl,y1:ry,x2:W-pr,y2:ry,stroke:ref===5?'#34d399':'#f59e0b','stroke-width':'0.7','stroke-dasharray':'3,2'}));
+        sfSvg.appendChild(sfMk('text',{x:pl-3,y:ry+3,'text-anchor':'end','font-size':'7',fill:ref===5?'#34d399':'#f59e0b'},`${ref}%`));
+      }
+    });
+    sfData.forEach((p, i) => {
+      const x  = pl + (i / (sfData.length)) * (W - pl - pr) + bw*0.2;
+      const bH = (p / maxSF) * (sH - sPad - sBotPad);
+      const y  = sH - sBotPad - bH;
+      const col = p < 5 ? '#34d399' : p < 20 ? '#f59e0b' : '#f87171';
+      sfSvg.appendChild(sfMk('rect',{x:x.toFixed(1),y:y.toFixed(1),width:bw.toFixed(1),height:Math.max(0.5,bH).toFixed(1),fill:col,opacity:'0.8'}));
+      if ((i+1) % labelStep === 0 || i === sfData.length-1) {
+        sfSvg.appendChild(sfMk('text',{x:(x+bw/2).toFixed(1),y:sH-sBotPad+12,'text-anchor':'middle','font-size':'8',fill:'var(--muted)'},`Y${i+1}`));
+      }
+    });
+  }
+
   if (legend) legend.innerHTML =
     `<span style="color:var(--blue)">— Median</span>` +
     `<span style="background:color-mix(in srgb,var(--blue) 36%,transparent);padding:1px 8px;border-radius:3px">p25–p75</span>` +
-    `<span style="background:color-mix(in srgb,var(--blue) 15%,transparent);padding:1px 8px;border-radius:3px">p5–p95</span>`;
+    `<span style="background:color-mix(in srgb,var(--blue) 15%,transparent);padding:1px 8px;border-radius:3px">p5–p95</span>` +
+    (mc.floor > 0 ? `<span style="color:#f87171">╌ Income floor</span>` : '');
+}
+
+// ── Retirement Glidepath ──────────────────────────────────────────────────────
+async function _glideReload() {
+  const age   = document.getElementById('div-glide-age')?.value  || '35';
+  const ret   = document.getElementById('div-glide-ret')?.value  || '65';
+  const style = document.getElementById('div-glide-style')?.value || 'moderate';
+  const tok   = getToken();
+  const data  = await apiFetch(`/api/retirement/glidepath?current_age=${age}&retirement_age=${ret}&style=${style}&token=${encodeURIComponent(tok)}`).catch(() => null);
+  _glideRender(data);
+}
+
+function _glideRender(data) {
+  const svg  = document.getElementById('div-glide-svg');
+  const stat = document.getElementById('div-glide-stats');
+  const sub  = document.getElementById('div-glide-subtitle');
+  if (!svg) return;
+  svg.innerHTML = '';
+  if (!data?.path?.length) {
+    svg.innerHTML = '<text x="450" y="100" text-anchor="middle" fill="var(--muted)" font-size="13">No data</text>';
+    return;
+  }
+
+  const W=900, H=200, pt=20, pr=20, pb=36, pl=46;
+  const iW=W-pl-pr, iH=H-pt-pb;
+  const ns = 'http://www.w3.org/2000/svg';
+  const mk = (tag,attrs,text) => {
+    const el = document.createElementNS(ns,tag);
+    Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k,v));
+    if (text!=null) el.textContent=text;
+    return el;
+  };
+
+  const path = data.path;
+  const n    = path.length;
+  const xS   = i => pl + (i / (n-1)) * iW;
+  const yS   = v => pt + iH - (v / 100) * iH;
+
+  // Gridlines at 0, 25, 50, 75, 100%
+  [0,25,50,75,100].forEach(pct => {
+    const y = yS(pct);
+    svg.appendChild(mk('line', {x1:pl,y1:y,x2:W-pr,y2:y,stroke:'var(--border)',opacity:.3,'stroke-width':'0.5'}));
+    svg.appendChild(mk('text', {x:pl-4,y:y+4,'text-anchor':'end',fill:'var(--muted)','font-size':'9'}, `${pct}%`));
+  });
+
+  // Retirement date vertical dashed line
+  const retIdx = path.findIndex(p => p.retired);
+  if (retIdx >= 0) {
+    const rx = xS(retIdx);
+    svg.appendChild(mk('line', {x1:rx,y1:pt,x2:rx,y2:H-pb,stroke:'var(--muted)','stroke-width':'1','stroke-dasharray':'5,3',opacity:'0.6'}));
+    svg.appendChild(mk('text', {x:rx+3,y:pt+10,'font-size':'9',fill:'var(--muted)'}, `Retire ${data.retirement_age}`));
+  }
+
+  // Filled equity area
+  const eqTop = path.map((p,i) => `${xS(i)},${yS(p.equity_pct)}`).join(' ');
+  const eqBot = `${xS(n-1)},${yS(0)} ${xS(0)},${yS(0)}`;
+  svg.appendChild(mk('polygon', {points:`${eqTop} ${eqBot}`,fill:'#22d3ee',opacity:'0.18'}));
+
+  // Equity line
+  svg.appendChild(mk('polyline', {points:eqTop,fill:'none',stroke:'#22d3ee','stroke-width':'2','stroke-linejoin':'round'}));
+
+  // Bond fill (100% - equity%)
+  const bndBot = path.map((p,i) => `${xS(i)},${yS(0)}`).join(' ');
+  const bndTop = path.map((p,i) => `${xS(i)},${yS(p.bond_pct)}`).join(' ');
+  svg.appendChild(mk('polygon', {points:`${bndTop} ${bndBot}`,fill:'#a78bfa',opacity:'0.12'}));
+  svg.appendChild(mk('polyline', {points:bndTop,fill:'none',stroke:'#a78bfa','stroke-width':'1.5','stroke-dasharray':'5,3','stroke-linejoin':'round'}));
+
+  // X-axis labels every 5 years
+  path.forEach((p,i) => {
+    if (p.age % 5 !== 0) return;
+    svg.appendChild(mk('text', {x:xS(i),y:H-pb+14,'text-anchor':'middle',fill:'var(--muted)','font-size':'9'}, p.age));
+  });
+
+  // Equity % label at key points (current, retirement, end)
+  [0, retIdx, n-1].forEach(idx => {
+    if (idx < 0 || idx >= n) return;
+    const p = path[idx];
+    svg.appendChild(mk('text', {x:xS(idx)+(idx===0?4:idx===n-1?-4:0),y:yS(p.equity_pct)-6,
+      'text-anchor': idx===0?'start':idx===n-1?'end':'middle',
+      fill:'#22d3ee','font-size':'10','font-weight':'600'}, `${p.equity_pct}%`));
+  });
+
+  if (sub) sub.textContent = `${data.style} · age ${data.current_age} → ${data.retirement_age} → ${path[n-1].age}`;
+
+  if (stat) {
+    const now = path[0];
+    const atRet = retIdx >= 0 ? path[retIdx] : null;
+    const atEnd = path[n-1];
+    stat.innerHTML = [
+      `<span>Now (${now.age}): <b>${now.equity_pct}% eq / ${now.bond_pct}% bd</b></span>`,
+      atRet ? `<span>At retirement (${atRet.age}): <b>${atRet.equity_pct}% eq / ${atRet.bond_pct}% bd</b></span>` : '',
+      `<span>End (${atEnd.age}): <b>${atEnd.equity_pct}% eq / ${atEnd.bond_pct}% bd</b></span>`,
+    ].filter(Boolean).join('<span style="color:var(--border);margin:0 4px">|</span>');
+  }
 }
 
 // ── DRIP Compound Projection ──────────────────────────────────────────────────

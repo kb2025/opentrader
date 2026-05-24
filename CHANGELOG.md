@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.92] - 2026-05-24
+
+### Added
+- **Market Regime Classifier** (`/api/market/ml-regime`): GradientBoosting classifier trained on 5yr daily SPY (aggregated to weekly closes). Features: 4w/13w/26w/52w returns, 12w realized vol, RSI(14), cumulative level. Label: +5% over next 13 weeks = bull. 75% validation accuracy. Cached 6h.
+- **Retirement Glidepath** (`/api/retirement/glidepath`): Age-based equity→bond allocation from current age through retirement + 20 years. Three styles (aggressive: 120−age, moderate: 110−age, conservative: 100−age). New collapsible card on Dividend page with SVG filled-area chart, retirement-date dashed line, key allocation badges.
+- **Regime-aware Monte Carlo** (`regime_aware=true` on `/api/dividends/monte-carlo`): Calls ML regime classifier; in bull mode blends mu toward +10% / sigma × 0.75; in bear mode blends mu toward −12% / sigma × 1.40. Toggle checkbox on Monte Carlo card with bull/bear regime confidence badge.
+- Added `scikit-learn` and `numpy` to `requirements.webui.txt` (webui container)
+
 ## [3.7.91] - 2026-05-24
 
 ### Added
