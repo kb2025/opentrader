@@ -4,7 +4,7 @@ Walk-forward trained RandomForest + GradientBoosting + Ridge models that
 produce a directional confidence score from OHLCV features. Blended with
 the rule-based scorer output as a weighted composite before LLM refinement.
 
-Feature set (23):
+Feature set (24):
   ret_5, ret_10, ret_20          — price momentum at 3 short lookbacks
   ret_21, ret_63, ret_126,
   ret_252                        — 1-month, 1-quarter, 6-month, 1-year returns
@@ -19,6 +19,7 @@ Feature set (23):
   vol_trend                      — 5-day avg volume / 20-day avg volume
   vol_momentum                   — volume × price change (force index proxy)
   mfi_14                         — Money Flow Index(14): volume-weighted pressure oscillator
+  mfi_slope_2                    — 2-bar rate of change of MFI (momentum direction/confirmation)
   atr_pct                        — ATR(14) / price (volatility proxy)
   candle_body                    — (close-open)/(high-low) candle shape
   bid_ask_proxy                  — (close-low)/(high-low) buying pressure proxy
@@ -135,8 +136,10 @@ def _engineer_features(df: "pd.DataFrame") -> "pd.DataFrame":
     price_change      = close.pct_change(1)
     f["vol_momentum"] = (volume * price_change) / avg_vol20.replace(0, float("nan"))
 
-    # Money Flow Index: volume-weighted pressure oscillator (0–1 normalized)
-    f["mfi_14"] = _compute_mfi(close, high, low, volume, 14) / 100.0
+    # Money Flow Index: level + 2-bar slope (EA31337 crossover confirmation pattern)
+    _mfi_raw        = _compute_mfi(close, high, low, volume, 14)
+    f["mfi_14"]     = _mfi_raw / 100.0
+    f["mfi_slope_2"] = _mfi_raw.diff(2) / 100.0
 
     # ATR volatility
     hl_range    = high - low

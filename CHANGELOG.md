@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.1] - 2026-05-24
+
+### Added
+- **MFI slope feature in ML predictor**: added `mfi_slope_2` as feature 24 — 2-bar rate of change of raw MFI normalized to 0–1 scale; captures whether volume pressure is building or fading (the confirmation signal used by EA31337's MFI strategy: `IsIncreasing(2)` / `IsDecreasing(2)`); combined with `mfi_14` the ensemble can learn crossover momentum without hardcoded thresholds
+
 ## [3.8.0] - 2026-05-24
 
 ### Added
