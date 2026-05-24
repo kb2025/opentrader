@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.96] - 2026-05-24
+
+### Added
+- **`shared/fred_client.py` — FRED service connector**: `FREDClient` class with rate limiting (120 req/min), exponential-backoff retries, and typed methods: `latest()`, `history()`, `series_info()`, `search()`, `release_dates()`, `bulk_latest()`, `macro_snapshot()`; 35 pre-defined series IDs in `FREDClient.SERIES` covering credit spreads, rates, inflation, employment, yield curve, and money supply; module-level `get_fred_client()` singleton
+- Macro regime scraper refactored to use `FREDClient.bulk_latest()` instead of inline HTTP; webui `/api/market/fred-macro` uses `get_fred_client()` when key is available, falls back to CSV otherwise
+
 ## [3.7.95] - 2026-05-24
 
 ### Added

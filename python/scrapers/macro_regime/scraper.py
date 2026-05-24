@@ -10,10 +10,11 @@ from datetime import date, timedelta
 
 import aiohttp
 
+from shared.fred_client import FREDClient
+
 log = logging.getLogger("scraper.macro_regime")
 
 MASSIVE_BASE = "https://api.massive.com"
-FRED_BASE    = "https://api.stlouisfed.org/fred/series/observations"
 
 MACRO_TICKERS = {
     "SPY":  "equity",
@@ -23,14 +24,6 @@ MACRO_TICKERS = {
     "UUP":  "dollar",    # USD index proxy ETF
     "VXX":  "volatility",
     "HYG":  "credit",
-}
-
-# FRED series for fundamental credit / stress data
-FRED_SERIES = {
-    "hy_oas":  "BAMLH0A0HYM2",   # US High Yield OAS (bps)
-    "ig_oas":  "BAMLC0A0CM",      # US IG Corporate OAS (bps)
-    "fsi":     "STLFSI2",         # St. Louis Financial Stress Index
-    "usrec":   "USREC",           # NBER Recession Indicator (0/1)
 }
 
 
@@ -51,33 +44,6 @@ async def _fetch_bars(session: aiohttp.ClientSession, api_key: str, ticker: str,
         log.warning("macro_regime.fetch_error", ticker=ticker, error=str(e))
         return []
 
-
-async def _fetch_fred(session: aiohttp.ClientSession, fred_key: str, series_id: str) -> float | None:
-    """Fetch the latest non-null observation for a FRED series."""
-    params = {
-        "series_id":  series_id,
-        "api_key":    fred_key,
-        "file_type":  "json",
-        "sort_order": "desc",
-        "limit":      "10",
-    }
-    try:
-        async with session.get(FRED_BASE, params=params,
-                               timeout=aiohttp.ClientTimeout(total=12)) as resp:
-            if resp.status != 200:
-                return None
-            data = await resp.json()
-        for obs in data.get("observations", []):
-            val = obs.get("value", ".")
-            if val not in (".", ""):
-                try:
-                    return float(val)
-                except ValueError:
-                    pass
-        return None
-    except Exception as e:
-        log.warning("macro_regime.fred_fetch_error", series=series_id, error=str(e))
-        return None
 
 
 def _sma(bars: list, period: int) -> float | None:
@@ -116,15 +82,29 @@ async def compute_macro_regime(
 ) -> dict:
     """Fetch macro data and return a regime snapshot dict."""
     bars = {}
-    fred_data: dict[str, float | None] = {k: None for k in FRED_SERIES}
+    fred_data: dict[str, float | None] = {"hy_oas": None, "ig_oas": None, "fsi": None, "usrec": None}
 
     async with aiohttp.ClientSession() as session:
         for ticker in MACRO_TICKERS:
             bars[ticker] = await _fetch_bars(session, api_key, ticker)
 
-        if fred_api_key:
-            for key, series_id in FRED_SERIES.items():
-                fred_data[key] = await _fetch_fred(session, fred_api_key, series_id)
+    if fred_api_key:
+        try:
+            fred = FREDClient(fred_api_key)
+            snapshot = await fred.bulk_latest(
+                FREDClient.SERIES["hy_oas"],
+                FREDClient.SERIES["ig_oas"],
+                FREDClient.SERIES["fsi"],
+                FREDClient.SERIES["usrec"],
+            )
+            fred_data = {
+                "hy_oas": snapshot.get(FREDClient.SERIES["hy_oas"]),
+                "ig_oas": snapshot.get(FREDClient.SERIES["ig_oas"]),
+                "fsi":    snapshot.get(FREDClient.SERIES["fsi"]),
+                "usrec":  snapshot.get(FREDClient.SERIES["usrec"]),
+            }
+        except Exception as e:
+            log.warning("macro_regime.fred_error", error=str(e))
 
     # Bull/bear signals
     bull = 0
