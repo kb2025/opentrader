@@ -329,6 +329,7 @@ KNOWN_SECRETS = [
     ("---", "Market Data"),
     ("MASSIVE_API_KEY",            "Massive — API Key"),
     ("MASSIVE_MCP_URL",            "Massive — MCP URL"),
+    ("FRED_API_KEY",               "FRED — API Key"),
     ("ALPHA_VANTAGE_API_KEY",      "Alpha Vantage — API Key"),
     ("UNUSUAL_WHALES_API_KEY",     "Unusual Whales — API Key"),
     ("UNUSUAL_WHALES_MCP_URL",     "Unusual Whales — MCP URL"),
@@ -4718,6 +4719,25 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                     count = data.get("resultsCount", 0)
                     return {"ok": True, "message": f"Massive API key valid — {count} bar(s) returned for AAPL"}
                 raise HTTPException(status_code=400, detail=f"Massive API returned HTTP {resp.status}")
+
+            elif service == "fred":
+                api_key = ev("FRED_API_KEY")
+                if not api_key:
+                    raise HTTPException(status_code=400, detail="FRED_API_KEY is required")
+                resp = await s.get(
+                    "https://api.stlouisfed.org/fred/series",
+                    params={"series_id": "BAMLH0A0HYM2", "api_key": api_key, "file_type": "json"},
+                    timeout=_aiohttp.ClientTimeout(total=10),
+                )
+                if resp.status == 400:
+                    body_text = await resp.text()
+                    detail = "Invalid FRED API key" if "api_key" in body_text.lower() else f"FRED error: {body_text[:120]}"
+                    raise HTTPException(status_code=400, detail=detail)
+                if resp.status == 200:
+                    data = await resp.json(content_type=None)
+                    title = (data.get("seriess") or [{}])[0].get("title", "US HY OAS")
+                    return {"ok": True, "message": f"FRED API key valid — series: {title}"}
+                raise HTTPException(status_code=400, detail=f"FRED returned HTTP {resp.status}")
 
             elif service == "alpaca_mcp":
                 api_key    = ev("ALPACA_API_KEY")

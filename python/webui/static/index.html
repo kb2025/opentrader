@@ -8723,6 +8723,13 @@ const CFG_META = {
         hint: 'Default: http://ot-mcp-eodhd:8000/mcp (auto-set)' },
     ],
   },
+  fred: {
+    label: 'FRED', letter: 'F', bg: '#174090', fg: '#fff',
+    fields: [
+      { key: 'FRED_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
+        hint: 'Free key at fred.stlouisfed.org/docs/api/api_key.html — powers HY/IG credit spreads, Financial Stress Index, and NBER recession signal in the macro regime classifier' },
+    ],
+  },
 };
 
 let _cfgCurrentService = null;
