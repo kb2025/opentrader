@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.91] - 2026-05-24
+
+### Added
+- **Multi-timeframe feature engineering** in ML Predictor: expanded feature set from 12 to 21 features
+  - Four additional return lookbacks: `ret_21` (1-month), `ret_63` (1-quarter), `ret_126` (6-month), `ret_252` (1-year)
+  - Two cross-timeframe momentum ratios: `mom_accel` (short vs medium momentum = ret_21 − ret_63), `trend_slope` (medium vs long-term trend = ret_63 − ret_252)
+  - Three volume features: `vol_ratio` (unchanged), `vol_trend` (5-day vs 20-day avg volume), `vol_momentum` (force-index proxy: volume × price change / avg volume)
+  - Models are retrained daily so new features take effect on next training cycle
+
 ## [3.7.90] - 2026-05-23
 
 ### Added

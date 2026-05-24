@@ -4,14 +4,20 @@ Walk-forward trained RandomForest + GradientBoosting + Ridge models that
 produce a directional confidence score from OHLCV features. Blended with
 the rule-based scorer output as a weighted composite before LLM refinement.
 
-Feature set (12):
-  ret_5, ret_10, ret_20          — price momentum at 3 lookbacks
+Feature set (21):
+  ret_5, ret_10, ret_20          — price momentum at 3 short lookbacks
+  ret_21, ret_63, ret_126,
+  ret_252                        — 1-month, 1-quarter, 6-month, 1-year returns
+  mom_accel                      — ret_21 - ret_63  (short vs medium momentum)
+  trend_slope                    — ret_63 - ret_252 (medium vs long-term trend)
   rsi_14                         — RSI(14)
   macd_hist                      — MACD histogram / price (normalized)
   bb_pos                         — Bollinger Band position (-1=lower, +1=upper)
   sma20_pct, sma50_pct,
   sma200_pct                     — price vs moving averages
   vol_ratio                      — today's volume / 20-day avg volume
+  vol_trend                      — 5-day avg volume / 20-day avg volume
+  vol_momentum                   — volume × price change (force index proxy)
   atr_pct                        — ATR(14) / price (volatility proxy)
   candle_body                    — (close-open)/(high-low) candle shape
 
@@ -69,10 +75,20 @@ def _engineer_features(df: "pd.DataFrame") -> "pd.DataFrame":
 
     f = pd.DataFrame(index=df.index)
 
-    # Momentum
+    # Short-term momentum
     f["ret_5"]  = close.pct_change(5)
     f["ret_10"] = close.pct_change(10)
     f["ret_20"] = close.pct_change(20)
+
+    # Multi-timeframe momentum (1m, 1q, 6m, 1y)
+    f["ret_21"]  = close.pct_change(21)
+    f["ret_63"]  = close.pct_change(63)
+    f["ret_126"] = close.pct_change(126)
+    f["ret_252"] = close.pct_change(252)
+
+    # Cross-timeframe momentum ratios
+    f["mom_accel"]   = f["ret_21"] - f["ret_63"]   # short vs medium
+    f["trend_slope"] = f["ret_63"] - f["ret_252"]   # medium vs long
 
     # RSI
     f["rsi_14"] = _compute_rsi(close, 14) / 100.0  # normalize to 0-1
@@ -96,9 +112,14 @@ def _engineer_features(df: "pd.DataFrame") -> "pd.DataFrame":
     f["sma50_pct"]  = (close - sma50)  / sma50.replace(0, float("nan"))
     f["sma200_pct"] = (close - sma200) / sma200.replace(0, float("nan"))
 
-    # Volume ratio
-    avg_vol      = volume.rolling(20).mean()
-    f["vol_ratio"] = volume / avg_vol.replace(0, float("nan"))
+    # Volume features
+    avg_vol20    = volume.rolling(20).mean()
+    avg_vol5     = volume.rolling(5).mean()
+    f["vol_ratio"]    = volume / avg_vol20.replace(0, float("nan"))
+    f["vol_trend"]    = avg_vol5 / avg_vol20.replace(0, float("nan"))  # 5d vs 20d avg
+    # Force index proxy: volume × price change direction
+    price_change      = close.pct_change(1)
+    f["vol_momentum"] = (volume * price_change) / avg_vol20.replace(0, float("nan"))
 
     # ATR volatility
     hl_range    = high - low
