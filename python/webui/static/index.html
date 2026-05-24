@@ -4049,7 +4049,7 @@ select option{background:var(--surface2)}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
         <div>
           <div style="font-size:18px;font-weight:700;color:var(--fg)">Portfolio Analytics</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">Performance · Risk · Technicals · Fundamentals · Factor Attribution · Rolling</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">Performance · Risk · Factors · Technicals · Fundamentals · LBO · DCF · Optimizer · Yield Curve · Breadth · Momentum</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <select id="analytics-mode" class="btn btn-ghost btn-sm" onchange="loadAnalyticsPage()">
@@ -4139,6 +4139,94 @@ select option{background:var(--surface2)}
           <div style="font-size:12px;color:var(--muted)">Enter a ticker to load P/E, P/B, EV/EBITDA, ROE, ROA, margins.</div>
         </div>
       </div>
+      <!-- Row 6: Yield Curve + Market Breadth side by side -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <!-- Yield Curve -->
+        <div class="card">
+          <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('analytics-yc-body');b.style.display=b.style.display==='none'?'block':'none'">
+            <span style="font-weight:600">US Treasury Yield Curve</span>
+            <span id="analytics-yc-regime" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--surface2,var(--surface))"></span>
+          </div>
+          <div id="analytics-yc-body" class="card-body" style="padding:12px 16px">
+            <div style="font-size:12px;color:var(--muted)">Loading…</div>
+          </div>
+        </div>
+        <!-- Market Breadth -->
+        <div class="card">
+          <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('analytics-breadth-body');b.style.display=b.style.display==='none'?'block':'none'">
+            <span style="font-weight:600">Market Breadth</span>
+            <span style="font-size:11px;color:var(--muted)">50 large-cap universe</span>
+          </div>
+          <div id="analytics-breadth-body" class="card-body" style="padding:12px 16px">
+            <div style="font-size:12px;color:var(--muted)">Loading…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 7: TSMOM Signals -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="cursor:pointer" onclick="const b=document.getElementById('analytics-tsmom-body');b.style.display=b.style.display==='none'?'block':'none'">
+          <span style="font-weight:600">Time-Series Momentum Signals</span>
+          <span style="font-size:11px;color:var(--muted)">12-1 momentum · vol-targeted position sizing</span>
+        </div>
+        <div id="analytics-tsmom-body" class="card-body">
+          <div style="font-size:12px;color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Row 8: LBO Analysis -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px">
+          <span style="font-weight:600">LBO Analysis</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;align-items:center">
+            <input id="analytics-lbo-ticker" class="btn btn-ghost btn-sm" style="width:80px;text-transform:uppercase" placeholder="AAPL" />
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px">Entry×<input id="analytics-lbo-entry" type="number" value="8" min="2" max="30" step="0.5" style="width:50px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:4px;padding:2px 5px;font-size:11px"></label>
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px">Exit×<input id="analytics-lbo-exit" type="number" value="9" min="2" max="30" step="0.5" style="width:50px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:4px;padding:2px 5px;font-size:11px"></label>
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px">Yrs<input id="analytics-lbo-years" type="number" value="5" min="1" max="10" style="width:40px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:4px;padding:2px 5px;font-size:11px"></label>
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px">Lev%<input id="analytics-lbo-lev" type="number" value="60" min="20" max="90" style="width:45px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:4px;padding:2px 5px;font-size:11px"></label>
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px">Rev%<input id="analytics-lbo-growth" type="number" value="5" min="-10" max="30" style="width:45px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:4px;padding:2px 5px;font-size:11px"></label>
+            <button class="btn btn-primary btn-sm" onclick="_analyticsRunLBO()">Run LBO</button>
+          </div>
+        </div>
+        <div id="analytics-lbo-body" class="card-body">
+          <div style="font-size:12px;color:var(--muted)">Enter a ticker and parameters, then click Run LBO.</div>
+        </div>
+      </div>
+
+      <!-- Row 9: DCF Valuation -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px">
+          <span style="font-weight:600">DCF Valuation</span>
+          <div style="display:flex;gap:6px;margin-left:auto">
+            <input id="analytics-dcf-ticker" class="btn btn-ghost btn-sm" style="width:90px;text-transform:uppercase" placeholder="MSFT" />
+            <button class="btn btn-primary btn-sm" onclick="_analyticsRunDCF()">Run DCF</button>
+          </div>
+        </div>
+        <div id="analytics-dcf-body" class="card-body">
+          <div style="font-size:12px;color:var(--muted)">Enter a ticker to build a 10-year FCFF model with WACC and terminal value.</div>
+        </div>
+      </div>
+
+      <!-- Row 10: Portfolio Optimizer -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px">
+          <span style="font-weight:600">Portfolio Optimizer</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;align-items:center">
+            <input id="analytics-opt-tickers" class="btn btn-ghost btn-sm" style="width:220px" placeholder="AAPL,MSFT,NVDA,GOOGL,AMZN" />
+            <select id="analytics-opt-method" style="background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:3px 7px;font-size:11px">
+              <option value="hrp">HRP</option>
+              <option value="mv">Max Sharpe</option>
+              <option value="rp">Risk Parity</option>
+            </select>
+            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px">MaxWt%<input id="analytics-opt-maxw" type="number" value="40" min="10" max="100" style="width:45px;background:var(--surface);border:1px solid var(--border);color:var(--fg);border-radius:4px;padding:2px 5px;font-size:11px"></label>
+            <button class="btn btn-primary btn-sm" onclick="_analyticsRunOptimize()">Optimize</button>
+          </div>
+        </div>
+        <div id="analytics-opt-body" class="card-body">
+          <div style="font-size:12px;color:var(--muted)">Enter comma-separated tickers (2–20) and click Optimize.</div>
+        </div>
+      </div>
+
     </div><!-- /page-analytics -->
 
     <!-- ════════════════════════════════════════
@@ -20872,28 +20960,33 @@ async function loadAnalyticsPage(force = false) {
   const tok  = getToken();
   const bustQ = force ? `&_t=${Date.now()}` : '';
 
-  // A: Performance
   document.getElementById('analytics-perf-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
-  // B: Risk
   document.getElementById('analytics-risk-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
-  // E: Factors
   document.getElementById('analytics-factors-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Fetching Dartmouth factor data…</div>';
-  // F: Portfolio
   document.getElementById('analytics-port-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
+  document.getElementById('analytics-yc-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading yield curve…</div>';
+  document.getElementById('analytics-breadth-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading breadth…</div>';
+  document.getElementById('analytics-tsmom-body').innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading momentum signals…</div>';
 
   const base = `?days=${days}&mode=${mode}&token=${tok}${bustQ}`;
 
-  const [perfRes, riskRes, factRes, portRes] = await Promise.allSettled([
+  const [perfRes, riskRes, factRes, portRes, ycRes, breadthRes, tsmomRes] = await Promise.allSettled([
     apiFetch(`/api/analytics/performance${base}`),
     apiFetch(`/api/analytics/risk${base}`),
     apiFetch(`/api/analytics/factors${base}`),
     apiFetch(`/api/analytics/portfolio${base}`),
+    apiFetch(`/api/market/yield-curve?token=${tok}`),
+    apiFetch(`/api/market/breadth?token=${tok}`),
+    apiFetch(`/api/analytics/tsmom?mode=${mode}&token=${tok}`),
   ]);
 
   _analyticsRenderPerf(perfRes.status === 'fulfilled' ? perfRes.value : null);
   _analyticsRenderRisk(riskRes.status === 'fulfilled' ? riskRes.value : null);
   _analyticsRenderFactors(factRes.status === 'fulfilled' ? factRes.value : null);
   _analyticsRenderPortfolio(portRes.status === 'fulfilled' ? portRes.value : null);
+  _analyticsRenderYieldCurve(ycRes.status === 'fulfilled' ? ycRes.value : null);
+  _analyticsRenderBreadth(breadthRes.status === 'fulfilled' ? breadthRes.value : null);
+  _analyticsRenderTSMOM(tsmomRes.status === 'fulfilled' ? tsmomRes.value : null);
 }
 
 function _analyticsStatRow(label, value, sub = '') {
@@ -21254,6 +21347,453 @@ async function _analyticsLoadFund() {
         <div style="font-size:10px;color:var(--muted)">${label}</div>
         <div style="font-size:16px;font-weight:700">${val}</div>
       </div>`).join('')}
+    </div>`;
+}
+
+// ── Yield Curve ───────────────────────────────────────────────────────────────
+function _analyticsRenderYieldCurve(d) {
+  const el    = document.getElementById('analytics-yc-body');
+  const badge = document.getElementById('analytics-yc-regime');
+  if (!el) return;
+  if (!d || d.error) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error || 'No yield curve data'}</div>`;
+    return;
+  }
+
+  // Regime badge color
+  const regimeColor = {INVERTED:'#f87171', FLAT:'#f59e0b', STEEP:'#34d399', NORMAL:'#22d3ee', UNKNOWN:'var(--muted)'};
+  if (badge) {
+    badge.textContent = d.regime || '';
+    badge.style.color = regimeColor[d.regime] || 'var(--muted)';
+    badge.style.background = 'var(--surface2,var(--surface))';
+  }
+
+  const W=460, H=160, pt=16, pr=20, pb=32, pl=40;
+  const iW=W-pl-pr, iH=H-pt-pb;
+  const ns='http://www.w3.org/2000/svg';
+  const mk=(tag,attrs,text)=>{const e=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text!=null)e.textContent=text;return e;};
+
+  const curve = (d.curve||[]).filter(c=>c.yield!=null);
+  if (!curve.length) { el.innerHTML='<div style="font-size:12px;color:var(--muted)">No curve data</div>'; return; }
+
+  const maxY = Math.max(...curve.map(c=>c.yield)) * 1.05;
+  const minY = Math.max(0, Math.min(...curve.map(c=>c.yield)) * 0.95);
+  const xS   = i => pl + (i / (curve.length-1)) * iW;
+  const yS   = v => pt + iH - ((v-minY)/(maxY-minY||1))*iH;
+
+  const svg = document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('style','width:100%;height:auto');
+
+  // Gridlines
+  [0,0.25,0.5,0.75,1].forEach(f=>{
+    const v=minY+(maxY-minY)*f, y=yS(v);
+    svg.appendChild(mk('line',{x1:pl,y1:y,x2:W-pr,y2:y,stroke:'var(--border)',opacity:.3,'stroke-width':'0.5'}));
+    svg.appendChild(mk('text',{x:pl-4,y:y+4,'text-anchor':'end',fill:'var(--muted)','font-size':'8'},v.toFixed(2)+'%'));
+  });
+
+  // Fill under curve
+  const pts = curve.map((c,i)=>`${xS(i)},${yS(c.yield)}`).join(' ');
+  const fillPts = `${xS(0)},${H-pb} ` + pts + ` ${xS(curve.length-1)},${H-pb}`;
+  svg.appendChild(mk('polygon',{points:fillPts,fill:'#22d3ee',opacity:'0.12'}));
+  svg.appendChild(mk('polyline',{points:pts,fill:'none',stroke:'#22d3ee','stroke-width':'2','stroke-linejoin':'round'}));
+
+  // X labels (maturities)
+  curve.forEach((c,i)=>{
+    svg.appendChild(mk('circle',{cx:xS(i),cy:yS(c.yield),r:'3',fill:'#22d3ee'}));
+    svg.appendChild(mk('text',{x:xS(i),y:H-pb+12,'text-anchor':'middle',fill:'var(--muted)','font-size':'8'},c.maturity));
+  });
+
+  // TIPS real rates as dashed line if available
+  const tipsMap = {'5Y': d.tips_5y, '10Y': d.tips_10y};
+  const tipsPoints = curve.filter(c=>tipsMap[c.maturity]!=null)
+    .map((c,_i,arr)=>{
+      const idx = curve.indexOf(c);
+      return `${xS(idx)},${yS(tipsMap[c.maturity])}`;
+    }).join(' ');
+  if (tipsPoints) {
+    svg.appendChild(mk('polyline',{points:tipsPoints,fill:'none',stroke:'#a78bfa','stroke-width':'1.5','stroke-dasharray':'4,3'}));
+  }
+
+  // Spread summary
+  const s2s10 = d.spread_2s10s != null ? `2s10s: ${d.spread_2s10s>0?'+':''}${d.spread_2s10s.toFixed(2)}%` : '';
+  const s3m10 = d.spread_3m10y != null ? `3m10y: ${d.spread_3m10y>0?'+':''}${d.spread_3m10y.toFixed(2)}%` : '';
+  const be10  = d.breakeven_10y != null ? `BE 10y: ${d.breakeven_10y.toFixed(2)}%` : '';
+
+  el.innerHTML = '';
+  el.appendChild(svg);
+
+  // Spread bar chart (2s10s history)
+  if (d.spread_history?.length) {
+    const sh = d.spread_history.slice(-60);
+    const SW=460, SH=60, SPt=6, SPb=14, SPl=36, SPr=10;
+    const siW=SW-SPl-SPr, siH=SH-SPt-SPb;
+    const maxSp=Math.max(...sh.map(x=>Math.abs(x.spread)),0.5);
+    const svg2=document.createElementNS(ns,'svg');
+    svg2.setAttribute('viewBox',`0 0 ${SW} ${SH}`);
+    svg2.setAttribute('style','width:100%;height:auto;margin-top:4px');
+    // Zero line
+    const zy=SPt+siH/2;
+    svg2.appendChild(mk('line',{x1:SPl,y1:zy,x2:SW-SPr,y2:zy,stroke:'var(--border)','stroke-width':'0.7'}));
+    svg2.appendChild(mk('text',{x:SPl-3,y:zy+3,'text-anchor':'end','font-size':'7',fill:'var(--muted)'},'0'));
+    sh.forEach((p,i)=>{
+      const x=SPl+i/sh.length*siW;
+      const bw=Math.max(1,siW/sh.length-1);
+      const h=Math.abs(p.spread)/maxSp*(siH/2);
+      const col=p.spread>=0?'#22d3ee':'#f87171';
+      const y=p.spread>=0?zy-h:zy;
+      svg2.appendChild(mk('rect',{x:x.toFixed(1),y:y.toFixed(1),width:bw.toFixed(1),height:h.toFixed(1),fill:col,opacity:'0.7'}));
+    });
+    // label first/last date
+    if(sh[0]) svg2.appendChild(mk('text',{x:SPl,y:SH-2,'font-size':'7',fill:'var(--muted)'},sh[0].date?.slice(0,7)||''));
+    if(sh[sh.length-1]) svg2.appendChild(mk('text',{x:SW-SPr,y:SH-2,'text-anchor':'end','font-size':'7',fill:'var(--muted)'},sh[sh.length-1].date?.slice(0,7)||''));
+    el.appendChild(svg2);
+  }
+
+  const meta = document.createElement('div');
+  meta.style.cssText='font-size:10px;color:var(--muted);margin-top:6px;display:flex;gap:12px;flex-wrap:wrap';
+  [s2s10,s3m10,be10].filter(Boolean).forEach(t=>{
+    const sp=document.createElement('span');sp.textContent=t;meta.appendChild(sp);
+  });
+  el.appendChild(meta);
+  const src=document.createElement('div');
+  src.style.cssText='font-size:9px;color:var(--muted);margin-top:4px';
+  src.textContent='Source: FRED · dashed purple = TIPS real yields · bar chart = 2s10s spread (60d)';
+  el.appendChild(src);
+}
+
+// ── Market Breadth ────────────────────────────────────────────────────────────
+function _analyticsRenderBreadth(d) {
+  const el = document.getElementById('analytics-breadth-body');
+  if (!el) return;
+  if (!d || d.error) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error||'No breadth data'}</div>`;
+    return;
+  }
+  const bar=(pct,color)=>`<div style="background:var(--surface2,var(--surface));border-radius:4px;overflow:hidden;height:6px;margin-top:3px"><div style="width:${pct}%;height:100%;background:${color};border-radius:4px"></div></div>`;
+  const adColor=d.ad_ratio>1?'#34d399':d.ad_ratio>0.5?'#f59e0b':'#f87171';
+  const abv50Color=d.pct_above_50ma>60?'#34d399':d.pct_above_50ma>40?'#f59e0b':'#f87171';
+  const abv200Color=d.pct_above_200ma>60?'#34d399':d.pct_above_200ma>40?'#f59e0b':'#f87171';
+  const netHiColor=d.net_highs>5?'#34d399':d.net_highs>0?'#22d3ee':d.net_highs<-5?'#f87171':'#f59e0b';
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Above 50-day MA</div>
+        <div style="font-size:22px;font-weight:700;color:${abv50Color}">${d.pct_above_50ma}%</div>
+        ${bar(d.pct_above_50ma,abv50Color)}
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Above 200-day MA</div>
+        <div style="font-size:22px;font-weight:700;color:${abv200Color}">${d.pct_above_200ma}%</div>
+        ${bar(d.pct_above_200ma,abv200Color)}
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">A/D Ratio</div>
+        <div style="font-size:22px;font-weight:700;color:${adColor}">${d.ad_ratio?.toFixed(2)}</div>
+        <div style="font-size:10px;color:var(--muted)">${d.advance_count}▲ / ${d.decline_count}▼</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Net 52wk Highs</div>
+        <div style="font-size:22px;font-weight:700;color:${netHiColor}">${d.net_highs>0?'+':''}${d.net_highs}</div>
+        <div style="font-size:10px;color:var(--muted)">${d.new_highs} highs / ${d.new_lows} lows</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:11px">
+      <div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Top Gainers</div>
+        ${(d.gainers||[]).slice().reverse().map(g=>`<div style="display:flex;justify-content:space-between;padding:2px 0"><span>${g.sym}</span><span style="color:#34d399;font-weight:600">+${g.chg}%</span></div>`).join('')}
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Top Losers</div>
+        ${(d.losers||[]).map(g=>`<div style="display:flex;justify-content:space-between;padding:2px 0"><span>${g.sym}</span><span style="color:#f87171;font-weight:600">${g.chg}%</span></div>`).join('')}
+      </div>
+    </div>
+    <div style="font-size:9px;color:var(--muted);margin-top:8px">Universe: ${d.universe_count} large-cap stocks · cached 30 min</div>`;
+}
+
+// ── TSMOM Signals ─────────────────────────────────────────────────────────────
+function _analyticsRenderTSMOM(d) {
+  const el = document.getElementById('analytics-tsmom-body');
+  if (!el) return;
+  if (!d || d.error) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d?.error||'No holdings data'}</div>`;
+    return;
+  }
+  const sigs = d.signals || [];
+  if (!sigs.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No positions found</div>';
+    return;
+  }
+  const dirColor = {'LONG':'#34d399','SHORT':'#f87171','FLAT':'var(--muted)'};
+  const fmtPct = v => v > 0 ? `+${v.toFixed(1)}%` : `${v.toFixed(1)}%`;
+  el.innerHTML = `
+    <div style="font-size:10px;color:var(--muted);margin-bottom:8px">
+      Target vol: ${d.target_vol_pct}% · Flat threshold: ±${d.flat_threshold_pct}% · Position size = signal × min(2×, target_vol/realized_vol)
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="color:var(--muted);font-size:11px">
+        <th style="text-align:left;padding:4px 8px 4px 0">Ticker</th>
+        <th style="text-align:right;padding:4px 8px">12-1 Mom</th>
+        <th style="text-align:right;padding:4px 8px">Ann Vol</th>
+        <th style="text-align:center;padding:4px 8px">Signal</th>
+        <th style="text-align:right;padding:4px 8px">Pos Size</th>
+      </tr></thead>
+      <tbody>
+      ${sigs.map(s => s.error ? `<tr><td colspan="5" style="color:var(--muted);font-size:11px;padding:3px 0">${s.sym}: ${s.error}</td></tr>` :
+        `<tr style="border-top:1px solid var(--border)">
+          <td style="padding:5px 8px 5px 0;font-weight:600">${s.sym}</td>
+          <td style="text-align:right;padding:5px 8px;color:${s.momentum>=0?'#34d399':'#f87171'}">${fmtPct(s.momentum)}</td>
+          <td style="text-align:right;padding:5px 8px;color:var(--muted)">${s.vol_ann?.toFixed(1)}%</td>
+          <td style="text-align:center;padding:5px 8px">
+            <span style="font-weight:700;font-size:11px;color:${dirColor[s.direction]}">${s.direction}</span>
+          </td>
+          <td style="text-align:right;padding:5px 8px;font-weight:600">${s.pos_size?.toFixed(3)}×</td>
+        </tr>`
+      ).join('')}
+      </tbody>
+    </table>
+    </div>`;
+}
+
+// ── LBO Analysis ──────────────────────────────────────────────────────────────
+async function _analyticsRunLBO() {
+  const ticker = (document.getElementById('analytics-lbo-ticker')?.value||'').toUpperCase().trim();
+  if (!ticker) { toast('error','Missing','Enter a ticker'); return; }
+  const el   = document.getElementById('analytics-lbo-body');
+  const entry = parseFloat(document.getElementById('analytics-lbo-entry')?.value||'8');
+  const exit  = parseFloat(document.getElementById('analytics-lbo-exit')?.value||'9');
+  const yrs   = parseInt(document.getElementById('analytics-lbo-years')?.value||'5');
+  const lev   = parseFloat(document.getElementById('analytics-lbo-lev')?.value||'60') / 100;
+  const growth= parseFloat(document.getElementById('analytics-lbo-growth')?.value||'5') / 100;
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Running LBO model…</div>';
+  const d = await apiFetch(`/api/analytics/lbo/${ticker}?entry_multiple=${entry}&exit_multiple=${exit}&hold_years=${yrs}&leverage_ratio=${lev}&revenue_growth=${growth}&token=${getToken()}`).catch(()=>null);
+  _analyticsRenderLBO(d);
+}
+
+function _analyticsRenderLBO(d) {
+  const el = document.getElementById('analytics-lbo-body');
+  if (!el) return;
+  if (!d || d.error) { el.innerHTML=`<div style="font-size:12px;color:var(--muted)">${d?.error||'No data'}</div>`; return; }
+  const verdictColor = {
+    'STRONG BUY':'#34d399','BUY':'#22d3ee','CONDITIONAL':'#f59e0b','PASS':'#f87171'
+  };
+  const fmtM = v => v > 1e9 ? `$${(v/1e9).toFixed(1)}B` : v > 1e6 ? `$${(v/1e6).toFixed(1)}M` : `$${Math.round(v).toLocaleString()}`;
+  const covColor = d.covenants_ok ? '#34d399' : '#f87171';
+  const covText  = d.covenants_ok ? 'Covenants OK' : `Breach at Year ${d.first_breach_year}`;
+  const vc = verdictColor[d.verdict] || 'var(--muted)';
+  el.innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-start">
+      <div style="background:var(--surface2,var(--surface));border-radius:10px;padding:10px 18px;text-align:center;min-width:110px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">IRR (base)</div>
+        <div style="font-size:26px;font-weight:700;color:${vc}">${d.base_irr}%</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:10px;padding:10px 18px;text-align:center;min-width:110px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">MOIC</div>
+        <div style="font-size:26px;font-weight:700;color:${vc}">${d.base_moic}×</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:10px;padding:10px 18px;text-align:center;min-width:110px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">MC Median IRR</div>
+        <div style="font-size:26px;font-weight:700;color:${vc}">${d.mc_irr_median}%</div>
+        <div style="font-size:10px;color:var(--muted)">p5: ${d.mc_irr_p5}% / p95: ${d.mc_irr_p95}%</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:10px;padding:10px 18px;text-align:center;min-width:130px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">Verdict</div>
+        <div style="font-size:18px;font-weight:700;color:${vc}">${d.verdict}</div>
+        <div style="font-size:10px;color:${covColor}">${covText}</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:10px;padding:10px 18px;min-width:160px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Deal Structure</div>
+        <div style="font-size:11px;display:grid;grid-template-columns:auto auto;gap:2px 12px">
+          <span style="color:var(--muted)">Entry EV</span><span>${fmtM(d.entry_ev)}</span>
+          <span style="color:var(--muted)">Entry Debt</span><span>${fmtM(d.entry_debt)}</span>
+          <span style="color:var(--muted)">Entry Equity</span><span>${fmtM(d.entry_equity)}</span>
+          <span style="color:var(--muted)">Exit Equity</span><span>${fmtM(d.exit_equity)}</span>
+        </div>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">
+      <thead><tr style="color:var(--muted);font-size:10px;border-bottom:1px solid var(--border)">
+        <th style="text-align:left;padding:4px 8px 4px 0">Year</th>
+        <th style="text-align:right;padding:4px 8px">EBITDA</th>
+        <th style="text-align:right;padding:4px 8px">Interest</th>
+        <th style="text-align:right;padding:4px 8px">FCF</th>
+        <th style="text-align:right;padding:4px 8px">Debt</th>
+        <th style="text-align:right;padding:4px 8px">Lev×</th>
+        <th style="text-align:right;padding:4px 8px">Coverage</th>
+      </tr></thead>
+      <tbody>
+      ${(d.schedule||[]).map(r=>{
+        const levOk=r.leverage<=6, covOk=r.coverage>=2;
+        return `<tr style="border-top:1px solid var(--border)">
+          <td style="padding:4px 8px 4px 0;font-weight:600">Yr ${r.year}</td>
+          <td style="text-align:right;padding:4px 8px">${fmtM(r.ebitda)}</td>
+          <td style="text-align:right;padding:4px 8px;color:var(--muted)">${fmtM(r.interest)}</td>
+          <td style="text-align:right;padding:4px 8px;color:${r.fcf>=0?'#34d399':'#f87171'}">${fmtM(r.fcf)}</td>
+          <td style="text-align:right;padding:4px 8px">${fmtM(r.debt)}</td>
+          <td style="text-align:right;padding:4px 8px;color:${levOk?'var(--fg)':'#f87171'}">${r.leverage}×</td>
+          <td style="text-align:right;padding:4px 8px;color:${covOk?'var(--fg)':'#f87171'}">${r.coverage}×</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div style="font-size:10px;color:var(--muted)">${d.mc_pct_positive}% of 500 MC paths have positive IRR · growth ${d.revenue_growth_pct}%/yr · Kd ${d.cost_of_debt_pct}%</div>`;
+}
+
+// ── DCF Valuation ─────────────────────────────────────────────────────────────
+async function _analyticsRunDCF() {
+  const ticker = (document.getElementById('analytics-dcf-ticker')?.value||'').toUpperCase().trim();
+  if (!ticker) { toast('error','Missing','Enter a ticker'); return; }
+  const el = document.getElementById('analytics-dcf-body');
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Building DCF model…</div>';
+  const d = await apiFetch(`/api/analytics/dcf/${ticker}?token=${getToken()}`).catch(()=>null);
+  _analyticsRenderDCF(d);
+}
+
+function _analyticsRenderDCF(d) {
+  const el = document.getElementById('analytics-dcf-body');
+  if (!el) return;
+  if (!d || d.error) { el.innerHTML=`<div style="font-size:12px;color:var(--muted)">${d?.error||'No data'}</div>`; return; }
+  const ratingColor={'UNDERVALUED':'#34d399','FAIR':'#22d3ee','OVERVALUED':'#f87171'};
+  const rc = ratingColor[d.rating]||'var(--muted)';
+  const fmtM = v => Math.abs(v)>1e9?`$${(v/1e9).toFixed(2)}B`:Math.abs(v)>1e6?`$${(v/1e6).toFixed(1)}M`:`$${Math.round(v).toLocaleString()}`;
+  const fmtPct = (v,pfx=true)=>`${pfx&&v>0?'+':''}${v?.toFixed(1)}%`;
+  const gapColor = d.dcf_gap_pct>=15?'#34d399':d.dcf_gap_pct>=-15?'#22d3ee':'#f87171';
+
+  // Build forecast SVG
+  const fc = d.forecasts||[];
+  const W=500,H=120,pt=10,pr=20,pb=28,pl=52;
+  const iW=W-pl-pr,iH=H-pt-pb;
+  const ns='http://www.w3.org/2000/svg';
+  const mk=(tag,attrs,text)=>{const e=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text!=null)e.textContent=text;return e;};
+  const maxFCFF=Math.max(...fc.map(f=>f.fcff),0)*1.1||1;
+  const minFCFF=Math.min(...fc.map(f=>f.fcff),0)*0.9;
+  const xS=i=>pl+(i/(fc.length-1||1))*iW;
+  const yS=v=>pt+iH-((v-minFCFF)/(maxFCFF-minFCFF||1))*iH;
+  const svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('style','width:100%;height:auto;margin-bottom:10px');
+  // Gridlines
+  [0,.5,1].forEach(f=>{
+    const v=minFCFF+(maxFCFF-minFCFF)*f,y=yS(v);
+    svg.appendChild(mk('line',{x1:pl,y1:y,x2:W-pr,y2:y,stroke:'var(--border)',opacity:.3,'stroke-width':'0.5'}));
+    svg.appendChild(mk('text',{x:pl-4,y:y+4,'text-anchor':'end',fill:'var(--muted)','font-size':'8'},fmtM(v)));
+  });
+  if(fc.length){
+    const fillPts=`${xS(0)},${H-pb} `+fc.map((f,i)=>`${xS(i)},${yS(f.fcff)}`).join(' ')+` ${xS(fc.length-1)},${H-pb}`;
+    svg.appendChild(mk('polygon',{points:fillPts,fill:'#22d3ee',opacity:'0.12'}));
+    svg.appendChild(mk('polyline',{points:fc.map((f,i)=>`${xS(i)},${yS(f.fcff)}`).join(' '),fill:'none',stroke:'#22d3ee','stroke-width':'2'}));
+    fc.forEach((f,i)=>{
+      svg.appendChild(mk('circle',{cx:xS(i),cy:yS(f.fcff),r:'2.5',fill:'#22d3ee'}));
+      svg.appendChild(mk('text',{x:xS(i),y:H-pb+12,'text-anchor':'middle',fill:'var(--muted)','font-size':'8'},`Y${f.year}`));
+    });
+  }
+
+  el.innerHTML='';
+  el.appendChild(svg);
+  el.innerHTML+=`
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:100px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">Intrinsic</div>
+        <div style="font-size:22px;font-weight:700">$${d.intrinsic_per_share?.toFixed(2)}</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:100px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">Market</div>
+        <div style="font-size:22px;font-weight:700">$${d.market_price?.toFixed(2)}</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:110px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">DCF Gap</div>
+        <div style="font-size:22px;font-weight:700;color:${gapColor}">${fmtPct(d.dcf_gap_pct)}</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:120px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">Rating</div>
+        <div style="font-size:18px;font-weight:700;color:${rc}">${d.rating}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;font-size:11px">
+      ${[
+        ['Enterprise Value',fmtM(d.enterprise_value)],
+        ['PV Explicit (10yr)',fmtM(d.pv_explicit)],
+        ['PV Terminal',fmtM(d.pv_terminal)],
+        ['WACC',d.wacc+'%'],
+        ['Cost of Equity',d.cost_equity+'%'],
+        ['Terminal Growth',d.terminal_growth+'%'],
+        ['Base FCFF',fmtM(d.base_fcff)],
+        ['Net Debt',fmtM(d.net_debt)],
+        ['Yr1 Growth',fmtPct(d.rev_growth_yr1)],
+      ].map(([l,v])=>`<div style="background:var(--surface2,var(--surface));border-radius:6px;padding:6px 10px">
+        <div style="font-size:9px;color:var(--muted)">${l}</div>
+        <div style="font-size:13px;font-weight:600">${v}</div>
+      </div>`).join('')}
+    </div>`;
+}
+
+// ── Portfolio Optimizer ───────────────────────────────────────────────────────
+async function _analyticsRunOptimize() {
+  const rawTickers = document.getElementById('analytics-opt-tickers')?.value || '';
+  const tickers = rawTickers.split(',').map(t=>t.trim().toUpperCase()).filter(Boolean);
+  if (tickers.length < 2) { toast('error','Need 2+ tickers','Enter comma-separated tickers'); return; }
+  const method = document.getElementById('analytics-opt-method')?.value || 'hrp';
+  const maxW   = parseFloat(document.getElementById('analytics-opt-maxw')?.value||'40') / 100;
+  const el     = document.getElementById('analytics-opt-body');
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Optimizing portfolio…</div>';
+  const d = await apiFetch(`/api/analytics/optimize?tickers=${encodeURIComponent(tickers.join(','))}&method=${method}&max_weight=${maxW}&token=${getToken()}`).catch(()=>null);
+  _analyticsRenderOptimize(d);
+}
+
+function _analyticsRenderOptimize(d) {
+  const el = document.getElementById('analytics-opt-body');
+  if (!el) return;
+  if (!d || d.error) { el.innerHTML=`<div style="font-size:12px;color:var(--muted)">${d?.error||'No data'}</div>`; return; }
+  const methodLabel={'hrp':'Hierarchical Risk Parity','mv':'Max Sharpe (Mean-Variance)','rp':'Risk Parity'}[d.method]||d.method;
+  const colors=['#22d3ee','#a78bfa','#34d399','#f59e0b','#f87171','#60a5fa','#fb923c','#e879f9','#4ade80','#facc15',
+                '#38bdf8','#c084fc','#86efac','#fbbf24','#fca5a5','#93c5fd','#fdba74','#f0abfc','#6ee7b7','#fde68a'];
+
+  // Horizontal weight bar chart
+  const W=600, H=Math.max(80, d.tickers.length*26+20);
+  const ns='http://www.w3.org/2000/svg';
+  const mk=(tag,attrs,text)=>{const e=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text!=null)e.textContent=text;return e;};
+  const svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('style','width:100%;height:auto;margin-bottom:10px');
+  const pl=80,pr=80,bh=18,gap=8;
+  const maxW2=Math.max(...d.weights);
+  d.tickers.forEach((t,i)=>{
+    const w=d.weights[i], rc=d.risk_contrib[i];
+    const y=i*(bh+gap)+4;
+    const barW=(w/maxW2)*Math.max(1,W-pl-pr);
+    svg.appendChild(mk('text',{x:pl-6,y:y+bh/2+4,'text-anchor':'end',fill:'var(--fg)','font-size':'11',
+      'font-weight':'600'},t));
+    svg.appendChild(mk('rect',{x:pl,y,width:barW.toFixed(1),height:bh,fill:colors[i%colors.length],rx:'3','opacity':'0.8'}));
+    svg.appendChild(mk('text',{x:pl+barW+5,y:y+bh/2+4,fill:'var(--muted)','font-size':'10'},
+      `${(w*100).toFixed(1)}% · RC: ${rc}%`));
+  });
+
+  const sharpeColor=d.sharpe>1?'#34d399':d.sharpe>0.5?'#22d3ee':'#f59e0b';
+  el.innerHTML='';
+  el.appendChild(svg);
+  el.innerHTML+=`
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:100px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">Exp Return</div>
+        <div style="font-size:20px;font-weight:700">${d.port_return}%</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:100px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">Volatility</div>
+        <div style="font-size:20px;font-weight:700">${d.port_vol}%</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:100px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">Sharpe</div>
+        <div style="font-size:20px;font-weight:700;color:${sharpeColor}">${d.sharpe}</div>
+      </div>
+      <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;min-width:160px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Method</div>
+        <div style="font-size:12px;font-weight:600">${methodLabel}</div>
+        <div style="font-size:10px;color:var(--muted)">${d.days} days · max weight ${(d.max_weight*100).toFixed(0)}%</div>
+      </div>
     </div>`;
 }
 

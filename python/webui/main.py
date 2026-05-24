@@ -15637,6 +15637,887 @@ async def analytics_portfolio(days: int = 90, mode: str = "live", token: str = "
     return result
 
 
+# ── LBO / DCF / Optimize / Yield Curve / Breadth / TSMOM ─────────────────────
+
+def _poly_fin(ic: dict, bs: dict, cf: dict, key: str, fallback: float = 0.0) -> float:
+    """Extract a Polygon financials value from ic/bs/cf dicts by key name."""
+    for d in (ic, bs, cf):
+        v = d.get(key)
+        if v is not None:
+            return float(v.get("value", 0) or 0)
+    return fallback
+
+
+async def _fetch_poly_financials(ticker: str, api_key: str) -> dict:
+    """Fetch the most-recent annual financial statement from Polygon vX/reference/financials."""
+    import aiohttp as _ah
+    url = (f"https://api.polygon.io/vX/reference/financials"
+           f"?ticker={ticker}&timeframe=annual&limit=2&apiKey={api_key}")
+    try:
+        async with _ah.ClientSession() as sess:
+            async with sess.get(url, timeout=_ah.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return {}
+                data = await resp.json()
+        results = data.get("results") or []
+        if not results:
+            return {}
+        r  = results[0]
+        ic = r.get("financials", {}).get("income_statement", {})
+        bs = r.get("financials", {}).get("balance_sheet", {})
+        cf = r.get("financials", {}).get("cash_flow_statement", {})
+        r1 = results[1].get("financials", {}).get("income_statement", {}) if len(results) > 1 else {}
+
+        revenue_cur  = abs(_poly_fin(ic, bs, cf, "revenues"))
+        revenue_cur  = revenue_cur or abs(_poly_fin(ic, bs, cf, "net_revenues"))
+        revenue_prev = abs(_poly_fin(r1, {}, {}, "revenues")) or abs(_poly_fin(r1, {}, {}, "net_revenues"))
+        ebit         = _poly_fin(ic, bs, cf, "operating_income_loss")
+        da           = abs(_poly_fin(ic, bs, cf, "depreciation_depletion_and_amortization"))
+        capex        = abs(_poly_fin(ic, bs, cf, "capital_expenditure"))
+        interest_exp = abs(_poly_fin(ic, bs, cf, "interest_expense_operating"))
+        interest_exp = interest_exp or abs(_poly_fin(ic, bs, cf, "interest_and_debt_expense"))
+        tax_exp      = abs(_poly_fin(ic, bs, cf, "income_tax_expense_benefit"))
+        pretax       = _poly_fin(ic, bs, cf, "income_loss_from_continuing_operations_before_tax")
+        pretax       = pretax or _poly_fin(ic, bs, cf, "net_income_loss")
+        lt_debt      = abs(_poly_fin(ic, bs, cf, "long_term_debt"))
+        st_debt      = abs(_poly_fin(ic, bs, cf, "current_debt_and_capital_lease_obligations"))
+        cash         = abs(_poly_fin(ic, bs, cf, "cash_and_cash_equivalents"))
+        shares       = abs(_poly_fin(ic, bs, cf, "basic_average_shares"))
+        shares       = shares or abs(_poly_fin(ic, bs, cf, "common_stock_shares_outstanding"))
+
+        ebitda = ebit + da
+        total_debt = lt_debt + st_debt
+        net_debt   = total_debt - cash
+        tax_rate   = (tax_exp / pretax) if pretax > 0 else 0.25
+        tax_rate   = max(0.10, min(0.40, tax_rate))
+        rev_growth = (revenue_cur / revenue_prev - 1.0) if revenue_prev > 0 else 0.05
+
+        return {
+            "revenue":      revenue_cur,
+            "rev_growth":   rev_growth,
+            "ebit":         ebit,
+            "da":           da,
+            "ebitda":       ebitda,
+            "capex":        capex,
+            "interest_exp": interest_exp,
+            "tax_rate":     tax_rate,
+            "lt_debt":      lt_debt,
+            "st_debt":      st_debt,
+            "total_debt":   total_debt,
+            "cash":         cash,
+            "net_debt":     net_debt,
+            "shares":       shares,
+        }
+    except Exception as e:
+        log.debug("poly_financials_error %s: %s", ticker, e)
+        return {}
+
+
+async def _fetch_poly_price(ticker: str, api_key: str) -> float:
+    """Fetch previous close price from Polygon."""
+    import aiohttp as _ah
+    try:
+        url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev?adjusted=true&apiKey={api_key}"
+        async with _ah.ClientSession() as sess:
+            async with sess.get(url, timeout=_ah.ClientTimeout(total=8)) as resp:
+                if resp.status != 200:
+                    return 0.0
+                d = await resp.json()
+        results = d.get("results") or []
+        return float(results[0].get("c", 0)) if results else 0.0
+    except Exception:
+        return 0.0
+
+
+@app.get("/api/analytics/lbo/{ticker}")
+async def analytics_lbo(
+    ticker: str,
+    entry_multiple: float = 8.0,
+    hold_years: int = 5,
+    leverage_ratio: float = 0.60,
+    exit_multiple: float = 9.0,
+    revenue_growth: float = 0.05,
+    cost_of_debt: float = 0.08,
+    token: str = "",
+):
+    """
+    LBO model: entry EV, annual debt-paydown schedule, IRR/MOIC,
+    500-path Monte Carlo, covenant checks (≤6× leverage, ≥2× coverage), verdict.
+    Fetches EBITDA/capex from Polygon vX/reference/financials.
+    """
+    check_token(token)
+    ticker = ticker.upper()
+    hold_years = max(1, min(10, int(hold_years)))
+    cache_key  = f"analytics:lbo:{ticker}:{entry_multiple:.2f}:{hold_years}:{leverage_ratio:.2f}:{exit_multiple:.2f}:{revenue_growth:.3f}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    try:
+        import numpy as np
+    except ImportError:
+        return {"error": "numpy unavailable"}
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    fin     = await _fetch_poly_financials(ticker, api_key) if api_key else {}
+    if not fin or fin.get("ebitda", 0) <= 0:
+        return {"error": f"No EBITDA data for {ticker}"}
+
+    ebitda     = fin["ebitda"]
+    da         = fin["da"]
+    capex      = fin["capex"]
+    tax_rate   = fin["tax_rate"]
+    rev_growth = revenue_growth  # user override; default to supplied param
+
+    entry_ev     = ebitda * entry_multiple
+    entry_debt   = entry_ev * leverage_ratio
+    entry_equity = entry_ev * (1.0 - leverage_ratio)
+
+    # ── Annual debt schedule ──────────────────────────────────────────────────
+    schedule, debt, ebitda_cur = [], entry_debt, ebitda
+    covenants_ok       = True
+    first_breach_year  = None
+
+    for yr in range(1, hold_years + 1):
+        ebitda_cur = ebitda_cur * (1.0 + rev_growth)
+        interest   = debt * cost_of_debt
+        ebt        = max(0.0, ebitda_cur - da - interest)
+        tax        = ebt * tax_rate
+        fcf        = ebitda_cur - da - interest - tax - capex + da  # = EBITDA - interest - tax - capex
+        fcf        = ebitda_cur - interest - tax - capex            # simplified
+        debt_repay = max(0.0, min(max(0.0, fcf), debt))
+        debt       = max(0.0, debt - debt_repay)
+
+        lev  = debt / ebitda_cur if ebitda_cur > 0 else 99.0
+        cov  = ebitda_cur / interest if interest > 0 else 99.0
+        if lev > 6.0 or cov < 2.0:
+            if covenants_ok:
+                first_breach_year = yr
+            covenants_ok = False
+
+        schedule.append({
+            "year":     yr,
+            "ebitda":   round(ebitda_cur),
+            "interest": round(interest),
+            "fcf":      round(fcf),
+            "debt":     round(debt),
+            "leverage": round(lev, 2),
+            "coverage": round(cov, 2),
+        })
+
+    exit_ev     = ebitda_cur * exit_multiple
+    exit_equity = max(0.0, exit_ev - debt)
+    if entry_equity > 0 and exit_equity > 0:
+        base_irr  = (exit_equity / entry_equity) ** (1.0 / hold_years) - 1.0
+        base_moic = exit_equity / entry_equity
+    else:
+        base_irr = base_moic = 0.0
+
+    # ── Monte Carlo (500 paths) ───────────────────────────────────────────────
+    rng = np.random.default_rng(99)
+    mc_irrs: list = []
+    for _ in range(500):
+        g_s  = float(rng.normal(rev_growth, 0.025))
+        em_s = float(rng.normal(exit_multiple, 0.75))
+        em_s = max(3.0, em_s)
+        d_mc = entry_debt
+        e_mc = ebitda
+        for _ in range(hold_years):
+            e_mc   = e_mc * (1.0 + g_s)
+            int_mc = d_mc * cost_of_debt
+            ebt_mc = max(0.0, e_mc - da - int_mc)
+            fcf_mc = e_mc - int_mc - ebt_mc * tax_rate - capex
+            d_mc   = max(0.0, d_mc - max(0.0, min(max(0.0, fcf_mc), d_mc)))
+        eq_mc = max(0.0, e_mc * em_s - d_mc)
+        if entry_equity > 0 and eq_mc > 0:
+            mc_irrs.append((eq_mc / entry_equity) ** (1.0 / hold_years) - 1.0)
+
+    mc_arr    = np.array(mc_irrs) if mc_irrs else np.array([base_irr])
+    irr_pct   = base_irr * 100
+    verdict   = ("STRONG BUY" if irr_pct >= 25 else "BUY" if irr_pct >= 20
+                 else "CONDITIONAL" if irr_pct >= 15 else "PASS")
+
+    result = {
+        "ticker":            ticker,
+        "entry_ebitda":      round(ebitda),
+        "entry_ev":          round(entry_ev),
+        "entry_debt":        round(entry_debt),
+        "entry_equity":      round(entry_equity),
+        "entry_multiple":    entry_multiple,
+        "exit_multiple":     exit_multiple,
+        "hold_years":        hold_years,
+        "schedule":          schedule,
+        "exit_ev":           round(exit_ev),
+        "exit_equity":       round(exit_equity),
+        "base_irr":          round(base_irr * 100, 2),
+        "base_moic":         round(base_moic, 2),
+        "mc_irr_mean":       round(float(np.mean(mc_arr)) * 100, 2),
+        "mc_irr_p5":         round(float(np.percentile(mc_arr, 5)) * 100, 2),
+        "mc_irr_p95":        round(float(np.percentile(mc_arr, 95)) * 100, 2),
+        "mc_irr_median":     round(float(np.median(mc_arr)) * 100, 2),
+        "mc_pct_positive":   round(float(np.mean(mc_arr > 0)) * 100, 1),
+        "verdict":           verdict,
+        "covenants_ok":      covenants_ok,
+        "first_breach_year": first_breach_year,
+        "revenue_growth_pct": round(rev_growth * 100, 1),
+        "cost_of_debt_pct":  round(cost_of_debt * 100, 1),
+    }
+    if _r:
+        await _r.setex(cache_key, 1800, json.dumps(result))
+    return result
+
+
+@app.get("/api/analytics/dcf/{ticker}")
+async def analytics_dcf(ticker: str, token: str = ""):
+    """
+    DCF valuation: FCFF model, WACC (CAPM cost of equity + after-tax cost of debt),
+    10-year explicit forecast with growth fade to terminal, per-share intrinsic value.
+    """
+    check_token(token)
+    ticker    = ticker.upper()
+    cache_key = f"analytics:dcf:{ticker}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {"error": "no api key"}
+
+    fin, price = await asyncio.gather(
+        _fetch_poly_financials(ticker, api_key),
+        _fetch_poly_price(ticker, api_key),
+    )
+    if not fin or fin.get("ebit", 0) == 0:
+        return {"error": f"Insufficient financial data for {ticker}"}
+
+    ebit       = fin["ebit"]
+    da         = fin["da"]
+    capex      = fin["capex"]
+    tax_rate   = fin["tax_rate"]
+    total_debt = fin["total_debt"]
+    net_debt   = fin["net_debt"]
+    shares     = fin["shares"]
+    rev_growth = min(0.30, max(-0.10, fin["rev_growth"]))  # cap at ±30%
+    interest   = fin["interest_exp"]
+
+    # WACC components
+    rf          = 0.045          # risk-free rate (approx current 10yr)
+    erp         = 0.055          # equity risk premium
+    beta        = 1.1            # default; will use from analytics if available
+    cost_equity = rf + beta * erp
+    cost_debt   = (interest / total_debt) if total_debt > 0 else 0.07
+    cost_debt   = max(0.04, min(0.15, cost_debt))
+    equity_val  = max(price, 1.0) * max(shares, 1.0)
+    total_cap   = equity_val + total_debt
+    wacc        = (cost_equity * equity_val / total_cap
+                   + cost_debt * (1 - tax_rate) * total_debt / total_cap) if total_cap > 0 else 0.09
+    wacc        = max(0.06, min(0.18, wacc))
+
+    # FCFF base = EBIT(1-t) + D&A - CapEx
+    base_fcff = ebit * (1.0 - tax_rate) + da - capex
+
+    # 10-year explicit forecast: growth fades linearly from rev_growth to 3% by year 7
+    terminal_growth = 0.03
+    forecasts   = []
+    fcff        = base_fcff
+    pv_sum      = 0.0
+    for yr in range(1, 11):
+        if yr <= 3:
+            g = rev_growth
+        elif yr <= 7:
+            # linear fade from rev_growth to terminal_growth
+            g = rev_growth + (terminal_growth - rev_growth) * (yr - 3) / 4.0
+        else:
+            g = terminal_growth
+        fcff = fcff * (1.0 + g)
+        pv   = fcff / (1.0 + wacc) ** yr
+        pv_sum += pv
+        forecasts.append({"year": yr, "fcff": round(fcff), "pv": round(pv), "growth": round(g * 100, 1)})
+
+    # Terminal value (Gordon Growth at year 10)
+    tv    = fcff * (1.0 + terminal_growth) / max(0.001, wacc - terminal_growth)
+    pv_tv = tv / (1.0 + wacc) ** 10
+    ev    = pv_sum + pv_tv
+    eq    = ev - net_debt
+    intrinsic_per_share = (eq / shares) if shares > 0 else 0.0
+    dcf_gap = ((intrinsic_per_share - price) / price * 100) if price > 0 else 0.0
+
+    result = {
+        "ticker":               ticker,
+        "market_price":         round(price, 2),
+        "intrinsic_per_share":  round(intrinsic_per_share, 2),
+        "dcf_gap_pct":          round(dcf_gap, 1),
+        "enterprise_value":     round(ev),
+        "equity_value":         round(eq),
+        "pv_explicit":          round(pv_sum),
+        "pv_terminal":          round(pv_tv),
+        "terminal_value":       round(tv),
+        "wacc":                 round(wacc * 100, 2),
+        "cost_equity":          round(cost_equity * 100, 2),
+        "cost_debt":            round(cost_debt * 100, 2),
+        "tax_rate":             round(tax_rate * 100, 1),
+        "terminal_growth":      round(terminal_growth * 100, 1),
+        "base_fcff":            round(base_fcff),
+        "rev_growth_yr1":       round(rev_growth * 100, 1),
+        "net_debt":             round(net_debt),
+        "shares":               round(shares),
+        "forecasts":            forecasts,
+        "rating": ("UNDERVALUED" if dcf_gap > 15 else
+                   "FAIR" if dcf_gap > -15 else "OVERVALUED"),
+    }
+    if _r:
+        await _r.setex(cache_key, 3600, json.dumps(result))
+    return result
+
+
+@app.get("/api/analytics/optimize")
+async def analytics_optimize(
+    tickers: str = "",
+    method: str  = "hrp",
+    days:   int  = 252,
+    max_weight: float = 0.40,
+    token:  str  = "",
+):
+    """
+    Portfolio optimization: MV (max Sharpe via SLSQP), HRP (hierarchical risk parity
+    with Ledoit-Wolf shrinkage), RP (equal risk contribution).
+    Fetches price history from Polygon.
+    """
+    check_token(token)
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    if len(ticker_list) < 2:
+        return {"error": "Need at least 2 tickers"}
+    if len(ticker_list) > 20:
+        return {"error": "Max 20 tickers"}
+    method = method.lower() if method.lower() in ("mv", "hrp", "rp") else "hrp"
+    max_weight = max(1.0 / len(ticker_list), min(1.0, max_weight))
+
+    cache_key = f"analytics:opt:{','.join(sorted(ticker_list))}:{method}:{days}:{max_weight:.2f}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    try:
+        import numpy as np
+    except ImportError:
+        return {"error": "numpy unavailable"}
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {"error": "no api key"}
+
+    # Fetch daily closes for each ticker
+    import aiohttp as _ah
+    from_dt = (date.today() - timedelta(days=days + 30)).isoformat()
+    to_dt   = date.today().isoformat()
+
+    async def _get_closes(sym: str) -> list[float]:
+        url = (f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+               f"/{from_dt}/{to_dt}?adjusted=true&sort=asc&limit={days + 40}&apiKey={api_key}")
+        try:
+            async with _ah.ClientSession() as sess:
+                async with sess.get(url, timeout=_ah.ClientTimeout(total=12)) as resp:
+                    if resp.status != 200:
+                        return []
+                    d = await resp.json()
+            return [float(b["c"]) for b in (d.get("results") or []) if b.get("c")]
+        except Exception:
+            return []
+
+    closes_list = await asyncio.gather(*[_get_closes(t) for t in ticker_list])
+
+    # Align to shortest series, require at least 60 points
+    min_len = min((len(c) for c in closes_list), default=0)
+    if min_len < 60:
+        return {"error": "Insufficient price history for one or more tickers"}
+
+    # Build returns matrix (n_obs × n_assets)
+    ret_matrix = np.array([
+        np.diff(np.array(c[-min_len:])) / np.array(c[-min_len:-1])
+        for c in closes_list
+    ]).T  # (n_obs-1, n_assets)
+
+    n_assets = len(ticker_list)
+    mu_daily = np.mean(ret_matrix, axis=0)
+    mu_ann   = mu_daily * 252
+
+    # Ledoit-Wolf covariance shrinkage
+    from sklearn.covariance import LedoitWolf
+    lw  = LedoitWolf().fit(ret_matrix)
+    cov = lw.covariance_ * 252   # annualized
+
+    weights = np.ones(n_assets) / n_assets  # default equal weight
+
+    if method == "mv":
+        # Max Sharpe via SLSQP
+        from scipy.optimize import minimize as _min
+        rf_ann = 0.045
+
+        def _neg_sharpe(w):
+            w    = np.array(w)
+            ret  = float(w @ mu_ann)
+            vol  = float(np.sqrt(w @ cov @ w))
+            return -(ret - rf_ann) / vol if vol > 1e-9 else 0.0
+
+        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+        bounds      = [(0.0, max_weight)] * n_assets
+        w0          = np.ones(n_assets) / n_assets
+        res         = _min(_neg_sharpe, w0, method="SLSQP",
+                           bounds=bounds, constraints=constraints,
+                           options={"ftol": 1e-9, "maxiter": 500})
+        if res.success:
+            weights = np.array(res.x)
+            weights = np.clip(weights, 0, max_weight)
+            weights /= weights.sum()
+
+    elif method == "hrp":
+        # Hierarchical Risk Parity
+        from scipy.cluster.hierarchy import linkage, leaves_list
+        from scipy.spatial.distance import squareform
+
+        corr    = np.corrcoef(ret_matrix.T)
+        dist    = np.sqrt(np.clip((1.0 - corr) / 2.0, 0.0, 1.0))
+        np.fill_diagonal(dist, 0.0)
+        link    = linkage(squareform(dist), method="ward")
+        order   = list(leaves_list(link))
+
+        def _hrp_recurse(items: list) -> np.ndarray:
+            if len(items) == 1:
+                w = np.zeros(n_assets)
+                w[items[0]] = 1.0
+                return w
+            mid   = len(items) // 2
+            left  = items[:mid]
+            right = items[mid:]
+            wl    = _hrp_recurse(left)
+            wr    = _hrp_recurse(right)
+            # risk of each cluster: w'Σw
+            vol_l = float(np.sqrt(wl @ cov @ wl)) or 1e-9
+            vol_r = float(np.sqrt(wr @ cov @ wr)) or 1e-9
+            alpha = vol_r / (vol_l + vol_r)
+            return alpha * wl + (1.0 - alpha) * wr
+
+        weights = _hrp_recurse(order)
+        weights = np.clip(weights, 0, max_weight)
+        weights /= weights.sum()
+
+    elif method == "rp":
+        # Equal risk contribution via Newton's method
+        def _rp_obj(w):
+            w_arr = np.array(w)
+            cov_w = cov @ w_arr
+            vol   = float(np.sqrt(w_arr @ cov_w)) or 1e-9
+            rc    = w_arr * cov_w / vol     # risk contribution per asset
+            target = vol / n_assets          # equal target
+            return float(np.sum((rc - target) ** 2))
+
+        from scipy.optimize import minimize as _min
+        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+        bounds      = [(0.0, max_weight)] * n_assets
+        res         = _min(_rp_obj, np.ones(n_assets) / n_assets,
+                           method="SLSQP", bounds=bounds, constraints=constraints,
+                           options={"ftol": 1e-12, "maxiter": 1000})
+        if res.success:
+            weights = np.clip(np.array(res.x), 0, max_weight)
+            weights /= weights.sum()
+
+    # Portfolio stats
+    port_ret = float(weights @ mu_ann)
+    port_vol = float(np.sqrt(weights @ cov @ weights))
+    sharpe   = (port_ret - 0.045) / port_vol if port_vol > 0 else 0.0
+
+    # Per-asset risk contribution
+    cov_w   = cov @ weights
+    port_v  = float(np.sqrt(weights @ cov_w)) or 1e-9
+    rc      = [round(float(w * c / port_v) * 100, 2) for w, c in zip(weights, cov_w)]
+
+    result = {
+        "tickers":      ticker_list,
+        "method":       method,
+        "weights":      [round(float(w), 4) for w in weights],
+        "port_return":  round(port_ret * 100, 2),
+        "port_vol":     round(port_vol * 100, 2),
+        "sharpe":       round(sharpe, 3),
+        "risk_contrib": rc,
+        "days":         min_len - 1,
+        "max_weight":   max_weight,
+    }
+    if _r:
+        await _r.setex(cache_key, 3600, json.dumps(result))
+    return result
+
+
+_FRED_SERIES = {
+    "1M":  "DGS1MO",
+    "3M":  "DGS3MO",
+    "6M":  "DGS6MO",
+    "1Y":  "DGS1",
+    "2Y":  "DGS2",
+    "5Y":  "DGS5",
+    "10Y": "DGS10",
+    "20Y": "DGS20",
+    "30Y": "DGS30",
+    "TIPS5":  "DFII5",
+    "TIPS10": "DFII10",
+}
+_FRED_MATURITIES = ["1M", "3M", "6M", "1Y", "2Y", "5Y", "10Y", "20Y", "30Y"]
+
+
+async def _fred_latest(series_id: str, lookback_days: int = 30) -> float | None:
+    """Fetch latest value for a FRED series via the public CSV endpoint (no API key)."""
+    import aiohttp as _ah
+    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+    try:
+        async with _ah.ClientSession() as sess:
+            async with sess.get(url, timeout=_ah.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return None
+                text = await resp.text()
+        lines = [l for l in text.strip().splitlines() if l and not l.startswith("observation")]
+        # Walk backwards to find a non-"." value
+        for line in reversed(lines[-lookback_days:]):
+            parts = line.split(",")
+            if len(parts) >= 2 and parts[1].strip() not in (".", ""):
+                try:
+                    return float(parts[1].strip())
+                except ValueError:
+                    pass
+        return None
+    except Exception:
+        return None
+
+
+async def _fred_history(series_id: str, n_days: int = 252) -> list[tuple[str, float]]:
+    """Fetch last n_days of a FRED series as [(date, value)] list."""
+    import aiohttp as _ah
+    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+    try:
+        async with _ah.ClientSession() as sess:
+            async with sess.get(url, timeout=_ah.ClientTimeout(total=12)) as resp:
+                if resp.status != 200:
+                    return []
+                text = await resp.text()
+        rows: list[tuple[str, float]] = []
+        for line in text.strip().splitlines():
+            if line.startswith("observation") or not line:
+                continue
+            parts = line.split(",")
+            if len(parts) >= 2 and parts[1].strip() not in (".", ""):
+                try:
+                    rows.append((parts[0].strip(), float(parts[1].strip())))
+                except ValueError:
+                    pass
+        return rows[-n_days:]
+    except Exception:
+        return []
+
+
+@app.get("/api/market/yield-curve")
+async def get_yield_curve(token: str = ""):
+    """
+    US Treasury yield curve from FRED public CSV (no API key required).
+    Returns current curve, 2s10s/3m10y spreads + 252-day history, breakeven inflation,
+    and regime (INVERTED / FLAT / STEEP / NORMAL).
+    Cached 30 min.
+    """
+    check_token(token)
+    cache_key = "market:yield_curve"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    try:
+        # Fetch all nominal series + TIPS in parallel
+        series_keys = list(_FRED_SERIES.keys())
+        values = await asyncio.gather(*[_fred_latest(_FRED_SERIES[k]) for k in series_keys])
+        curve_latest: dict[str, float | None] = dict(zip(series_keys, values))
+
+        # Current curve (nominal maturities only)
+        curve = [
+            {"maturity": m, "yield": curve_latest.get(m)}
+            for m in _FRED_MATURITIES
+            if curve_latest.get(m) is not None
+        ]
+
+        y2    = curve_latest.get("2Y")
+        y10   = curve_latest.get("10Y")
+        y3m   = curve_latest.get("3M")
+        tips5 = curve_latest.get("TIPS5")
+        tips10 = curve_latest.get("TIPS10")
+        spread_2s10s  = round(y10 - y2, 3)   if (y10 and y2)   else None
+        spread_3m10y  = round(y10 - y3m, 3)  if (y10 and y3m)  else None
+        be_5y  = round((y2 or 0) - (tips5 or 0), 3)  if (y2 and tips5)   else None  # approx
+        be_10y = round((y10 or 0) - (tips10 or 0), 3) if (y10 and tips10) else None
+
+        # Regime classification
+        if spread_2s10s is not None:
+            if spread_2s10s < -0.05:   regime = "INVERTED"
+            elif spread_2s10s < 0.25:  regime = "FLAT"
+            elif spread_2s10s > 1.50:  regime = "STEEP"
+            else:                       regime = "NORMAL"
+        else:
+            regime = "UNKNOWN"
+
+        # Historical 2s10s spread (last 252 points)
+        hist_2y_raw, hist_10y_raw = await asyncio.gather(
+            _fred_history("DGS2", 300),
+            _fred_history("DGS10", 300),
+        )
+        # Merge by date
+        d2_map  = {d: v for d, v in hist_2y_raw}
+        spread_history = [
+            {"date": d, "spread": round(v - d2_map[d], 3)}
+            for d, v in hist_10y_raw
+            if d in d2_map
+        ][-252:]
+
+        result = {
+            "curve":           curve,
+            "spread_2s10s":    spread_2s10s,
+            "spread_3m10y":    spread_3m10y,
+            "breakeven_5y":    be_5y,
+            "breakeven_10y":   be_10y,
+            "regime":          regime,
+            "tips_5y":         tips5,
+            "tips_10y":        tips10,
+            "spread_history":  spread_history,
+            "updated":         datetime.now(timezone.utc).isoformat(),
+        }
+        if _r:
+            await _r.setex(cache_key, 1800, json.dumps(result))
+        return result
+
+    except Exception as e:
+        log.warning("yield_curve.error", error=str(e))
+        return {"error": str(e)}
+
+
+_BREADTH_UNIVERSE = [
+    "AAPL","MSFT","NVDA","AMZN","GOOGL","META","BRK.B","LLY","JPM","V",
+    "UNH","XOM","TSLA","MA","JNJ","HD","PG","COST","AVGO","MRK",
+    "CVX","ABBV","KO","PEP","ADBE","WMT","TMO","ACN","AMD","CRM",
+    "MCD","NKE","ABT","INTC","TXN","QCOM","DHR","AMGN","NEE","RTX",
+    "HON","LOW","INTU","LIN","SPGI","GS","BLK","MS","AXP","BA",
+]
+
+
+@app.get("/api/market/breadth")
+async def get_market_breadth(token: str = ""):
+    """
+    Market breadth for 50 large-cap tickers: % above 50/200-day MA,
+    advance/decline ratio, net new 52-week highs vs lows.
+    Cached 30 min.
+    """
+    check_token(token)
+    cache_key = "market:breadth"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {"error": "no api key"}
+
+    import aiohttp as _ah
+    from_dt = (date.today() - timedelta(days=320)).isoformat()
+    to_dt   = date.today().isoformat()
+
+    async def _fetch_one(sym: str) -> dict | None:
+        url = (f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+               f"/{from_dt}/{to_dt}?adjusted=true&sort=asc&limit=300&apiKey={api_key}")
+        try:
+            async with _ah.ClientSession() as sess:
+                async with sess.get(url, timeout=_ah.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        return None
+                    d = await resp.json()
+            bars = d.get("results") or []
+            if len(bars) < 52:
+                return None
+            closes = [float(b["c"]) for b in bars]
+            cur    = closes[-1]
+            prev   = closes[-2] if len(closes) >= 2 else cur
+            ma50   = sum(closes[-50:]) / 50  if len(closes) >= 50  else None
+            ma200  = sum(closes[-200:]) / 200 if len(closes) >= 200 else None
+            hi52   = max(closes[-252:]) if len(closes) >= 252 else max(closes)
+            lo52   = min(closes[-252:]) if len(closes) >= 252 else min(closes)
+            return {
+                "sym":    sym,
+                "cur":    cur,
+                "chg":    (cur / prev - 1.0) if prev > 0 else 0.0,
+                "abv50":  (cur > ma50)  if ma50  else None,
+                "abv200": (cur > ma200) if ma200 else None,
+                "hi52":   hi52,
+                "lo52":   lo52,
+                "new_hi": cur >= hi52 * 0.99,
+                "new_lo": cur <= lo52 * 1.01,
+            }
+        except Exception:
+            return None
+
+    raw = await asyncio.gather(*[_fetch_one(s) for s in _BREADTH_UNIVERSE])
+    records = [r for r in raw if r is not None]
+
+    if not records:
+        return {"error": "No data fetched"}
+
+    n         = len(records)
+    abv50     = [r for r in records if r["abv50"]  is True]
+    abv200    = [r for r in records if r["abv200"] is True]
+    advances  = [r for r in records if r["chg"] > 0]
+    declines  = [r for r in records if r["chg"] < 0]
+    new_his   = [r for r in records if r["new_hi"]]
+    new_los   = [r for r in records if r["new_lo"]]
+    ad_ratio  = round(len(advances) / len(declines), 2) if declines else 99.0
+    net_highs = len(new_his) - len(new_los)
+
+    # Top gainers / losers
+    by_chg  = sorted(records, key=lambda r: r["chg"])
+    losers  = [{"sym": r["sym"], "chg": round(r["chg"] * 100, 2)} for r in by_chg[:5]]
+    gainers = [{"sym": r["sym"], "chg": round(r["chg"] * 100, 2)} for r in by_chg[-5:]]
+
+    result = {
+        "universe_count":  n,
+        "pct_above_50ma":  round(len(abv50)  / n * 100, 1),
+        "pct_above_200ma": round(len(abv200) / n * 100, 1),
+        "advance_count":   len(advances),
+        "decline_count":   len(declines),
+        "ad_ratio":        ad_ratio,
+        "new_highs":       len(new_his),
+        "new_lows":        len(new_los),
+        "net_highs":       net_highs,
+        "gainers":         gainers,
+        "losers":          losers,
+        "updated":         datetime.now(timezone.utc).isoformat(),
+    }
+    if _r:
+        await _r.setex(cache_key, 1800, json.dumps(result))
+    return result
+
+
+@app.get("/api/analytics/tsmom")
+async def analytics_tsmom(mode: str = "live", token: str = ""):
+    """
+    12-1 time-series momentum for each portfolio holding.
+    Signal: LONG (mom>0) / SHORT (mom<0) / FLAT (near zero).
+    Position size: signal × min(2.0, 15%/realized_vol).
+    Vol: EWMA half-life 60d, annualized.
+    """
+    check_token(token)
+    cache_key = f"analytics:tsmom:{mode}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    if not DB_URL:
+        return {"error": "no db"}
+
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT DISTINCT symbol
+           FROM positions
+           WHERE mode = $1 AND qty > 0""",
+        mode,
+    )
+    tickers = [r["symbol"] for r in rows]
+    if not tickers:
+        return {"signals": [], "mode": mode}
+
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    if not api_key:
+        return {"error": "no api key"}
+
+    import aiohttp as _ah
+    import math as _math
+
+    LOOKBACK = 252 + 21 + 10   # extra buffer
+    TARGET_VOL = 0.15
+    FLAT_THRESHOLD = 0.01      # momentum must exceed ±1% to get a signal
+
+    from_dt = (date.today() - timedelta(days=LOOKBACK + 20)).isoformat()
+    to_dt   = date.today().isoformat()
+
+    async def _tsmom_one(sym: str) -> dict:
+        url = (f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+               f"/{from_dt}/{to_dt}?adjusted=true&sort=asc&limit={LOOKBACK + 30}&apiKey={api_key}")
+        try:
+            async with _ah.ClientSession() as sess:
+                async with sess.get(url, timeout=_ah.ClientTimeout(total=12)) as resp:
+                    if resp.status != 200:
+                        return {"sym": sym, "error": "no data"}
+                    d = await resp.json()
+            closes = [float(b["c"]) for b in (d.get("results") or []) if b.get("c")]
+            if len(closes) < 252:
+                return {"sym": sym, "error": "insufficient history"}
+
+            # 12-1 momentum: return from -252 days to -21 days (exclude last month)
+            idx_start = -252
+            idx_end   = -21
+            mom = closes[idx_end] / closes[idx_start] - 1.0
+
+            # EWMA realized volatility (halflife=60d) on daily returns
+            rets    = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes))]
+            hl      = 60.0
+            decay   = _math.exp(-_math.log(2) / hl)
+            var_ewm = rets[0] ** 2
+            for r in rets[1:]:
+                var_ewm = decay * var_ewm + (1.0 - decay) * r ** 2
+            vol_ann = _math.sqrt(var_ewm * 252)
+
+            # Signal and position size
+            if   mom >  FLAT_THRESHOLD:  signal = 1
+            elif mom < -FLAT_THRESHOLD:  signal = -1
+            else:                         signal = 0
+
+            pos_size = signal * min(2.0, TARGET_VOL / vol_ann) if vol_ann > 0 else 0.0
+
+            return {
+                "sym":       sym,
+                "momentum":  round(mom * 100, 2),
+                "vol_ann":   round(vol_ann * 100, 2),
+                "signal":    signal,
+                "pos_size":  round(pos_size, 3),
+                "direction": "LONG" if signal > 0 else "SHORT" if signal < 0 else "FLAT",
+            }
+        except Exception as e:
+            return {"sym": sym, "error": str(e)[:60]}
+
+    signals = await asyncio.gather(*[_tsmom_one(t) for t in tickers])
+    signals_list = sorted(signals, key=lambda x: x.get("momentum", 0), reverse=True)
+
+    result = {"signals": signals_list, "mode": mode,
+              "target_vol_pct": TARGET_VOL * 100,
+              "flat_threshold_pct": FLAT_THRESHOLD * 100}
+    if _r:
+        await _r.setex(cache_key, 1800, json.dumps(result))
+    return result
+
+
 # ── Serve frontend ────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)

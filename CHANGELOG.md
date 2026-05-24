@@ -3,6 +3,18 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.93] - 2026-05-24
+
+### Added — mini-bloomberg-terminal features (6 items)
+- **LBO Analysis** (`/api/analytics/lbo/{ticker}` + card): entry EV, annual debt-paydown schedule (EBITDA/interest/FCF/leverage/coverage per year), base IRR + MOIC, 500-path Monte Carlo (p5/median/p95), covenant checks (≤6× leverage, ≥2× coverage), STRONG BUY/BUY/CONDITIONAL/PASS verdict. Fetches EBITDA/capex from Polygon vX/reference/financials.
+- **DCF Valuation** (`/api/analytics/dcf/{ticker}` + card): 10-year FCFF explicit forecast with linear growth fade to 3% terminal, WACC via CAPM equity cost + after-tax debt cost, terminal value (Gordon Growth), per-share intrinsic vs market price gap, UNDERVALUED/FAIR/OVERVALUED rating. FCFF chart SVG.
+- **Portfolio Optimizer** (`/api/analytics/optimize` + card): three methods — HRP (hierarchical risk parity with Ledoit-Wolf shrinkage + scipy seriation), Max Sharpe (SLSQP constrained), Risk Parity (equal risk contribution). Per-asset weight + risk contribution bar chart.
+- **Yield Curve Analytics** (`/api/market/yield-curve` + card): FRED public CSV (no API key) for 9 nominal Treasury maturities (1M–30Y) + TIPS 5Y/10Y real rates. 2s10s/3m10y spreads, breakeven inflation, INVERTED/FLAT/STEEP/NORMAL regime. 252-day 2s10s spread bar chart. Cached 30 min.
+- **Market Breadth** (`/api/market/breadth` + card): 50 large-cap universe — % above 50/200-day MA, advance/decline ratio, net 52-week new highs vs lows, top-5 gainers/losers. Cached 30 min.
+- **Time-Series Momentum** (`/api/analytics/tsmom` + panel): 12-1 momentum for each portfolio holding, EWMA vol (halflife=60d), LONG/SHORT/FLAT signal, vol-targeted position sizing `min(2×, 15%/realized_vol)`. Loads with analytics page.
+- Added `_fetch_poly_financials()` and `_fetch_poly_price()` shared helpers for Polygon vX financials
+- Added `_fred_latest()` and `_fred_history()` helpers for FRED public CSV endpoint
+
 ## [3.7.92] - 2026-05-24
 
 ### Added
