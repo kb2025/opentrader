@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.8] - 2026-05-24
+
+### Added
+- **Strategy Payoff Builder** (replaces Iron Condor Builder): 12 strategies — Long Call, Long Put, Covered Call, Cash-Secured Put, Long Straddle, Short Straddle, Long Strangle, Short Strangle, Bull Call Spread, Bear Put Spread, Long Butterfly, Iron Condor; 4-leg input form with labels/visibility driven by strategy selection; client-side SVG payoff diagram with profit/loss zone fills (SVG clipPath), strike markers, break-even markers, current spot line, max profit/loss horizon lines; stats row shows Max Profit, Max Loss, Net Credit/Debit, Break-Even(s), and risk-neutral PoP (Gaussian quadrature over lognormal density, 400 points)
+- **Newton-Raphson IV Solver UI**: IV Solver row in Strategy Payoff Builder calls `/api/options/implied-vol`; uses Leg 1 strike; displays `IV = X.XX% (N iters)` or convergence warning
+- **Per-position Payoff Modal** (📈 button in Options positions table): renders at-expiry P&L SVG for any active option position using strike, entry price, qty, and live/entry spot; delta shown as PoP proxy; reuses `_spbPayoffSvg` helper
+- **Portfolio VaR panel in Options Greeks**: `loadOptionsGreeksPanel()` now fetches `/api/options/portfolio-var` in parallel; `_renderOptionsGreeks()` renders a Delta-Gamma Risk row below the per-underlying table showing VaR 95%, CVaR 95%, Max Scenario Loss, Portfolio PoP, and Portfolio Theta/day
+
 ## [3.8.7] - 2026-05-24
 
 ### Added

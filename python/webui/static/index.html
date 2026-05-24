@@ -2587,76 +2587,122 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
-      <!-- Iron Condor Builder -->
+      <!-- Strategy Payoff Builder -->
       <div class="card" style="margin-top:16px">
         <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
-          <span class="card-title">Iron Condor Builder</span>
-          <span style="font-size:11px;color:var(--muted)">Payoff diagram · Risk metrics · PoP</span>
+          <span class="card-title">Strategy Payoff Builder</span>
+          <span style="font-size:11px;color:var(--muted)">Payoff diagram · Risk metrics · PoP · IV Solver</span>
         </div>
         <div class="card-body" style="padding:14px 16px">
-          <!-- Market params row -->
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,auto));gap:10px;margin-bottom:12px;align-items:end">
+
+          <!-- Row 1: strategy selector + market params -->
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Strategy</div>
+              <select id="spb-strategy" onchange="_spbStratChange()"
+                style="background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:12px;min-width:170px">
+                <option value="long_call">Long Call</option>
+                <option value="long_put">Long Put</option>
+                <option value="covered_call">Covered Call</option>
+                <option value="cash_put">Cash-Secured Put</option>
+                <option value="long_straddle">Long Straddle</option>
+                <option value="short_straddle">Short Straddle</option>
+                <option value="long_strangle">Long Strangle</option>
+                <option value="short_strangle">Short Strangle</option>
+                <option value="bull_call">Bull Call Spread</option>
+                <option value="bear_put">Bear Put Spread</option>
+                <option value="long_butterfly">Long Butterfly</option>
+                <option value="iron_condor">Iron Condor</option>
+              </select>
+            </div>
             <div>
               <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Spot ($)</div>
-              <input id="ic-spot" type="number" step="0.01" placeholder="525.00"
-                style="width:100%;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px"/>
+              <input id="spb-spot" type="number" step="0.01" placeholder="525.00"
+                style="width:90px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px"/>
             </div>
             <div>
               <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">IV %</div>
-              <input id="ic-sigma" type="number" step="0.1" placeholder="18.0"
-                style="width:100%;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px"/>
+              <input id="spb-sigma" type="number" step="0.1" placeholder="18.0"
+                style="width:70px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px"/>
             </div>
             <div>
-              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">DTE (days)</div>
-              <input id="ic-dte" type="number" step="1" placeholder="30"
-                style="width:100%;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px"/>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">DTE</div>
+              <input id="spb-dte" type="number" step="1" placeholder="30"
+                style="width:60px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px"/>
             </div>
-          </div>
-          <!-- Strike + premium inputs — 4 columns -->
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:12px">
-            <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
-              <div style="font-size:9px;font-weight:600;color:#fb923c;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Long Put (wing)</div>
-              <div style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
-              <input id="ic-k-lp" type="number" step="0.5" placeholder="480"
-                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
-              <div style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Prem paid ($)</div>
-              <input id="ic-p-lp" type="number" step="0.01" placeholder="0.50"
-                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
-            </div>
-            <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
-              <div style="font-size:9px;font-weight:600;color:#f87171;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Short Put (body)</div>
-              <div style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
-              <input id="ic-k-sp" type="number" step="0.5" placeholder="500"
-                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
-              <div style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Prem received ($)</div>
-              <input id="ic-p-sp" type="number" step="0.01" placeholder="2.00"
-                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
-            </div>
-            <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
-              <div style="font-size:9px;font-weight:600;color:#f87171;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Short Call (body)</div>
-              <div style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
-              <input id="ic-k-sc" type="number" step="0.5" placeholder="550"
-                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
-              <div style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Prem received ($)</div>
-              <input id="ic-p-sc" type="number" step="0.01" placeholder="2.00"
-                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
-            </div>
-            <div style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
-              <div style="font-size:9px;font-weight:600;color:#fb923c;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Long Call (wing)</div>
-              <div style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
-              <input id="ic-k-lc" type="number" step="0.5" placeholder="570"
-                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
-              <div style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Prem paid ($)</div>
-              <input id="ic-p-lc" type="number" step="0.01" placeholder="0.50"
-                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-            <button onclick="_buildIronCondor()"
+            <button onclick="_spbBuild()"
               style="background:var(--blue);color:#fff;border:none;padding:7px 18px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Build Payoff</button>
-            <span style="font-size:10px;color:var(--muted)">K_lp &lt; K_sp &lt; Spot &lt; K_sc &lt; K_lc</span>
           </div>
-          <div id="ic-result"></div>
+
+          <!-- Leg inputs — 4 slots, labels/visibility driven by JS -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px" id="spb-legs">
+            <div id="spb-leg-1" style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
+              <div id="spb-leg-1-title" style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:#34d399">Leg 1</div>
+              <div id="spb-k1-label" style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
+              <input id="spb-k1" type="number" step="0.5" placeholder="—"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+              <div id="spb-p1-label" style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Premium ($)</div>
+              <input id="spb-p1" type="number" step="0.01" placeholder="—"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+            </div>
+            <div id="spb-leg-2" style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px">
+              <div id="spb-leg-2-title" style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:#f87171">Leg 2</div>
+              <div id="spb-k2-label" style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
+              <input id="spb-k2" type="number" step="0.5" placeholder="—"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+              <div id="spb-p2-label" style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Premium ($)</div>
+              <input id="spb-p2" type="number" step="0.01" placeholder="—"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+            </div>
+            <div id="spb-leg-3" style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px;display:none">
+              <div id="spb-leg-3-title" style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:#fbbf24">Leg 3</div>
+              <div id="spb-k3-label" style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
+              <input id="spb-k3" type="number" step="0.5" placeholder="—"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+              <div id="spb-p3-label" style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Premium ($)</div>
+              <input id="spb-p3" type="number" step="0.01" placeholder="—"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+            </div>
+            <div id="spb-leg-4" style="background:var(--surface2,var(--surface));border-radius:6px;padding:8px 10px;display:none">
+              <div id="spb-leg-4-title" style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:#fb923c">Leg 4</div>
+              <div id="spb-k4-label" style="font-size:9px;color:var(--muted);margin-bottom:2px">Strike</div>
+              <input id="spb-k4" type="number" step="0.5" placeholder="—"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+              <div id="spb-p4-label" style="font-size:9px;color:var(--muted);margin-top:5px;margin-bottom:2px">Premium ($)</div>
+              <input id="spb-p4" type="number" step="0.01" placeholder="—"
+                style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:12px;box-sizing:border-box"/>
+            </div>
+          </div>
+
+          <!-- IV Solver row -->
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;border-top:1px solid var(--border);padding-top:10px;margin-bottom:10px">
+            <span style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;align-self:center">IV Solver:</span>
+            <div>
+              <div style="font-size:8px;color:var(--muted);margin-bottom:2px">Market Price ($)</div>
+              <input id="spb-iv-mkt" type="number" step="0.01" placeholder="5.00"
+                style="width:80px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:4px 7px;font-size:12px"/>
+            </div>
+            <div>
+              <div style="font-size:8px;color:var(--muted);margin-bottom:2px">Type</div>
+              <select id="spb-iv-type" style="background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:4px 7px;font-size:12px">
+                <option value="call">Call</option><option value="put">Put</option>
+              </select>
+            </div>
+            <button onclick="_spbSolveIV()"
+              style="background:var(--card-header);color:var(--fg);border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">Solve IV</button>
+            <span id="spb-iv-result" style="font-size:12px;color:#22d3ee;font-weight:700"></span>
+          </div>
+
+          <div id="spb-result"></div>
+        </div>
+      </div>
+
+      <!-- Position Payoff Modal -->
+      <div id="pos-payoff-modal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.6);align-items:center;justify-content:center">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;min-width:600px;max-width:880px;width:90%;max-height:90vh;overflow-y:auto;position:relative">
+          <button onclick="_posPayoffClose()" style="position:absolute;top:12px;right:14px;background:none;border:none;cursor:pointer;font-size:18px;color:var(--muted)">✕</button>
+          <div id="pos-payoff-title" style="font-size:14px;font-weight:700;margin-bottom:14px"></div>
+          <div id="pos-payoff-body"></div>
         </div>
       </div>
 
@@ -17615,10 +17661,13 @@ function _optCellVal(colId, p) {
       return `<td style="padding:7px 6px;text-align:center;font-size:11px;color:${dateStr?'var(--fg)':'var(--muted)'}">${dateStr||'—'}${daysSub}</td>`;
     }
     case 'status':  return `<td style="padding:7px 6px;text-align:center"><span style="font-size:10px;color:var(--muted)">${p.status}</span></td>`;
-    case 'journal': return `<td style="padding:7px 6px;text-align:center">
+    case 'journal': return `<td style="padding:7px 6px;text-align:center;white-space:nowrap">
       <button onclick="_optJournalOpen('${p.id}','${(p.journal||'').replace(/'/g,"\\'").replace(/\n/g,'\\n')}')"
         style="background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:4px;${p.journal?'color:#f59e0b':'color:var(--muted)'}"
-        title="${p.journal?'Edit journal note':'Add journal note'}">✏</button></td>`;
+        title="${p.journal?'Edit journal note':'Add journal note'}">✏</button>
+      <button onclick="_optPositionPayoff('${p.id}')"
+        style="background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:4px;color:var(--muted);font-size:13px"
+        title="View payoff diagram">📈</button></td>`;
     default: return '<td></td>';
   }
 }
@@ -19642,14 +19691,17 @@ async function loadOptionsGreeksPanel() {
   const el = document.getElementById('options-greeks-panel');
   if (!el) return;
   try {
-    const data = await apiFetch('/api/options/portfolio-greeks');
-    _renderOptionsGreeks(el, data);
+    const [data, varData] = await Promise.all([
+      apiFetch('/api/options/portfolio-greeks'),
+      apiFetch('/api/options/portfolio-var').catch(() => null),
+    ]);
+    _renderOptionsGreeks(el, data, varData);
   } catch(e) {
     el.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px">Greeks unavailable</div>`;
   }
 }
 
-function _renderOptionsGreeks(el, data) {
+function _renderOptionsGreeks(el, data, varData) {
   const t = data.totals || {};
   const fmtG = (v, dp) => v !== undefined && v !== null ? v.toFixed(dp || 2) : '—';
   const deltaColor = (v) => v > 0 ? '#22c55e' : v < 0 ? '#ef4444' : 'var(--muted)';
@@ -19662,6 +19714,33 @@ function _renderOptionsGreeks(el, data) {
       <td style="padding:5px 8px;font-size:12px;color:var(--blue)">${fmtG(g.vega)}</td>
       <td style="padding:5px 8px;font-size:12px;color:var(--muted)">${fmtG(g.gamma, 4)}</td>
     </tr>`).join('');
+
+  // VaR section
+  let varHtml = '';
+  if (varData && varData.position_count > 0) {
+    const fv = (v, dp=2) => v != null ? v.toFixed(dp) : '—';
+    varHtml = `
+    <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+      <div style="background:var(--card-header);padding:7px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">
+        Delta-Gamma Portfolio Risk (±25% spot scenarios)
+      </div>
+      <div style="display:flex;gap:0;flex-wrap:wrap">
+        ${[
+          ['VaR 95%',   varData.var_95  != null ? `-$${fv(varData.var_95,0)}` : '—', '#f87171'],
+          ['CVaR 95%',  varData.es_95   != null ? `-$${fv(varData.es_95,0)}`  : '—', '#f87171'],
+          ['Max Loss',  varData.max_loss != null ? `-$${fv(varData.max_loss,0)}`: '—', '#f87171'],
+          ['Port PoP',  varData.pop     != null ? `${(varData.pop*100).toFixed(1)}%`  : '—', '#22d3ee'],
+          ['Θ/day',     varData.theta_daily != null ? `${varData.theta_daily>=0?'+':''}$${fv(varData.theta_daily,0)}` : '—',
+                        varData.theta_daily >= 0 ? '#34d399' : '#f87171'],
+        ].map(([label, val, color]) =>
+          `<div style="flex:1;min-width:90px;padding:8px 10px;text-align:center;border-right:1px solid var(--border)">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em">${label}</div>
+            <div style="font-size:13px;font-weight:800;color:${color}">${val}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
   el.innerHTML = `
     <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px">
       ${[
@@ -19693,7 +19772,8 @@ function _renderOptionsGreeks(el, data) {
         </tr>
       </thead>
       <tbody>${underlyingRows}</tbody>
-    </table>` : ''}`;
+    </table>` : ''}
+    ${varHtml}`;
 }
 
 const _GREEK_TIPS = {
@@ -24436,8 +24516,362 @@ function _mhCloseFullscreen() {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Iron Condor Builder
+// Strategy Payoff Builder
 // ══════════════════════════════════════════════════════════════════════════════
+
+const _SPB_STRATS = {
+  long_call: {
+    n: 1,
+    lbl: [{ title: 'Long Call', k: 'Call Strike', p: 'Premium Paid ($)' }],
+    payoff: (S, k, p) => 100 * (Math.max(S-k[0],0) - p[0]),
+    metrics: (k, p) => ({ maxP: null, maxL: p[0]*100, BEs: [k[0]+p[0]], net: -p[0]*100, credit: false }),
+    spotRange: (k) => [k[0]*0.75, k[0]*1.35],
+  },
+  long_put: {
+    n: 1,
+    lbl: [{ title: 'Long Put', k: 'Put Strike', p: 'Premium Paid ($)' }],
+    payoff: (S, k, p) => 100 * (Math.max(k[0]-S,0) - p[0]),
+    metrics: (k, p) => ({ maxP: (k[0]-p[0])*100, maxL: p[0]*100, BEs: [k[0]-p[0]], net: -p[0]*100, credit: false }),
+    spotRange: (k) => [k[0]*0.65, k[0]*1.25],
+  },
+  covered_call: {
+    n: 2,
+    lbl: [
+      { title: 'Long Stock', k: 'Stock Entry Price', p: 'Enter 0' },
+      { title: 'Short Call', k: 'Call Strike', p: 'Premium Received ($)' },
+    ],
+    payoff: (S, k, p) => 100 * ((S-k[0]) + p[1] - Math.max(S-k[1],0)),
+    metrics: (k, p) => ({ maxP: (k[1]-k[0]+p[1])*100, maxL: (k[0]-p[1])*100, BEs: [k[0]-p[1]], net: p[1]*100, credit: true }),
+    spotRange: (k) => [k[0]*0.80, k[1]*1.20],
+  },
+  cash_put: {
+    n: 1,
+    lbl: [{ title: 'Short Put', k: 'Put Strike', p: 'Premium Received ($)' }],
+    payoff: (S, k, p) => 100 * (p[0] - Math.max(k[0]-S,0)),
+    metrics: (k, p) => ({ maxP: p[0]*100, maxL: (k[0]-p[0])*100, BEs: [k[0]-p[0]], net: p[0]*100, credit: true }),
+    spotRange: (k) => [k[0]*0.75, k[0]*1.25],
+  },
+  long_straddle: {
+    n: 2,
+    lbl: [
+      { title: 'Long Call', k: 'Call Strike (ATM)', p: 'Call Premium ($)' },
+      { title: 'Long Put',  k: 'Put Strike (ATM)',  p: 'Put Premium ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (Math.max(S-k[0],0) - p[0] + Math.max(k[1]-S,0) - p[1]),
+    metrics: (k, p) => ({ maxP: null, maxL: (p[0]+p[1])*100, BEs: [k[1]-p[0]-p[1], k[0]+p[0]+p[1]], net: -(p[0]+p[1])*100, credit: false }),
+    spotRange: (k) => [k[0]*0.75, k[0]*1.35],
+  },
+  short_straddle: {
+    n: 2,
+    lbl: [
+      { title: 'Short Call', k: 'Call Strike (ATM)', p: 'Call Premium ($)' },
+      { title: 'Short Put',  k: 'Put Strike (ATM)',  p: 'Put Premium ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (p[0]-Math.max(S-k[0],0) + p[1]-Math.max(k[1]-S,0)),
+    metrics: (k, p) => ({ maxP: (p[0]+p[1])*100, maxL: null, BEs: [k[1]-p[0]-p[1], k[0]+p[0]+p[1]], net: (p[0]+p[1])*100, credit: true }),
+    spotRange: (k) => [k[0]*0.75, k[0]*1.35],
+  },
+  long_strangle: {
+    n: 2,
+    lbl: [
+      { title: 'Long Put (OTM)',  k: 'Put Strike (lower)',  p: 'Put Premium ($)' },
+      { title: 'Long Call (OTM)', k: 'Call Strike (higher)', p: 'Call Premium ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (Math.max(k[0]-S,0) - p[0] + Math.max(S-k[1],0) - p[1]),
+    metrics: (k, p) => ({ maxP: null, maxL: (p[0]+p[1])*100, BEs: [k[0]-p[0]-p[1], k[1]+p[0]+p[1]], net: -(p[0]+p[1])*100, credit: false }),
+    spotRange: (k) => [k[0]*0.75, k[1]*1.35],
+  },
+  short_strangle: {
+    n: 2,
+    lbl: [
+      { title: 'Short Put (OTM)',  k: 'Put Strike (lower)',  p: 'Put Premium ($)' },
+      { title: 'Short Call (OTM)', k: 'Call Strike (higher)', p: 'Call Premium ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (p[0]-Math.max(k[0]-S,0) + p[1]-Math.max(S-k[1],0)),
+    metrics: (k, p) => ({ maxP: (p[0]+p[1])*100, maxL: null, BEs: [k[0]-p[0]-p[1], k[1]+p[0]+p[1]], net: (p[0]+p[1])*100, credit: true }),
+    spotRange: (k) => [k[0]*0.75, k[1]*1.35],
+  },
+  bull_call: {
+    n: 2,
+    lbl: [
+      { title: 'Long Call (lower)',  k: 'Buy Strike',  p: 'Premium Paid ($)' },
+      { title: 'Short Call (upper)', k: 'Sell Strike', p: 'Premium Received ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (Math.max(S-k[0],0) - p[0] - Math.max(S-k[1],0) + p[1]),
+    metrics: (k, p) => ({ maxP: (k[1]-k[0]+p[1]-p[0])*100, maxL: (p[0]-p[1])*100, BEs: [k[0]+p[0]-p[1]], net: (p[1]-p[0])*100, credit: p[1]>p[0] }),
+    spotRange: (k) => [k[0]*0.80, k[1]*1.25],
+  },
+  bear_put: {
+    n: 2,
+    lbl: [
+      { title: 'Long Put (upper)',  k: 'Buy Strike (higher)',  p: 'Premium Paid ($)' },
+      { title: 'Short Put (lower)', k: 'Sell Strike (lower)', p: 'Premium Received ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (Math.max(k[0]-S,0) - p[0] - Math.max(k[1]-S,0) + p[1]),
+    metrics: (k, p) => ({ maxP: (k[0]-k[1]+p[1]-p[0])*100, maxL: (p[0]-p[1])*100, BEs: [k[0]-p[0]+p[1]], net: (p[1]-p[0])*100, credit: p[1]>p[0] }),
+    spotRange: (k) => [k[1]*0.75, k[0]*1.25],
+  },
+  long_butterfly: {
+    n: 3,
+    lbl: [
+      { title: 'Long Call (low)',        k: 'Low Strike',  p: 'Premium Paid ($)' },
+      { title: 'Short Calls ×2 (mid)',   k: 'Mid Strike',  p: 'Premium Received per leg ($)' },
+      { title: 'Long Call (high)',        k: 'High Strike', p: 'Premium Paid ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (Math.max(S-k[0],0) - p[0] - 2*Math.max(S-k[1],0) + 2*p[1] + Math.max(S-k[2],0) - p[2]),
+    metrics: (k, p) => {
+      const net = -p[0] + 2*p[1] - p[2];
+      return { maxP: (k[1]-k[0]+net)*100, maxL: -net*100, BEs: [k[0]-net, k[2]+net], net: net*100, credit: net>0 };
+    },
+    spotRange: (k) => [k[0]*0.85, k[2]*1.20],
+  },
+  iron_condor: {
+    n: 4,
+    lbl: [
+      { title: 'Long Put (OTM)',  k: 'Long Put Strike',   p: 'Premium Paid ($)' },
+      { title: 'Short Put',       k: 'Short Put Strike',  p: 'Premium Received ($)' },
+      { title: 'Short Call',      k: 'Short Call Strike', p: 'Premium Received ($)' },
+      { title: 'Long Call (OTM)', k: 'Long Call Strike',  p: 'Premium Paid ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (
+      Math.max(k[0]-S,0) - p[0] + p[1] - Math.max(k[1]-S,0) +
+      p[2] - Math.max(S-k[2],0) + Math.max(S-k[3],0) - p[3]
+    ),
+    metrics: (k, p) => {
+      const nc = p[1]+p[2]-p[0]-p[3];
+      const maxP = nc*100;
+      return { maxP, maxL: Math.max((k[1]-k[0])*100-maxP, (k[3]-k[2])*100-maxP), BEs: [k[1]-nc, k[2]+nc], net: maxP, credit: true };
+    },
+    spotRange: (k) => [k[0]*0.87, k[3]*1.13],
+  },
+};
+
+const _SPB_VALIDATE = {
+  bull_call:      (k) => k[0] >= k[1] ? 'Buy Strike must be < Sell Strike' : null,
+  bear_put:       (k) => k[0] <= k[1] ? 'Buy Strike (higher) must be > Sell Strike (lower)' : null,
+  long_strangle:  (k) => k[0] >= k[1] ? 'Put Strike must be < Call Strike' : null,
+  short_strangle: (k) => k[0] >= k[1] ? 'Put Strike must be < Call Strike' : null,
+  long_butterfly: (k) => !(k[0]<k[1] && k[1]<k[2]) ? 'Strikes must be ordered: Low < Mid < High' : null,
+  iron_condor:    (k) => !(k[0]<k[1] && k[1]<k[2] && k[2]<k[3]) ? 'Strikes must be ordered: LP < SP < SC < LC' : null,
+};
+
+function _spbStratChange() {
+  const strat = document.getElementById('spb-strategy').value;
+  const cfg = _SPB_STRATS[strat];
+  if (!cfg) return;
+  for (let i = 0; i < 4; i++) {
+    const legEl = document.getElementById(`spb-leg-${i+1}`);
+    if (!legEl) continue;
+    if (i < cfg.n) {
+      legEl.style.display = '';
+      const lbl = cfg.lbl[i];
+      document.getElementById(`spb-leg-${i+1}-title`).textContent = lbl.title;
+      document.getElementById(`spb-k${i+1}-label`).textContent = lbl.k;
+      document.getElementById(`spb-p${i+1}-label`).textContent = lbl.p;
+    } else {
+      legEl.style.display = 'none';
+    }
+  }
+}
+
+function _spbPayoffSvg(pts, S_min, S_max, strikes, spot, beArr, horizons) {
+  const W = 860, H = 220, px = 52, py = 18;
+  const pnlVals = pts.map(p => p.pnl);
+  const rawMin = Math.min(...pnlVals), rawMax = Math.max(...pnlVals);
+  const pad = Math.max(Math.abs(rawMax), Math.abs(rawMin)) * 0.12 || 10;
+  const pnlMin = rawMin - pad, pnlMax = rawMax + pad;
+  const pnlRng = pnlMax - pnlMin || 1;
+  const xS = S => +(px + (S-S_min)/(S_max-S_min)*(W-px*2)).toFixed(1);
+  const yS = v => +(py + (1-(v-pnlMin)/pnlRng)*(H-py*2)).toFixed(1);
+  const zeroY = yS(0);
+  const ptStr = pts.map((p,i) => `${i===0?'M':'L'}${xS(p.S)},${yS(p.pnl)}`).join(' ');
+  const closed = `${ptStr} L${xS(S_max)},${zeroY} L${xS(S_min)},${zeroY} Z`;
+  const uid = `spb${Date.now()}`;
+  const vLines = (strikes||[]).map(({k, label, color}) => {
+    if (!k || k <= S_min || k >= S_max) return '';
+    const x = xS(k);
+    return `<line x1="${x}" y1="${py}" x2="${x}" y2="${H-py}" stroke="${color}" stroke-width="1.1" stroke-dasharray="4,3" opacity="0.8"/>
+            <text x="${x}" y="${py-4}" font-size="8" fill="${color}" text-anchor="middle">${label}</text>`;
+  }).join('');
+  const beLines = (beArr||[]).filter(({be}) => be > S_min && be < S_max).map(({be, color}) => {
+    const x = xS(be);
+    return `<line x1="${x}" y1="${zeroY-8}" x2="${x}" y2="${zeroY+8}" stroke="${color||'#fbbf24'}" stroke-width="1.5"/>
+            <text x="${x}" y="${zeroY+17}" font-size="7" fill="${color||'#fbbf24'}" text-anchor="middle">BE $${be.toFixed(2)}</text>`;
+  }).join('');
+  const spotSvg = (spot && spot > S_min && spot < S_max)
+    ? `<line x1="${xS(spot)}" y1="${py}" x2="${xS(spot)}" y2="${H-py}" stroke="#94a3b8" stroke-width="0.9"/>
+       <text x="${xS(spot)}" y="${H-3}" font-size="7" fill="#94a3b8" text-anchor="middle">S $${spot.toFixed(2)}</text>` : '';
+  const horizSvg = (horizons||[]).map(({pnl, color, label}) => {
+    const hy = yS(pnl);
+    return `<line x1="${px}" y1="${hy}" x2="${W-px}" y2="${hy}" stroke="${color}" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.7"/>
+            <text x="${W-px+3}" y="${hy+4}" font-size="7" fill="${color}">${label}</text>`;
+  }).join('');
+  const yTicks = [pnlMin,0,pnlMax].map(v =>
+    `<text x="${px-4}" y="${yS(v)+4}" font-size="8" fill="#64748b" text-anchor="end">$${v.toFixed(0)}</text>`).join('');
+  const xTicks = Array.from({length:7}, (_,i) => {
+    const S = S_min + i*(S_max-S_min)/6;
+    return `<text x="${xS(S)}" y="${H-2}" font-size="8" fill="#64748b" text-anchor="middle">${S.toFixed(0)}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:${H}px;background:var(--bg);border-radius:4px;border:1px solid var(--border);margin-top:4px">
+    <defs>
+      <clipPath id="${uid}p"><rect x="${px}" y="${py}" width="${W-px*2}" height="${Math.max(0,zeroY-py)}"/></clipPath>
+      <clipPath id="${uid}l"><rect x="${px}" y="${zeroY}" width="${W-px*2}" height="${Math.max(0,H-zeroY-py)}"/></clipPath>
+    </defs>
+    <path d="${closed}" fill="#34d399" fill-opacity="0.18" clip-path="url(#${uid}p)"/>
+    <path d="${closed}" fill="#f87171" fill-opacity="0.18" clip-path="url(#${uid}l)"/>
+    <line x1="${px}" y1="${zeroY}" x2="${W-px}" y2="${zeroY}" stroke="#475569" stroke-width="0.8"/>
+    ${vLines}${beLines}${spotSvg}${horizSvg}
+    <path d="${ptStr}" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+    ${yTicks}${xTicks}
+  </svg>`;
+}
+
+function _spbBuild() {
+  const strat = document.getElementById('spb-strategy').value;
+  const cfg   = _SPB_STRATS[strat];
+  const el    = document.getElementById('spb-result');
+  if (!cfg) return;
+
+  const spot  = parseFloat(document.getElementById('spb-spot').value) || 0;
+  const sigma = (parseFloat(document.getElementById('spb-sigma').value) || 0) / 100;
+  const dte   = parseFloat(document.getElementById('spb-dte').value) || 0;
+  const T     = dte / 365;
+  const r     = 0.045;
+  const k     = [1,2,3,4].map(i => parseFloat(document.getElementById(`spb-k${i}`).value) || 0);
+  const p     = [1,2,3,4].map(i => parseFloat(document.getElementById(`spb-p${i}`).value) || 0);
+
+  for (let i = 0; i < cfg.n; i++) {
+    if (!k[i]) {
+      el.innerHTML = `<div style="color:#f87171;font-size:12px;margin-top:6px">Enter ${cfg.lbl[i].k} for Leg ${i+1}.</div>`;
+      return;
+    }
+  }
+  const vErr = _SPB_VALIDATE[strat] ? _SPB_VALIDATE[strat](k) : null;
+  if (vErr) { el.innerHTML = `<div style="color:#f87171;font-size:12px;margin-top:6px">${vErr}</div>`; return; }
+
+  const payoffFn = S => cfg.payoff(S, k, p);
+  const m = cfg.metrics(k, p);
+  const [S_min, S_max] = cfg.spotRange(k, p);
+  const N = 300;
+  const pts = Array.from({length:N}, (_,i) => {
+    const S = S_min + (i/(N-1))*(S_max-S_min);
+    return {S, pnl: payoffFn(S)};
+  });
+
+  // PoP: Gaussian quadrature over lognormal density
+  let pop = null;
+  if (spot > 0 && sigma > 0 && T > 0) {
+    const sq = sigma * Math.sqrt(T);
+    const drift = (r - 0.5*sigma*sigma) * T;
+    let pw = 0, tw = 0;
+    for (let i = 0; i <= 400; i++) {
+      const z = -4 + 8*i/400;
+      const w = Math.exp(-z*z/2);
+      tw += w;
+      if (payoffFn(spot * Math.exp(drift + sq*z)) > 0) pw += w;
+    }
+    pop = pw / tw;
+  }
+
+  const legColors = ['#34d399','#f87171','#fbbf24','#fb923c'];
+  const strikes = k.slice(0, cfg.n).map((ki, i) => ({k: ki, label: `L${i+1} $${ki}`, color: legColors[i]}));
+  const beArr   = m.BEs.map(be => ({be, color: '#fbbf24'}));
+  const horizons = [];
+  if (m.maxP != null && isFinite(m.maxP) && m.maxP > 0)
+    horizons.push({pnl: m.maxP,  color: '#34d399', label: `+$${m.maxP.toFixed(0)}`});
+  if (m.maxL != null && isFinite(m.maxL) && m.maxL > 0)
+    horizons.push({pnl: -m.maxL, color: '#f87171', label: `-$${m.maxL.toFixed(0)}`});
+
+  const svg = _spbPayoffSvg(pts, S_min, S_max, strikes, spot, beArr, horizons);
+  const beStr = m.BEs.map(b => `$${b.toFixed(2)}`).join(' / ');
+  const stats = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;align-items:center">
+    ${m.maxP!=null?`<div><span style="color:var(--muted)">Max Profit:</span> <strong style="color:#34d399">+$${m.maxP.toFixed(0)}</strong></div>`
+      :`<div><span style="color:var(--muted)">Max Profit:</span> <strong style="color:#22d3ee">Unlimited</strong></div>`}
+    ${m.maxL!=null?`<div><span style="color:var(--muted)">Max Loss:</span> <strong style="color:#f87171">-$${m.maxL.toFixed(0)}</strong></div>`
+      :`<div><span style="color:var(--muted)">Max Loss:</span> <strong style="color:#f87171">Unlimited</strong></div>`}
+    <div><span style="color:var(--muted)">Net ${m.credit?'Credit':'Debit'}:</span> <strong style="color:${m.net>=0?'#34d399':'#f87171'}">${m.net>=0?'+':''}\$${Math.abs(m.net).toFixed(0)}</strong></div>
+    <div><span style="color:var(--muted)">Break-Even${m.BEs.length>1?'s':''}:</span> <strong>${beStr}</strong></div>
+    ${pop!=null?`<div><span style="color:var(--muted)">PoP (risk-neutral):</span> <strong style="color:#22d3ee">${(pop*100).toFixed(1)}%</strong></div>`:''}
+  </div>`;
+  el.innerHTML = svg + stats;
+}
+
+async function _spbSolveIV() {
+  const spot = parseFloat(document.getElementById('spb-spot').value);
+  const k1   = parseFloat(document.getElementById('spb-k1').value);
+  const dte  = parseFloat(document.getElementById('spb-dte').value);
+  const mkt  = parseFloat(document.getElementById('spb-iv-mkt').value);
+  const type = document.getElementById('spb-iv-type').value;
+  const res  = document.getElementById('spb-iv-result');
+  if (!spot || !k1 || !dte || !mkt) { res.textContent = 'Enter Spot, Strike, DTE and Market Price first'; return; }
+  res.textContent = 'Solving…';
+  try {
+    const T = (dte / 365).toFixed(6);
+    const data = await apiFetch(`/api/options/implied-vol?spot=${spot}&strike=${k1}&T=${T}&market_price=${mkt}&option_type=${type}`);
+    res.textContent = data.converged
+      ? `IV = ${Number(data.implied_vol_pct).toFixed(2)}% (${data.iterations} iters)`
+      : `IV ≈ ${Number(data.implied_vol_pct).toFixed(2)}% (no conv)`;
+  } catch(e) { res.textContent = 'Error — check inputs'; }
+}
+
+function _posPayoffClose() {
+  const m = document.getElementById('pos-payoff-modal');
+  if (m) m.style.display = 'none';
+}
+
+function _optPositionPayoff(posId) {
+  const pos = _optPositions.find(p => p.id === posId);
+  if (!pos) return;
+  const modal = document.getElementById('pos-payoff-modal');
+  const body  = document.getElementById('pos-payoff-body');
+  const title = document.getElementById('pos-payoff-title');
+  if (!modal || !body || !title) return;
+
+  const K    = pos.strike;
+  const ep   = pos.entry_price;
+  const qty  = pos.qty || 1;
+  const spot = pos.underlying_price || pos.underlying_entry;
+  const type = pos.option_type;
+
+  if (!K || ep == null) {
+    body.innerHTML = '<div style="color:#f87171;font-size:12px">Position data incomplete — missing strike or entry price.</div>';
+    modal.style.display = 'flex';
+    return;
+  }
+
+  const intrinsic = S => type === 'call' ? Math.max(S-K,0) : Math.max(K-S,0);
+  const payoffFn  = S => qty * 100 * (intrinsic(S) - ep);
+  const be = type === 'call' ? K + ep : K - ep;
+  const S_min = K * 0.65, S_max = K * 1.40;
+  const N = 300;
+  const pts = Array.from({length:N}, (_,i) => {
+    const S = S_min + (i/(N-1))*(S_max-S_min);
+    return {S, pnl: payoffFn(S)};
+  });
+
+  const legColor = type === 'call' ? '#3fb950' : '#f85149';
+  const dir = qty < 0 ? 'Short' : 'Long';
+  const delta = pos.delta;
+  const popProxy = delta != null
+    ? `Δ ${Number(delta).toFixed(2)} (~${Math.round(Math.abs(delta)*100)}% ITM)`
+    : '—';
+
+  title.textContent = `${pos.underlying} ${dir} ${type.toUpperCase()} $${K} — At-Expiry Payoff`;
+  const svg = _spbPayoffSvg(pts, S_min, S_max,
+    [{k: K, label: `K $${K}`, color: legColor}],
+    spot, [{be, color: '#fbbf24'}], []);
+  body.innerHTML = svg + `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12px;align-items:center">
+    <div><span style="color:var(--muted)">Direction:</span> <strong style="color:${legColor}">${dir} ${type.toUpperCase()}</strong></div>
+    <div><span style="color:var(--muted)">Strike:</span> <strong>$${K}</strong></div>
+    <div><span style="color:var(--muted)">Qty:</span> <strong>${qty>0?'+':''}${qty}</strong></div>
+    <div><span style="color:var(--muted)">Entry:</span> <strong>$${ep.toFixed(2)}/sh</strong></div>
+    <div><span style="color:var(--muted)">Break-Even:</span> <strong>$${be.toFixed(2)}</strong></div>
+    <div><span style="color:var(--muted)">Delta (PoP proxy):</span> <strong style="color:#22d3ee">${popProxy}</strong></div>
+  </div>`;
+  modal.style.display = 'flex';
+}
+
+// dead stub to avoid "not a function" if any stale reference calls it
 function _buildIronCondor() {
   const gv  = id => parseFloat(document.getElementById(id).value) || 0;
   const K_lp = gv('ic-k-lp'), K_sp = gv('ic-k-sp');
