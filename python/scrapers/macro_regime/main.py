@@ -13,8 +13,9 @@ from .scraper import compute_macro_regime
 
 log = structlog.get_logger("scraper-macro-regime")
 
-DB_URL  = os.getenv("DB_URL", "")
-API_KEY = os.getenv("MASSIVE_API_KEY", "")
+DB_URL       = os.getenv("DB_URL", "")
+API_KEY      = os.getenv("MASSIVE_API_KEY", "")
+FRED_API_KEY = os.getenv("FRED_API_KEY", "")
 
 
 class MacroRegimeAgent(BaseAgent):
@@ -40,8 +41,20 @@ class MacroRegimeAgent(BaseAgent):
                 password=unquote(p.password) if p.password else None,
                 database=p.path.lstrip("/"),
             )
+            await self._ensure_tables()
         await ensure_consumer_group(self.redis, STREAMS["commands"], GROUPS["scraper-macro-regime"])
         await asyncio.gather(self.heartbeat_loop(), self._command_loop())
+
+    async def _ensure_tables(self):
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS fred_macro_snapshots (
+                ts       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                hy_oas   NUMERIC,
+                ig_oas   NUMERIC,
+                fsi      NUMERIC,
+                usrec    SMALLINT
+            )
+        """)
 
     async def _command_loop(self):
         consumer = os.getenv("HOSTNAME", "scraper-macro-regime-0")
@@ -77,7 +90,7 @@ class MacroRegimeAgent(BaseAgent):
                 b = json.loads(breadth_raw)
                 breadth_pct = float(b.get("breadth_pct", 0))
 
-            snapshot = await compute_macro_regime(API_KEY, breadth_pct)
+            snapshot = await compute_macro_regime(API_KEY, breadth_pct, fred_api_key=FRED_API_KEY)
 
             if self._db:
                 await self._db.execute(
@@ -92,8 +105,21 @@ class MacroRegimeAgent(BaseAgent):
                     snapshot["breadth_pct"], json.dumps(snapshot["raw"]),
                 )
 
+                fred = snapshot.get("fred", {})
+                if any(v is not None for v in fred.values()):
+                    await self._db.execute(
+                        """INSERT INTO fred_macro_snapshots (hy_oas, ig_oas, fsi, usrec)
+                           VALUES ($1, $2, $3, $4)""",
+                        fred.get("hy_oas"), fred.get("ig_oas"),
+                        fred.get("fsi"), fred.get("usrec"),
+                    )
+
             await self.redis.set("macro_regime:latest", json.dumps(snapshot), ex=7200)
-            log.info("macro_regime.done", regime=snapshot["regime"], score=snapshot["regime_score"])
+            if snapshot.get("fred"):
+                await self.redis.set("fred:macro:latest", json.dumps(snapshot["fred"]), ex=7200)
+
+            log.info("macro_regime.done", regime=snapshot["regime"], score=snapshot["regime_score"],
+                     hy_oas=snapshot["fred"].get("hy_oas"), fsi=snapshot["fred"].get("fsi"))
         except Exception as e:
             log.error("macro_regime.scrape_error", error=str(e))
 

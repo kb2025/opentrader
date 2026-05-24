@@ -16309,6 +16309,69 @@ async def get_yield_curve(token: str = ""):
         return {"error": str(e)}
 
 
+@app.get("/api/market/fred-macro")
+async def get_fred_macro(token: str = ""):
+    """
+    Latest FRED macro indicators: HY OAS, IG OAS, Financial Stress Index, NBER recession flag.
+    Data is populated by the macro regime scraper on each daily run.
+    Falls back to direct FRED CSV fetch if Redis cache is empty.
+    """
+    check_token(token)
+    try:
+        _r = await get_redis()
+        cached = await _r.get("fred:macro:latest")
+        if cached:
+            data = json.loads(cached)
+            return {**data, "source": "cache", "updated": None}
+    except Exception:
+        _r = None
+
+    # Fallback: fetch directly from FRED CSV (no API key needed for these series)
+    hy_oas, ig_oas, fsi, usrec = await asyncio.gather(
+        _fred_latest("BAMLH0A0HYM2", lookback_days=10),
+        _fred_latest("BAMLC0A0CM",   lookback_days=10),
+        _fred_latest("STLFSI2",      lookback_days=14),
+        _fred_latest("USREC",        lookback_days=45),
+    )
+
+    def _credit_label(hy: float | None) -> str:
+        if hy is None:
+            return "unknown"
+        if hy < 300:
+            return "tight"
+        if hy < 500:
+            return "normal"
+        if hy < 700:
+            return "wide"
+        return "distressed"
+
+    def _stress_label(f: float | None) -> str:
+        if f is None:
+            return "unknown"
+        if f < -0.5:
+            return "low"
+        if f < 1.0:
+            return "average"
+        if f < 2.0:
+            return "elevated"
+        return "high"
+
+    result = {
+        "hy_oas":           hy_oas,
+        "ig_oas":           ig_oas,
+        "fsi":              fsi,
+        "usrec":            int(usrec) if usrec is not None else None,
+        "credit_label":     _credit_label(hy_oas),
+        "stress_label":     _stress_label(fsi),
+        "in_recession":     usrec == 1 if usrec is not None else None,
+        "source":           "fred_csv",
+        "updated":          datetime.now(timezone.utc).isoformat(),
+    }
+    if _r:
+        await _r.setex("fred:macro:latest", 3600, json.dumps(result))
+    return result
+
+
 _BREADTH_UNIVERSE = [
     "AAPL","MSFT","NVDA","AMZN","GOOGL","META","BRK.B","LLY","JPM","V",
     "UNH","XOM","TSLA","MA","JNJ","HD","PG","COST","AVGO","MRK",

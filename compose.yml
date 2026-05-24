@@ -396,6 +396,7 @@ services:
       REDIS_URL: redis://ot-redis:6379
       DB_URL: postgresql://trading:${DB_PASSWORD:-trading_secret}@ot-timescaledb/trading
       SERVICE_NAME: scraper-macro-regime
+      FRED_API_KEY: ${FRED_API_KEY:-}
     env_file: [.env]
     volumes:
       - ./logs/python:/app/logs

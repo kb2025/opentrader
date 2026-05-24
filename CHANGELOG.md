@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.95] - 2026-05-24
+
+### Added
+- **FRED macro integration**: macro regime scraper now fetches HY OAS (`BAMLH0A0HYM2`), IG OAS (`BAMLC0A0CM`), St. Louis Financial Stress Index (`STLFSI2`), and NBER recession indicator (`USREC`) from FRED API on each daily run; these 4 signals (USREC double-weighted) are added to the bull/bear regime score
+- **`fred_macro_snapshots` DB table**: stores each FRED fetch alongside the existing `macro_regime_snapshots`; data cached in Redis at `fred:macro:latest`
+- **`GET /api/market/fred-macro` endpoint**: returns current HY OAS, IG OAS, FSI, recession flag with human-readable `credit_label` and `stress_label`; falls back to direct FRED CSV fetch if scraper cache is empty
+
 ## [3.7.94] - 2026-05-24
 
 ### Added — AI-Trading-Alert-Bot features (items 1, 2, 3, 5)

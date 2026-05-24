@@ -1,7 +1,8 @@
 """
 Macro Regime Scraper
 Computes a macro regime signal from: SPY/QQQ momentum, TLT trend,
-DXY (via UUP ETF), VIX proxy (VXX), and OVTLYR market breadth.
+DXY (via UUP ETF), VIX proxy (VXX), OVTLYR market breadth,
+and FRED credit spreads + financial stress index.
 Returns regime: risk_on | risk_off | neutral
 """
 import logging
@@ -12,6 +13,7 @@ import aiohttp
 log = logging.getLogger("scraper.macro_regime")
 
 MASSIVE_BASE = "https://api.massive.com"
+FRED_BASE    = "https://api.stlouisfed.org/fred/series/observations"
 
 MACRO_TICKERS = {
     "SPY":  "equity",
@@ -21,6 +23,14 @@ MACRO_TICKERS = {
     "UUP":  "dollar",    # USD index proxy ETF
     "VXX":  "volatility",
     "HYG":  "credit",
+}
+
+# FRED series for fundamental credit / stress data
+FRED_SERIES = {
+    "hy_oas":  "BAMLH0A0HYM2",   # US High Yield OAS (bps)
+    "ig_oas":  "BAMLC0A0CM",      # US IG Corporate OAS (bps)
+    "fsi":     "STLFSI2",         # St. Louis Financial Stress Index
+    "usrec":   "USREC",           # NBER Recession Indicator (0/1)
 }
 
 
@@ -40,6 +50,34 @@ async def _fetch_bars(session: aiohttp.ClientSession, api_key: str, ticker: str,
     except Exception as e:
         log.warning("macro_regime.fetch_error", ticker=ticker, error=str(e))
         return []
+
+
+async def _fetch_fred(session: aiohttp.ClientSession, fred_key: str, series_id: str) -> float | None:
+    """Fetch the latest non-null observation for a FRED series."""
+    params = {
+        "series_id":  series_id,
+        "api_key":    fred_key,
+        "file_type":  "json",
+        "sort_order": "desc",
+        "limit":      "10",
+    }
+    try:
+        async with session.get(FRED_BASE, params=params,
+                               timeout=aiohttp.ClientTimeout(total=12)) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+        for obs in data.get("observations", []):
+            val = obs.get("value", ".")
+            if val not in (".", ""):
+                try:
+                    return float(val)
+                except ValueError:
+                    pass
+        return None
+    except Exception as e:
+        log.warning("macro_regime.fred_fetch_error", series=series_id, error=str(e))
+        return None
 
 
 def _sma(bars: list, period: int) -> float | None:
@@ -71,12 +109,22 @@ def _momentum(bars: list, period: int = 20) -> float:
     return (closes[-1] - closes[-period]) / closes[-period] * 100
 
 
-async def compute_macro_regime(api_key: str, breadth_pct: float | None = None) -> dict:
+async def compute_macro_regime(
+    api_key: str,
+    breadth_pct: float | None = None,
+    fred_api_key: str = "",
+) -> dict:
     """Fetch macro data and return a regime snapshot dict."""
     bars = {}
+    fred_data: dict[str, float | None] = {k: None for k in FRED_SERIES}
+
     async with aiohttp.ClientSession() as session:
         for ticker in MACRO_TICKERS:
             bars[ticker] = await _fetch_bars(session, api_key, ticker)
+
+        if fred_api_key:
+            for key, series_id in FRED_SERIES.items():
+                fred_data[key] = await _fetch_fred(session, fred_api_key, series_id)
 
     # Bull/bear signals
     bull = 0
@@ -140,7 +188,7 @@ async def compute_macro_regime(api_key: str, breadth_pct: float | None = None) -
         elif vix_level > 30:
             bear += 1
 
-    # Credit spread (HYG): high = risk-on
+    # Credit spread ETF (HYG): high = risk-on
     hyg_bars = bars.get("HYG", [])
     if hyg_bars:
         hyg_mom = _momentum(hyg_bars, 20)
@@ -158,6 +206,38 @@ async def compute_macro_regime(api_key: str, breadth_pct: float | None = None) -
         elif breadth_pct < 40:
             bear += 1
 
+    # ── FRED signals ──────────────────────────────────────────────────────────
+
+    hy_oas = fred_data.get("hy_oas")
+    if hy_oas is not None:
+        signals["hy_oas_bps"] = round(hy_oas, 1)
+        if hy_oas < 300:
+            bull += 1   # compressed spreads = benign credit
+        elif hy_oas > 500:
+            bear += 1   # wide spreads = credit stress
+
+    ig_oas = fred_data.get("ig_oas")
+    if ig_oas is not None:
+        signals["ig_oas_bps"] = round(ig_oas, 1)
+        if ig_oas < 100:
+            bull += 1
+        elif ig_oas > 200:
+            bear += 1
+
+    fsi = fred_data.get("fsi")
+    if fsi is not None:
+        signals["financial_stress_index"] = round(fsi, 3)
+        if fsi < -0.5:
+            bull += 1   # below-average financial stress
+        elif fsi > 1.0:
+            bear += 1   # elevated financial stress
+
+    usrec = fred_data.get("usrec")
+    if usrec is not None:
+        signals["nber_recession"] = int(usrec)
+        if usrec == 1:
+            bear += 2   # active NBER recession — double-weight
+
     total = bull + bear
     score = round((bull - bear) / total, 3) if total > 0 else 0.0
 
@@ -169,15 +249,21 @@ async def compute_macro_regime(api_key: str, breadth_pct: float | None = None) -
         regime = "neutral"
 
     return {
-        "regime":       regime,
-        "bull_signals": bull,
-        "bear_signals": bear,
+        "regime":        regime,
+        "bull_signals":  bull,
+        "bear_signals":  bear,
         "total_signals": total,
-        "regime_score": score,
-        "spy_trend":    spy_trend,
-        "vix_level":    vix_level,
-        "dxy_trend":    dxy_trend,
-        "tlt_trend":    tlt_trend,
-        "breadth_pct":  breadth_pct,
-        "raw":          signals,
+        "regime_score":  score,
+        "spy_trend":     spy_trend,
+        "vix_level":     vix_level,
+        "dxy_trend":     dxy_trend,
+        "tlt_trend":     tlt_trend,
+        "breadth_pct":   breadth_pct,
+        "fred": {
+            "hy_oas":  hy_oas,
+            "ig_oas":  ig_oas,
+            "fsi":     fsi,
+            "usrec":   int(usrec) if usrec is not None else None,
+        },
+        "raw": signals,
     }
