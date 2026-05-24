@@ -8,4 +8,4 @@ RUN printf 'import importlib.resources as _ir, pathlib as _p\ndef resource_filen
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
 COPY . .
-CMD ["uvicorn", "webui.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "webui.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
