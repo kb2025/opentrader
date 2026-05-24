@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.7.99] - 2026-05-24
+
+### Fixed
+- **Webui live-reload broken**: Podman file bind-mounts hold the original inode — when the Edit/Write tool atomically replaces a file (new inode) the container never sees the update; replaced five individual `.py` file mounts + `static/` dir mount with a single `./python/webui:/app/webui` directory mount, which resolves by name so inode changes are always visible
+
 ## [3.7.98] - 2026-05-24
 
 ### Changed
