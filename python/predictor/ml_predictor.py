@@ -4,7 +4,7 @@ Walk-forward trained RandomForest + GradientBoosting + Ridge models that
 produce a directional confidence score from OHLCV features. Blended with
 the rule-based scorer output as a weighted composite before LLM refinement.
 
-Feature set (22):
+Feature set (23):
   ret_5, ret_10, ret_20          — price momentum at 3 short lookbacks
   ret_21, ret_63, ret_126,
   ret_252                        — 1-month, 1-quarter, 6-month, 1-year returns
@@ -18,6 +18,7 @@ Feature set (22):
   vol_ratio                      — today's volume / 20-day avg volume
   vol_trend                      — 5-day avg volume / 20-day avg volume
   vol_momentum                   — volume × price change (force index proxy)
+  mfi_14                         — Money Flow Index(14): volume-weighted pressure oscillator
   atr_pct                        — ATR(14) / price (volatility proxy)
   candle_body                    — (close-open)/(high-low) candle shape
   bid_ask_proxy                  — (close-low)/(high-low) buying pressure proxy
@@ -64,6 +65,18 @@ def _compute_rsi(close: "pd.Series", period: int = 14) -> "pd.Series":
     loss     = (-delta.clip(upper=0)).rolling(period).mean()
     rs       = gain / loss.replace(0, float("nan"))
     return 100 - (100 / (1 + rs))
+
+
+def _compute_mfi(close: "pd.Series", high: "pd.Series", low: "pd.Series",
+                 volume: "pd.Series", period: int = 14) -> "pd.Series":
+    typical  = (close + high + low) / 3
+    raw_mf   = typical * volume
+    pos_mf   = raw_mf.where(typical > typical.shift(1), 0.0)
+    neg_mf   = raw_mf.where(typical < typical.shift(1), 0.0)
+    pos_sum  = pos_mf.rolling(period).sum()
+    neg_sum  = neg_mf.rolling(period).sum()
+    total    = (pos_sum + neg_sum).replace(0, float("nan"))
+    return (pos_sum / total) * 100
 
 
 def _engineer_features(df: "pd.DataFrame") -> "pd.DataFrame":
@@ -121,6 +134,9 @@ def _engineer_features(df: "pd.DataFrame") -> "pd.DataFrame":
     # Force index proxy: volume × price change direction
     price_change      = close.pct_change(1)
     f["vol_momentum"] = (volume * price_change) / avg_vol20.replace(0, float("nan"))
+
+    # Money Flow Index: volume-weighted pressure oscillator (0–1 normalized)
+    f["mfi_14"] = _compute_mfi(close, high, low, volume, 14) / 100.0
 
     # ATR volatility
     hl_range    = high - low

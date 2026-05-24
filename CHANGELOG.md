@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.0] - 2026-05-24
+
+### Added
+- **MFI feature in ML predictor**: added Money Flow Index(14) as feature 23 in `ml_predictor._engineer_features()`; MFI is a volume-weighted pressure oscillator (0–100, normalized to 0–1) that is distinct from RSI (price-only) and the existing force-index proxy, giving the ensemble a bounded volume/price confluence signal
+
 ## [3.7.99] - 2026-05-24
 
 ### Fixed
