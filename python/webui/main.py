@@ -13633,6 +13633,70 @@ async def options_chain_analytics(ticker: str, expiry: str = "", token: str = ""
             prev_cum    = cum
             prev_strike = r["strike"]
 
+        # ── PCR (Put/Call Ratio) ───────────────────────────────────────────────
+        total_call_oi = sum(r.get("call_oi", 0) for r in rows)
+        total_put_oi  = sum(r.get("put_oi", 0) for r in rows)
+        pcr = round(total_put_oi / total_call_oi, 3) if total_call_oi > 0 else None
+        if pcr is None:
+            pcr_label = "—"
+        elif pcr > 1.2:
+            pcr_label = "Bearish"
+        elif pcr < 0.7:
+            pcr_label = "Bullish"
+        else:
+            pcr_label = "Neutral"
+
+        # ── ATM IV + IV Percentile (vs 252-day realized vol history) ──────────
+        atm_iv        = None   # ATM implied vol in percent
+        iv_percentile = None   # % of hist HV days below current ATM IV
+        iv_rank       = None   # (ATM_IV - min_HV) / (max_HV - min_HV) × 100
+        iv_label      = "—"
+
+        if spot > 0 and all_strikes:
+            atm_strike = min(all_strikes, key=lambda k: abs(k - spot))
+            atm_row    = next((r for r in rows if r["strike"] == atm_strike), None)
+            if atm_row:
+                ivs = [v for v in [atm_row.get("call_iv", 0), atm_row.get("put_iv", 0)] if v > 0]
+                if ivs:
+                    atm_iv = round(sum(ivs) / len(ivs), 2)   # percent
+
+        if atm_iv is not None:
+            try:
+                import math as _math
+                from datetime import timedelta as _td2
+                hv_url = (
+                    f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day"
+                    f"/{(_date.today() - _td2(days=400)).isoformat()}"
+                    f"/{_date.today().isoformat()}"
+                    f"?adjusted=true&sort=asc&limit=400&apiKey={api_key}"
+                )
+                async with _ah.ClientSession() as _s:
+                    async with _s.get(hv_url, timeout=_ah.ClientTimeout(total=8)) as _r:
+                        hv_bars = (await _r.json()).get("results") or [] if _r.status == 200 else []
+
+                if len(hv_bars) >= 30:
+                    closes   = [b["c"] for b in hv_bars]
+                    log_rets = [_math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))]
+                    period   = 21
+                    hv_series = []
+                    for i in range(period - 1, len(log_rets)):
+                        window = log_rets[i - period + 1: i + 1]
+                        mu     = sum(window) / period
+                        var    = sum((x - mu) ** 2 for x in window) / (period - 1)
+                        hv_series.append(_math.sqrt(var) * _math.sqrt(252) * 100)
+
+                    if hv_series:
+                        min_hv = min(hv_series)
+                        max_hv = max(hv_series)
+                        iv_percentile = round(
+                            sum(1 for h in hv_series if h < atm_iv) / len(hv_series) * 100, 1
+                        )
+                        iv_rank = round((atm_iv - min_hv) / (max_hv - min_hv) * 100, 1) \
+                            if max_hv > min_hv else 50.0
+                        iv_label = "Low" if iv_percentile < 25 else ("High" if iv_percentile > 75 else "Normal")
+            except Exception:
+                pass
+
         result = {
             "ticker":           sym,
             "expiry":           expiry,
@@ -13641,6 +13705,12 @@ async def options_chain_analytics(ticker: str, expiry: str = "", token: str = ""
             "zero_gamma":       zero_gamma,
             "net_gex":          round(net_gex_total, 0),
             "gex_regime":       "positive" if net_gex_total >= 0 else "negative",
+            "pcr":              pcr,
+            "pcr_label":        pcr_label,
+            "atm_iv":           atm_iv,
+            "iv_percentile":    iv_percentile,
+            "iv_rank":          iv_rank,
+            "iv_label":         iv_label,
             "strikes":          rows,
             "available_expiries": sorted(all_expiries),
         }

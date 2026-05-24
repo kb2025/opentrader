@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.3] - 2026-05-24
+
+### Added
+- **ATM IV Percentile in Chain Analytics**: `/api/options/chain-analytics` now fetches 400 days of daily stock bars from Polygon, computes 21-day rolling annualized realized vol, and returns `atm_iv` (ATM implied vol %), `iv_percentile` (% of hist HV days below current ATM IV), `iv_rank` (IVR 0–100), and `iv_label` (Low/Normal/High). Displayed as a new badge with a percentile gauge bar.
+- **PCR (Put/Call Ratio) in Chain Analytics**: chain-analytics now sums call and put OI across all strikes and returns `pcr` and `pcr_label` (Bullish/Neutral/Bearish). Displayed as a new badge alongside Max Pain, Zero Gamma, and Net GEX.
+
 ## [3.8.2] - 2026-05-24
 
 ### Added

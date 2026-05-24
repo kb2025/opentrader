@@ -19300,6 +19300,15 @@ function _renderChainAnalytics(el, d) {
   const gexLabel = d.gex_regime === 'positive' ? '▲ Positive GEX (vol suppression)' : '▼ Negative GEX (vol amplification)';
   const fmtGex   = v => { const a = Math.abs(v); return a >= 1e9 ? `${(v/1e9).toFixed(2)}B` : a >= 1e6 ? `${(v/1e6).toFixed(1)}M` : `${(v/1e3).toFixed(0)}K`; };
 
+  const ivColor  = d.iv_label === 'Low' ? '#34d399' : d.iv_label === 'High' ? '#f87171' : '#fbbf24';
+  const pcrColor = d.pcr_label === 'Bullish' ? '#34d399' : d.pcr_label === 'Bearish' ? '#f87171' : '#94a3b8';
+  const ivPct    = d.iv_percentile ?? null;
+  const ivGauge  = ivPct != null
+    ? `<div style="margin-top:4px;height:4px;border-radius:2px;background:var(--surface);overflow:hidden">
+         <div style="height:100%;width:${ivPct}%;background:${ivColor};border-radius:2px"></div>
+       </div>`
+    : '';
+
   const badges = `
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
       <div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:110px">
@@ -19317,6 +19326,17 @@ function _renderChainAnalytics(el, d) {
         <div style="font-size:20px;font-weight:700;color:${gexColor}">${fmtGex(d.net_gex)}</div>
         <div style="font-size:9px;color:${gexColor}">${gexLabel}</div>
       </div>
+      ${d.atm_iv != null ? `<div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:120px">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px">ATM IV</div>
+        <div style="font-size:20px;font-weight:700;color:${ivColor}">${d.atm_iv}%</div>
+        <div style="font-size:9px;color:${ivColor}">${ivPct != null ? `IVP ${ivPct}% · ${d.iv_label}` : d.iv_label}</div>
+        ${ivGauge}
+      </div>` : ''}
+      ${d.pcr != null ? `<div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:100px">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px">PCR</div>
+        <div style="font-size:20px;font-weight:700;color:${pcrColor}">${d.pcr.toFixed(2)}</div>
+        <div style="font-size:9px;color:${pcrColor}">${d.pcr_label}</div>
+      </div>` : ''}
       ${spot ? `<div style="background:var(--surface2,var(--surface));border-radius:8px;padding:8px 14px;text-align:center;min-width:90px">
         <div style="font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:3px">Spot</div>
         <div style="font-size:20px;font-weight:700">$${spot.toFixed(2)}</div>
