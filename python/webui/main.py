@@ -13340,12 +13340,13 @@ async def get_portfolio_greeks(mode: str = "live"):
     pool = await _get_db_pool()
     rows = await pool.fetch(
         """SELECT account_label, underlying, option_type, qty,
-                  delta, theta, vega, gamma, rho, volga, expiration_date, strike
+                  delta, theta, vega, gamma, rho, volga, vanna, charm, pop,
+                  expiration_date, strike
            FROM option_positions
            WHERE status = 'active' AND mode = $1""",
         mode,
     )
-    _GREEKS = ("delta", "theta", "vega", "gamma", "rho", "volga")
+    _GREEKS = ("delta", "theta", "vega", "gamma", "rho", "volga", "vanna", "charm", "pop")
     totals = {g: 0.0 for g in _GREEKS}
     per_account: dict = {}
     per_underlying: dict = {}

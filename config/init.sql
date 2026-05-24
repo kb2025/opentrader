@@ -299,6 +299,10 @@ ALTER TABLE option_positions ADD COLUMN IF NOT EXISTS gamma NUMERIC;
 -- Extended Greeks: rho (rate sensitivity) and volga/vomma (vega convexity)
 ALTER TABLE option_positions ADD COLUMN IF NOT EXISTS rho   NUMERIC;
 ALTER TABLE option_positions ADD COLUMN IF NOT EXISTS volga NUMERIC;
+-- Higher-order Greeks: vanna (∂Δ/∂σ), charm (∂Δ/∂t), pop (risk-neutral ITM probability)
+ALTER TABLE option_positions ADD COLUMN IF NOT EXISTS vanna NUMERIC;
+ALTER TABLE option_positions ADD COLUMN IF NOT EXISTS charm NUMERIC;
+ALTER TABLE option_positions ADD COLUMN IF NOT EXISTS pop   NUMERIC;
 
 -- ── Portfolio NAV snapshots (added for performance curve) ────────────────────
 -- One row per account per calendar day at EOD (~16:10 ET).

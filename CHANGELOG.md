@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.5] - 2026-05-24
+
+### Added
+- **Higher-order Greeks — Vanna, Charm, PoP**: `_bs_greeks()` now returns `vanna` (∂Δ/∂σ, delta sensitivity to vol), `charm` (∂Δ/∂t per calendar day, delta decay rate), and `pop` (risk-neutral probability of expiring ITM: N(d2) for calls, N(−d2) for puts); all three persisted to `option_positions` and aggregated in `/api/options/portfolio-greeks`
+- **American-style binomial tree pricer**: `_binomial_american_price()` — CRR 100-step binomial tree with backward induction and early-exercise check at each node; supports continuous dividend yield `q`; available for American option pricing alongside the existing B-S European pricer
+
 ## [3.8.4] - 2026-05-24
 
 ### Added
