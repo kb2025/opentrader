@@ -658,7 +658,7 @@ select option{background:var(--surface2)}
     <div class="page" id="page-platform-agents">
       <div class="card">
         <div class="card-header">
-          <span class="card-title">All Agents</span>
+          <span class="card-title">All Agents <span id="agents-count" style="font-size:11px;font-weight:400;color:var(--muted)"></span></span>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="btn btn-ghost btn-sm view-btn active" onclick="setAgentsSort('az')"  id="sort-az-btn"  title="Sort A→Z">A→Z</button>
             <button class="btn btn-ghost btn-sm view-btn"        onclick="setAgentsSort('za')"  id="sort-za-btn"  title="Sort Z→A">Z→A</button>
@@ -6305,12 +6305,10 @@ const _TOPO_ZOOM_MAX  = 3.0;
 
 function _topoApplyZoom(scale) {
   _topoZoom = Math.max(_TOPO_ZOOM_MIN, Math.min(_TOPO_ZOOM_MAX, scale));
-  const w = _TOPO_VB_W / _topoZoom;
-  const h = _TOPO_VB_H / _topoZoom;
-  const x = (_TOPO_VB_W - w) / 2;
-  const y = (_TOPO_VB_H - h) / 2;
+  const w = Math.round(_TOPO_VB_W / _topoZoom);
+  const h = Math.round(_TOPO_VB_H / _topoZoom);
   const svg = document.getElementById('topology-svg');
-  if (svg) svg.setAttribute('viewBox', `${Math.round(x)} ${Math.round(y)} ${Math.round(w)} ${Math.round(h)}`);
+  if (svg) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   const lbl = document.getElementById('topo-zoom-label');
   if (lbl) lbl.textContent = Math.round(_topoZoom * 100) + '%';
 }
@@ -6473,6 +6471,8 @@ async function loadAgentsPage() {
 function renderAgentsGrid(agents) {
   _agentsLast = agents || [];
   const grid = document.getElementById('agents-grid');
+  const countEl = document.getElementById('agents-count');
+  if (countEl) countEl.textContent = agents && agents.length ? `${agents.length} total` : '';
   if (!agents || agents.length === 0) {
     grid.innerHTML = '<div class="empty-state">No agents found</div>';
     return;

@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.9] - 2026-05-25
+
+### Changed
+- **Topology zoom anchor** — zoom now anchors to the top-left corner of the diagram (viewBox origin stays at 0,0; only width/height scale), so content stays pinned to the top-left as you zoom in
+- **All Agents count** — agent total shown inline next to the "All Agents" card title (e.g. "14 total"); updates on every refresh
+
 ## [4.0.8] - 2026-05-25
 
 ### Added
