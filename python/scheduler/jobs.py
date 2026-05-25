@@ -418,6 +418,12 @@ async def job_scrape_eodhd_news(redis: aioredis.Redis):
     await trigger(redis, "scrape_eodhd_news", {})
 
 
+@tracked
+async def job_scrape_finnhub_insider(redis: aioredis.Redis):
+    """Trigger Finnhub insider transactions + sentiment scraper — daily after close."""
+    await trigger(redis, "scrape_finnhub_insider", {})
+
+
 # ── Feature 7: Trending symbols update ───────────────────────────────────────
 
 @tracked

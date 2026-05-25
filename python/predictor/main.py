@@ -418,10 +418,13 @@ class PredictorAgent(BaseAgent):
             for t in candidates
         )
 
+        from shared.instrument_utils import guard_tickers
+        ticker_guard = guard_tickers([t.ticker for t in candidates])
         system = (
             "You are a quantitative trading signal validator. "
             "Evaluate momentum signals for quality and rank them. "
-            "Be conservative — prefer fewer high-conviction signals over many weak ones."
+            "Be conservative — prefer fewer high-conviction signals over many weak ones. "
+            + ticker_guard
         )
         prompt = (
             f"Today's date: {__import__('datetime').date.today().isoformat()}\n\n"

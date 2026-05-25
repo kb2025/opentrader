@@ -36,6 +36,7 @@ from .jobs import (
     job_scrape_macro_regime,
     job_scrape_news_sentiment,
     job_scrape_eodhd_news,
+    job_scrape_finnhub_insider,
     job_update_trending_symbols,
 )
 from .calendar import TZ
@@ -253,6 +254,14 @@ class Scheduler(BaseAgent):
             IntervalTrigger(minutes=30, timezone=TZ),
             args=[r], id="scrape_eodhd_news",
             name="EODHD per-ticker news every 30m",
+            replace_existing=True,
+        )
+
+        self.apscheduler.add_job(
+            job_scrape_finnhub_insider,
+            CronTrigger(hour=17, minute=5, day_of_week="mon-fri", timezone=TZ),
+            args=[r], id="scrape_finnhub_insider",
+            name="Finnhub insider transactions + sentiment (daily after close)",
             replace_existing=True,
         )
 

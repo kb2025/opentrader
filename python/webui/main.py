@@ -366,6 +366,7 @@ KNOWN_SECRETS = [
     ("UNUSUAL_WHALES_MCP_URL",     "Unusual Whales — MCP URL"),
     ("EODDATA_API_KEY",            "EODData — API Key"),
     ("EODHD_API_KEY",              "EODHD — API Key"),
+    ("FINNHUB_API_KEY",            "Finnhub — API Key"),
     ("EODHD_MCP_URL",              "EODHD — MCP URL"),
     ("GOOGLE_BOOKS_API_KEY",       "Google Books — API Key"),
     # ── AI / LLM ──────────────────────────────────────────────────────────────
@@ -760,6 +761,7 @@ KNOWN_AGENTS = [
     "trader-equity", "trader-options", "options-monitor",
     "scraper-ovtlyr", "scraper-wsb", "scraper-seekalpha",
     "scraper-etf-flows", "scraper-macro-regime", "scraper-news", "scraper-eodhd-news",
+    "scraper-finnhub-insider",
     "aggregator", "review-agent", "broker-gateway", "directive-agent",
     # MCP servers & chat agent — health derived from Podman (no heartbeat)
     "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-eodhd", "chat-agent",
@@ -782,6 +784,7 @@ CONTAINER_MAP = {
     "scraper-macro-regime":     "ot-scraper-macro-regime",
     "scraper-news":             "ot-scraper-news",
     "scraper-eodhd-news":       "ot-scraper-eodhd-news",
+    "scraper-finnhub-insider":  "ot-scraper-finnhub-insider",
     "aggregator":      "ot-aggregator",
     "review-agent":    "ot-review-agent",
     "broker-gateway":  "ot-broker-gateway",
@@ -1522,6 +1525,68 @@ async def on_startup():
             )
         except Exception as e:
             log.warning("eodhd_news.table_init_failed", error=str(e))
+
+    try:
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS av_ticker_sentiment (
+                id                       BIGSERIAL PRIMARY KEY,
+                ticker                   TEXT NOT NULL,
+                title                    TEXT NOT NULL,
+                url                      TEXT,
+                time_published           TIMESTAMPTZ,
+                source                   TEXT,
+                overall_sentiment_label  TEXT,
+                overall_sentiment_score  REAL DEFAULT 0,
+                ticker_relevance_score   REAL DEFAULT 0,
+                ticker_sentiment_score   REAL DEFAULT 0,
+                ticker_sentiment_label   TEXT,
+                summary                  TEXT,
+                scraped_at               TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(ticker, url)
+            )
+        """)
+        await pool.execute(
+            "CREATE INDEX IF NOT EXISTS idx_av_ticker_sent_ticker ON av_ticker_sentiment(ticker)"
+        )
+    except Exception as e:
+        log.warning("av_ticker_sentiment.table_init_failed", error=str(e))
+
+    try:
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS insider_transactions (
+                id               BIGSERIAL PRIMARY KEY,
+                ticker           TEXT    NOT NULL,
+                name             TEXT,
+                share            BIGINT,
+                change           BIGINT,
+                filing_date      DATE,
+                transaction_date DATE,
+                transaction_code TEXT,
+                transaction_price REAL,
+                scraped_at       TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(ticker, name, transaction_date, transaction_code, share)
+            )
+        """)
+        await pool.execute(
+            "CREATE INDEX IF NOT EXISTS idx_insider_tx_ticker ON insider_transactions(ticker)"
+        )
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS insider_sentiment (
+                id         BIGSERIAL PRIMARY KEY,
+                ticker     TEXT NOT NULL,
+                year       INT,
+                month      INT,
+                change     BIGINT,
+                mspr       REAL,
+                scraped_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(ticker, year, month)
+            )
+        """)
+        await pool.execute(
+            "CREATE INDEX IF NOT EXISTS idx_insider_sent_ticker ON insider_sentiment(ticker)"
+        )
+    except Exception as e:
+        log.warning("insider_tables.init_failed", error=str(e))
 
     # Start price alert checker background loop
     asyncio.create_task(_price_alert_loop())
@@ -4951,6 +5016,23 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                     title = (data.get("seriess") or [{}])[0].get("title", "US HY OAS")
                     return {"ok": True, "message": f"FRED API key valid — series: {title}"}
                 raise HTTPException(status_code=400, detail=f"FRED returned HTTP {resp.status}")
+
+            elif service == "finnhub":
+                api_key = ev("FINNHUB_API_KEY")
+                if not api_key:
+                    raise HTTPException(status_code=400, detail="FINNHUB_API_KEY is required")
+                resp = await s.get(
+                    "https://finnhub.io/api/v1/stock/profile2",
+                    params={"symbol": "AAPL", "token": api_key},
+                    timeout=_aiohttp.ClientTimeout(total=10),
+                )
+                if resp.status == 401:
+                    raise HTTPException(status_code=400, detail="Invalid Finnhub API key")
+                if resp.status == 200:
+                    data = await resp.json()
+                    name = data.get("name", "Apple Inc.")
+                    return {"ok": True, "message": f"Finnhub API key valid — test: {name}"}
+                raise HTTPException(status_code=400, detail=f"Finnhub returned HTTP {resp.status}")
 
             elif service == "alpaca_mcp":
                 api_key    = ev("ALPACA_API_KEY")
@@ -12864,6 +12946,137 @@ async def get_eodhd_news(ticker: str = "", hours: int = 48, limit: int = 20):
         for r in rows
     ]
     return {"ticker": ticker or None, "articles": articles, "source": "db"}
+
+
+# ── Alpha Vantage per-ticker structured sentiment ─────────────────────────────
+
+@app.get("/api/sentiment/av-ticker")
+async def get_av_ticker_sentiment(ticker: str = "", hours: int = 72, limit: int = 20):
+    """Return Alpha Vantage per-ticker structured sentiment rows (relevance + sentiment score)."""
+    limit = min(limit, 100)
+    _redis = await get_redis()
+
+    if ticker:
+        ticker = ticker.upper()
+        cache_key = f"av_sentiment:{ticker}"
+        cached = await _redis.get(cache_key)
+        if cached:
+            return {"ticker": ticker, "articles": json.loads(cached)[:limit], "source": "cache"}
+
+    pool = await _get_db_pool()
+    where_parts = [f"scraped_at >= NOW() - INTERVAL '{hours} hours'"]
+    args: list = []
+    if ticker:
+        args.append(ticker)
+        where_parts.append(f"ticker = ${len(args)}")
+    where = " AND ".join(where_parts)
+    args.append(limit)
+    rows = await pool.fetch(
+        f"""SELECT ticker, title, url, time_published, source,
+                   overall_sentiment_label, overall_sentiment_score,
+                   ticker_relevance_score, ticker_sentiment_score, ticker_sentiment_label,
+                   summary, scraped_at
+            FROM av_ticker_sentiment
+            WHERE {where}
+            ORDER BY time_published DESC NULLS LAST
+            LIMIT ${len(args)}""",
+        *args,
+    )
+    articles = [
+        {
+            "ticker":                  r["ticker"],
+            "title":                   r["title"],
+            "url":                     r["url"],
+            "time_published":          r["time_published"].isoformat() if r["time_published"] else None,
+            "source":                  r["source"],
+            "overall_sentiment_label": r["overall_sentiment_label"],
+            "overall_sentiment_score": float(r["overall_sentiment_score"] or 0),
+            "relevance_score":         float(r["ticker_relevance_score"] or 0),
+            "ticker_sentiment_score":  float(r["ticker_sentiment_score"] or 0),
+            "ticker_sentiment_label":  r["ticker_sentiment_label"],
+            "summary":                 r["summary"],
+        }
+        for r in rows
+    ]
+    return {"ticker": ticker or None, "articles": articles, "source": "db"}
+
+
+# ── Finnhub insider transactions + sentiment ──────────────────────────────────
+
+@app.get("/api/market/insider/{ticker}")
+async def get_insider_data(ticker: str):
+    """Return insider transactions and monthly MSPR sentiment for a ticker."""
+    ticker = ticker.upper()
+    _redis = await get_redis()
+
+    cached = await _redis.get(f"insider:{ticker}")
+    if cached:
+        data = json.loads(cached)
+        return {"ticker": ticker, **data, "source": "cache"}
+
+    pool = await _get_db_pool()
+    tx_rows = await pool.fetch(
+        """SELECT name, share, change, filing_date, transaction_date,
+                  transaction_code, transaction_price
+           FROM insider_transactions
+           WHERE ticker = $1
+           ORDER BY transaction_date DESC NULLS LAST
+           LIMIT 30""",
+        ticker,
+    )
+    sent_rows = await pool.fetch(
+        """SELECT year, month, change, mspr
+           FROM insider_sentiment
+           WHERE ticker = $1
+           ORDER BY year DESC, month DESC
+           LIMIT 12""",
+        ticker,
+    )
+
+    _CODES = {
+        "P": "Purchase", "S": "Sale", "A": "Award", "D": "Disposition",
+        "F": "Tax Withholding", "G": "Gift", "M": "Option Exercise",
+        "X": "Exercise & Sale", "C": "Conversion",
+    }
+
+    transactions = [
+        {
+            "name":              r["name"],
+            "share":             r["share"],
+            "change":            r["change"],
+            "filing_date":       r["filing_date"].isoformat() if r["filing_date"] else None,
+            "transaction_date":  r["transaction_date"].isoformat() if r["transaction_date"] else None,
+            "transaction_code":  r["transaction_code"],
+            "transaction_label": _CODES.get(r["transaction_code"] or "", "Other"),
+            "transaction_price": float(r["transaction_price"] or 0) if r["transaction_price"] else None,
+        }
+        for r in tx_rows
+    ]
+    sentiment = [
+        {
+            "year":   r["year"],
+            "month":  r["month"],
+            "change": r["change"],
+            "mspr":   float(r["mspr"] or 0),
+        }
+        for r in sent_rows
+    ]
+
+    # Net shares bought (purchases minus sales across all transactions)
+    net = sum(
+        (r["change"] or 0) if r["transaction_code"] == "P"
+        else -(abs(r["change"] or 0)) if r["transaction_code"] == "S"
+        else 0
+        for r in tx_rows
+    )
+
+    return {
+        "ticker":       ticker,
+        "transactions": transactions,
+        "sentiment":    sentiment,
+        "net_shares":   net,
+        "source":       "db",
+    }
 
 
 # ── Feature 6: Per-symbol technical analysis snapshots ───────────────────────

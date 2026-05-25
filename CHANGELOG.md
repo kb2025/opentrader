@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.4] - 2026-05-25
+
+### Added
+- **Finnhub Insider Scraper** (`ot-scraper-finnhub-insider`) — new agent that fetches insider transactions and monthly MSPR sentiment from Finnhub free API; persists to `insider_transactions` + `insider_sentiment` tables; publishes net buy/sell signal to `market.ticks`; runs daily at 17:05 ET
+- **Alpha Vantage ticker-targeted sentiment** — enhanced existing AV scraper to also call `NEWS_SENTIMENT?tickers=...`; stores per-ticker relevance + sentiment scores in new `av_ticker_sentiment` table; publishes structured scores to `market.ticks`; endpoint `GET /api/sentiment/av-ticker`
+- **Finnhub insider API endpoint** — `GET /api/market/insider/{ticker}` returns transactions, MSPR sentiment history, and net shares signal; Redis-cached 24h
+- **Insider Activity panel** in Quick Intel — shows last 8 insider transactions with buy/sell color coding and net position summary
+- **Finnhub service connector** in Settings — API key configuration with live test endpoint
+- **Ticker consistency guard** (`shared/instrument_utils.py`) — `build_instrument_context()` / `guard_tickers()` injected into predictor LLM prompt to prevent symbol hallucination
+
 ## [4.0.3] - 2026-05-25
 
 ### Changed

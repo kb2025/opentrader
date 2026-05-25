@@ -1972,6 +1972,8 @@ select option{background:var(--surface2)}
           <div id="quick-intel-result"><div style="font-size:12px;color:var(--dim)">Enter a ticker above to generate a snapshot analysis from predictor signals + OVTLYR data.</div></div>
           <!-- DCF Valuation inline -->
           <div id="quick-intel-dcf" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"></div>
+          <!-- Insider Activity -->
+          <div id="quick-intel-insider" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"></div>
           <!-- Investor Persona Agents -->
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
             <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px">Investor Persona Analysis</div>
@@ -9133,6 +9135,13 @@ const CFG_META = {
     fields: [
       { key: 'FRED_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
         hint: 'Free key at fred.stlouisfed.org/docs/api/api_key.html — powers HY/IG credit spreads, Financial Stress Index, and NBER recession signal in the macro regime classifier' },
+    ],
+  },
+  finnhub: {
+    label: 'Finnhub', letter: 'F', bg: '#1db954', fg: '#fff',
+    fields: [
+      { key: 'FINNHUB_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
+        hint: 'Free key at finnhub.io — powers insider transactions, insider sentiment (MSPR), and SEC filing alerts via the Finnhub Insider scraper' },
     ],
   },
 };
@@ -24193,10 +24202,11 @@ async function loadQuickIntel() {
         </div>
         <div id="qi-past-outcomes" style="display:none"></div>
       </div>`;
-    // Load past outcomes, sentiment breakdown, and DCF asynchronously
+    // Load past outcomes, sentiment breakdown, DCF, and insider data asynchronously
     _loadPastOutcomes(ticker);
     _attachSentimentBreakdown(ticker);
     _loadQuickIntelDCF(ticker);
+    _loadQuickIntelInsider(ticker);
   } catch(e) {
     el.innerHTML = `<div style="font-size:12px;color:var(--coral)">Analysis unavailable: ${e.message || e}</div>`;
   }
@@ -24227,6 +24237,46 @@ async function _loadQuickIntelDCF(ticker) {
           <div style="font-size:13px;font-weight:600;color:var(--fg)">${d.wacc != null ? d.wacc.toFixed(1) + '%' : '—'}</div></div>
       </div>`;
   } catch(e) {
+    el.style.display = 'none';
+  }
+}
+
+async function _loadQuickIntelInsider(ticker) {
+  const el = document.getElementById('quick-intel-insider');
+  if (!el) return;
+  try {
+    const d = await apiFetch(`/api/market/insider/${ticker}`);
+    const txns = d.transactions || [];
+    if (!txns.length) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+
+    const net = d.net_shares || 0;
+    const netCol = net > 0 ? 'var(--green)' : net < 0 ? 'var(--red)' : 'var(--muted)';
+    const netLbl = net > 0 ? `+${net.toLocaleString()} net bought` : net < 0 ? `${net.toLocaleString()} net sold` : 'Neutral';
+
+    const rows = txns.slice(0, 8).map(t => {
+      const code = t.transaction_code || '';
+      const isBuy = code === 'P';
+      const isSell = code === 'S';
+      const dotCol = isBuy ? 'var(--green)' : isSell ? 'var(--red)' : 'var(--muted)';
+      const chg = (t.change || 0).toLocaleString();
+      const price = t.transaction_price ? `@ $${t.transaction_price.toFixed(2)}` : '';
+      return `<div style="display:flex;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid var(--border);font-size:11px">
+        <span style="width:6px;height:6px;border-radius:50%;background:${dotCol};flex-shrink:0;display:inline-block"></span>
+        <span style="color:var(--fg);font-weight:500;min-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.name}">${t.name || '—'}</span>
+        <span style="color:${dotCol};font-weight:600">${t.transaction_label}</span>
+        <span style="color:var(--muted)">${chg} sh ${price}</span>
+        <span style="color:var(--dim);margin-left:auto">${t.transaction_date || ''}</span>
+      </div>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted)">Insider Activity</div>
+        <div style="font-size:11px;font-weight:700;color:${netCol}">${netLbl}</div>
+      </div>
+      ${rows}`;
+  } catch(_) {
     el.style.display = 'none';
   }
 }
