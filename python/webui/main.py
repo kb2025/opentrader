@@ -1407,12 +1407,48 @@ async def on_startup():
             """)
         except Exception:
             pass
+    # execution_events — Code Insights telemetry store (30-day retention)
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute("""
+                CREATE TABLE IF NOT EXISTS execution_events (
+                    id            BIGSERIAL   PRIMARY KEY,
+                    ts            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    agent         TEXT        NOT NULL,
+                    event_name    TEXT        NOT NULL,
+                    severity      TEXT        NOT NULL DEFAULT 'info',
+                    duration_ms   DOUBLE PRECISION,
+                    payload       JSONB       NOT NULL DEFAULT '{}',
+                    traceback_str TEXT,
+                    resolved      BOOLEAN     NOT NULL DEFAULT FALSE,
+                    notes         TEXT
+                )
+            """)
+            await pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_exec_events_ts     ON execution_events (ts DESC)"
+            )
+            await pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_exec_events_agent  ON execution_events (agent, ts DESC)"
+            )
+            await pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_exec_events_sev    ON execution_events (severity, ts DESC)"
+            )
+            # 30-day retention policy
+            await pool.execute("""
+                DELETE FROM execution_events WHERE ts < NOW() - INTERVAL '30 days'
+            """)
+        except Exception as e:
+            log.warning("execution_events.table_init_failed", error=str(e))
+
     # Start price alert checker background loop
     asyncio.create_task(_price_alert_loop())
     # Pre-warm caches in background so first page load is fast
     asyncio.create_task(_warmup_caches())
     # Enrich ticker sector/industry from Yahoo Finance (delayed so DB is ready)
     asyncio.create_task(_enrich_ticker_classifications(delay=15))
+    # Consume system.telemetry Redis stream and persist to execution_events
+    asyncio.create_task(_telemetry_consumer())
 
 
 async def save_job(redis, job: dict):
@@ -17079,6 +17115,284 @@ async def signals_recent(limit: int = 50, token: str = ""):
     # Sort combined results by ts descending, return top N
     results.sort(key=lambda x: x.get("ts") or "", reverse=True)
     return {"signals": results[:limit], "count": len(results[:limit])}
+
+
+# ── Code Insights — telemetry consumer + API ─────────────────────────────────
+
+_TEL_STREAM        = "system.telemetry"
+_TEL_CONSUMER_GRP  = "webui-insights"
+_TEL_CONSUMER_NAME = "webui-0"
+
+
+async def _telemetry_consumer() -> None:
+    """Background task: drain system.telemetry stream → execution_events table."""
+    redis = await get_redis()
+    try:
+        await redis.xgroup_create(_TEL_STREAM, _TEL_CONSUMER_GRP, id="$", mkstream=True)
+    except Exception:
+        pass  # group already exists
+
+    if not DB_URL:
+        return
+
+    pool = await _get_db_pool()
+    while True:
+        try:
+            msgs = await redis.xreadgroup(
+                _TEL_CONSUMER_GRP, _TEL_CONSUMER_NAME,
+                {_TEL_STREAM: ">"},
+                count=50, block=5000,
+            )
+            if not msgs:
+                continue
+            for _stream, entries in msgs:
+                for msg_id, fields in entries:
+                    try:
+                        payload_raw = fields.get("payload", "{}")
+                        payload     = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+                        dur_raw     = fields.get("duration_ms")
+                        duration    = float(dur_raw) if dur_raw else None
+                        await pool.execute(
+                            """INSERT INTO execution_events
+                               (agent, event_name, severity, duration_ms, payload, traceback_str)
+                               VALUES ($1,$2,$3,$4,$5::jsonb,$6)""",
+                            fields.get("agent", "unknown"),
+                            fields.get("event_name", "event"),
+                            fields.get("severity", "info"),
+                            duration,
+                            json.dumps(payload),
+                            fields.get("traceback_str") or None,
+                        )
+                        await redis.xack(_TEL_STREAM, _TEL_CONSUMER_GRP, msg_id)
+                    except Exception as e:
+                        log.warning("telemetry_consumer.row_failed", error=str(e))
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            log.warning("telemetry_consumer.loop_error", error=str(e))
+            await asyncio.sleep(10)
+
+
+@app.get("/api/telemetry/events")
+async def get_telemetry_events(
+    token:      str = "",
+    limit:      int = 200,
+    agent:      Optional[str] = None,
+    severity:   Optional[str] = None,
+    event_name: Optional[str] = None,
+    resolved:   Optional[bool] = None,
+    hours:      int = 24,
+):
+    check_token(token)
+    if not DB_URL:
+        return {"events": [], "total": 0}
+    try:
+        pool = await _get_db_pool()
+        wheres = ["ts >= NOW() - INTERVAL '1 hour' * $1"]
+        params: list = [hours]
+        if agent:
+            params.append(agent)
+            wheres.append(f"agent = ${len(params)}")
+        if severity:
+            params.append(severity)
+            wheres.append(f"severity = ${len(params)}")
+        if event_name:
+            params.append(event_name)
+            wheres.append(f"event_name = ${len(params)}")
+        if resolved is not None:
+            params.append(resolved)
+            wheres.append(f"resolved = ${len(params)}")
+        params.append(min(limit, 1000))
+        where_sql = " AND ".join(wheres)
+        rows = await pool.fetch(
+            f"""SELECT id, ts, agent, event_name, severity, duration_ms,
+                       payload, traceback_str, resolved, notes
+                FROM execution_events WHERE {where_sql}
+                ORDER BY ts DESC LIMIT ${len(params)}""",
+            *params,
+        )
+        events = []
+        for r in rows:
+            ev = dict(r)
+            ev["ts"] = ev["ts"].isoformat() if ev.get("ts") else None
+            if isinstance(ev.get("payload"), str):
+                try:
+                    ev["payload"] = json.loads(ev["payload"])
+                except Exception:
+                    ev["payload"] = {}
+            events.append(ev)
+        return {"events": events, "total": len(events)}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/telemetry/summary")
+async def get_telemetry_summary(token: str = "", hours: int = 24):
+    check_token(token)
+    if not DB_URL:
+        return {"agents": [], "by_severity": {}, "by_event": {}, "total": 0}
+    try:
+        pool = await _get_db_pool()
+        rows = await pool.fetch(
+            """SELECT agent, severity, event_name, COUNT(*) as cnt,
+                      AVG(duration_ms) as avg_ms, MAX(ts) as last_seen
+               FROM execution_events
+               WHERE ts >= NOW() - INTERVAL '1 hour' * $1
+               GROUP BY agent, severity, event_name
+               ORDER BY cnt DESC""",
+            hours,
+        )
+        agents: dict = {}
+        by_sev: dict = {}
+        by_ev:  dict = {}
+        total = 0
+        for r in rows:
+            cnt = int(r["cnt"])
+            total += cnt
+            a = r["agent"]
+            sv = r["severity"]
+            en = r["event_name"]
+            agents.setdefault(a, {"total": 0, "errors": 0, "warns": 0, "last_seen": None})
+            agents[a]["total"] += cnt
+            if sv in ("error", "critical"):
+                agents[a]["errors"] += cnt
+            elif sv == "warn":
+                agents[a]["warns"] += cnt
+            ls = r["last_seen"].isoformat() if r["last_seen"] else None
+            if not agents[a]["last_seen"] or (ls and ls > agents[a]["last_seen"]):
+                agents[a]["last_seen"] = ls
+            by_sev[sv] = by_sev.get(sv, 0) + cnt
+            by_ev[en]  = by_ev.get(en, 0) + cnt
+        return {
+            "agents":      [{"agent": k, **v} for k, v in sorted(agents.items(), key=lambda x: -x[1]["total"])],
+            "by_severity": by_sev,
+            "by_event":    by_ev,
+            "total":       total,
+            "hours":       hours,
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+class _TelemetryResolveBody(BaseModel):
+    resolved: bool = True
+    notes:    Optional[str] = None
+
+
+@app.patch("/api/telemetry/events/{event_id}/resolve")
+async def resolve_telemetry_event(event_id: int, body: _TelemetryResolveBody, token: str = ""):
+    check_token(token)
+    if not DB_URL:
+        raise HTTPException(503, "DB not configured")
+    try:
+        pool = await _get_db_pool()
+        await pool.execute(
+            "UPDATE execution_events SET resolved=$1, notes=$2 WHERE id=$3",
+            body.resolved, body.notes, event_id,
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+class _TelemetryAnalyzeBody(BaseModel):
+    agent:   Optional[str] = None
+    hours:   int = 24
+    message: Optional[str] = None
+
+
+@app.post("/api/telemetry/analyze")
+async def analyze_telemetry(body: _TelemetryAnalyzeBody, token: str = ""):
+    """Stream an LLM analysis of recent telemetry events for an agent."""
+    check_token(token)
+    if not DB_URL:
+        raise HTTPException(503, "DB not configured")
+    try:
+        pool = await _get_db_pool()
+        params: list = [body.hours]
+        where = "ts >= NOW() - INTERVAL '1 hour' * $1"
+        if body.agent:
+            params.append(body.agent)
+            where += f" AND agent = ${len(params)}"
+        rows = await pool.fetch(
+            f"""SELECT ts, agent, event_name, severity, duration_ms, payload, traceback_str
+                FROM execution_events WHERE {where}
+                ORDER BY ts DESC LIMIT 100""",
+            *params,
+        )
+        events_txt = []
+        for r in rows:
+            ts_str = r["ts"].strftime("%Y-%m-%d %H:%M:%S") if r["ts"] else "?"
+            pl = r["payload"] or {}
+            if isinstance(pl, str):
+                try:
+                    pl = json.loads(pl)
+                except Exception:
+                    pl = {}
+            line = f"[{ts_str}] {r['agent']} | {r['event_name']} | {r['severity']}"
+            if r["duration_ms"]:
+                line += f" | {r['duration_ms']:.0f}ms"
+            if pl:
+                line += f" | {json.dumps(pl)[:200]}"
+            if r["traceback_str"]:
+                line += f"\n  TB: {r['traceback_str'][:400]}"
+            events_txt.append(line)
+
+        context = "\n".join(events_txt) or "No events in selected window."
+        user_q  = body.message or "Analyze these events and identify root causes, patterns, and remediation steps."
+        prompt  = (
+            "You are an expert platform reliability engineer analyzing OpenTrader agent telemetry.\n"
+            "Below are the most recent execution events from the platform's telemetry stream:\n\n"
+            f"{context}\n\n"
+            f"User question: {user_q}\n\n"
+            "Provide a concise structured analysis: identified issues, likely root causes, "
+            "recommended fixes, and any patterns worth monitoring."
+        )
+
+        openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+        if not openrouter_key or openrouter_key.startswith("your_"):
+            return JSONResponse({"text": "OPENROUTER_API_KEY not configured"})
+
+        messages = [{"role": "user", "content": prompt}]
+
+        async def _stream():
+            import aiohttp as _aiohttp
+            try:
+                async with _aiohttp.ClientSession() as sess:
+                    async with sess.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"},
+                        json={
+                            "model":       os.getenv("LLM_REVIEW_MODEL", "anthropic/claude-sonnet-4-5"),
+                            "messages":    messages,
+                            "max_tokens":  1500,
+                            "temperature": 0.3,
+                            "stream":      True,
+                        },
+                        timeout=_aiohttp.ClientTimeout(total=90),
+                    ) as resp:
+                        async for raw_line in resp.content:
+                            line = raw_line.decode("utf-8").strip()
+                            if not line.startswith("data: "):
+                                continue
+                            payload_s = line[6:]
+                            if payload_s == "[DONE]":
+                                break
+                            try:
+                                chunk   = json.loads(payload_s)
+                                content = chunk["choices"][0]["delta"].get("content", "")
+                                if content:
+                                    yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+                            except Exception:
+                                pass
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(exc)[:200]})}\n\n"
+
+        return StreamingResponse(_stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 # ── Serve frontend ────────────────────────────────────────────────────────────

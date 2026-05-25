@@ -15,6 +15,7 @@ import structlog
 
 from .redis_client import get_redis, ensure_streams, STREAMS
 from .envelope import Envelope, HeartbeatPayload
+from .telemetry import emit as _tel_emit, TelemetryEvent
 
 log = structlog.get_logger(__name__)
 
@@ -49,7 +50,33 @@ class BaseAgent:
                 await self._publish_heartbeat("healthy")
             except Exception as e:
                 log.error("agent.heartbeat.failed", service=self.service_name, error=str(e))
+                asyncio.create_task(_tel_emit(TelemetryEvent(
+                    agent      = self.service_name,
+                    event_name = "heartbeat_failed",
+                    severity   = "warn",
+                    payload    = {"error": str(e)},
+                )))
             await asyncio.sleep(self._hb_interval)
+
+    async def run_safe(self, coro) -> None:
+        """
+        Wrap an agent's main coroutine with telemetry so any unhandled exception
+        is recorded in Code Insights before the agent exits.
+        Usage: await self.run_safe(self._main_loop())
+        """
+        try:
+            await coro
+        except Exception as exc:
+            import traceback as _tb
+            log.error("agent.unhandled_exception", service=self.service_name, error=str(exc))
+            await _tel_emit(TelemetryEvent(
+                agent         = self.service_name,
+                event_name    = "unhandled_exception",
+                severity      = "critical",
+                payload       = {"error": str(exc)},
+                traceback_str = _tb.format_exc(),
+            ))
+            raise
 
     async def _publish_heartbeat(self, status: str = "healthy"):
         payload = HeartbeatPayload(

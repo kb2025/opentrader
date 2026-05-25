@@ -3,6 +3,21 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.4] - 2026-05-25
+
+### Added
+- **Code Insights dashboard** — new Platform nav page (`page-platform-insights`) providing real-time visibility into agent execution telemetry: stat cards (total, critical, error, warn, info counts), agent health table, filterable event log with traceback expansion, and an AI analysis chat panel backed by OpenRouter streaming
+- **`python/shared/telemetry.py`** — fire-and-forget telemetry module: `TelemetryEvent` dataclass, async `emit()` writing to Redis stream `system.telemetry`, and `@instrument(slow_ms)` decorator for async functions that captures slow calls and unhandled exceptions without swallowing them
+- **BaseAgent instrumented** — `heartbeat_loop()` emits `heartbeat_failed` telemetry on exception; new `run_safe(coro)` method wraps agent run loops to emit `unhandled_exception` telemetry (with full traceback) before re-raising
+- **MCP client instrumented** — `call_mcp_tool()` now times every call: emits `slow_call` telemetry when `MCP_SLOW_THRESHOLD_MS` exceeded (default 8 s), emits `mcp_call_failed` telemetry on exception; both are fire-and-forget so callers are unaffected
+- **`execution_events` TimescaleDB table** — `(id, ts, agent, event_name, severity, duration_ms, payload, traceback_str, resolved, notes)`; created on startup with three indices; 30-day retention enforced on each startup
+- **`_telemetry_consumer()` background task** — drains `system.telemetry` Redis stream via consumer group `webui-insights`, persists each event row to `execution_events`; runs for the lifetime of the webui container
+- **Four new API endpoints**:
+  - `GET /api/telemetry/events` — filterable (agent, severity, event_name, resolved, hours, limit)
+  - `GET /api/telemetry/summary` — per-agent error/warn counts and last-seen timestamps
+  - `PATCH /api/telemetry/events/{id}/resolve` — mark event resolved with optional notes
+  - `POST /api/telemetry/analyze` — streaming SSE LLM analysis of recent telemetry for any agent or the whole platform
+
 ## [3.9.3] - 2026-05-25
 
 ### Fixed

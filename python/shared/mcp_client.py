@@ -2,11 +2,14 @@
 Lightweight MCP HTTP client for use inside trader agents.
 Calls a single tool on a streamable-HTTP MCP server and returns the text result.
 """
+import asyncio
 import json
 import os
+import time
 import structlog
 from mcp.client.streamable_http import streamablehttp_client
 from mcp import ClientSession
+from shared.telemetry import emit as _tel_emit, TelemetryEvent
 
 log = structlog.get_logger("shared.mcp_client")
 
@@ -27,17 +30,39 @@ EODHD_MCP_URL = os.getenv(
 )
 
 
+_MCP_SLOW_MS = float(os.getenv("MCP_SLOW_THRESHOLD_MS", "8000"))
+
+
 async def call_mcp_tool(url: str, tool_name: str, arguments: dict) -> str | None:
     """Call a tool on an MCP HTTP server. Returns text result or None on failure."""
+    _agent = url.split("//")[-1].split(":")[0].replace("ot-mcp-", "mcp-")
+    t0 = time.monotonic()
     try:
         async with streamablehttp_client(url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments)
                 texts = [c.text for c in result.content if hasattr(c, "text")]
+                elapsed = (time.monotonic() - t0) * 1000.0
+                if elapsed > _MCP_SLOW_MS:
+                    asyncio.create_task(_tel_emit(TelemetryEvent(
+                        agent      = _agent,
+                        event_name = "slow_call",
+                        severity   = "warn",
+                        payload    = {"tool": tool_name, "url": url, "duration_ms": round(elapsed, 1)},
+                        duration_ms = elapsed,
+                    )))
                 return "\n".join(texts) if texts else None
     except Exception as e:
+        elapsed = (time.monotonic() - t0) * 1000.0
         log.warning("mcp_client.call_failed", tool=tool_name, url=url, error=str(e))
+        asyncio.create_task(_tel_emit(TelemetryEvent(
+            agent      = _agent,
+            event_name = "mcp_call_failed",
+            severity   = "error",
+            payload    = {"tool": tool_name, "url": url, "error": str(e)},
+            duration_ms = elapsed,
+        )))
         return None
 
 
