@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.3] - 2026-05-25
+
+### Fixed
+- `mcp-eodhd` was deployed in compose but absent from `KNOWN_AGENTS`, `PODMAN_HEALTH_ONLY`, `CONTAINER_MAP` in webui/main.py — now registered and monitored alongside all other MCP servers
+- Logs dashboard dropdown was missing `scraper-news`, `scraper-etf-flows`, `scraper-macro-regime`, and `mcp-eodhd` — all four added; all 22 deployed agents now selectable
+- `mcp-eodhd` added to Platform Dashboard topology: node (group mcp, x=460 y=520), two data edges (→ aggregator: fundamentals, → predictor: earnings/ratings), one chat-agent query edge, and default reset position
+
+### Changed
+- README.md: complete rewrite with all new features (v3.7–v3.9), full signal flow diagram, expanded architecture ASCII diagram with MCP layer and options monitor detail, updated Services table (now includes `ot-mcp-eodhd`), new Data Subscriptions section (FRED free key, EODHD, Alpha Vantage added), Options Monitor four-task breakdown, Strategy Payoff Builder feature list, Macro Hub, WebUI navigation table updated
+
 ## [3.9.2] - 2026-05-25
 
 ### Added

@@ -683,6 +683,9 @@ select option{background:var(--surface2)}
               <option value="scraper-ovtlyr">scraper-ovtlyr</option>
               <option value="scraper-wsb">scraper-wsb</option>
               <option value="scraper-seekalpha">scraper-seekalpha</option>
+              <option value="scraper-news">scraper-news</option>
+              <option value="scraper-etf-flows">scraper-etf-flows</option>
+              <option value="scraper-macro-regime">scraper-macro-regime</option>
               <option value="aggregator">aggregator</option>
               <option value="options-monitor">options-monitor</option>
               <option value="directive-agent">directive-agent</option>
@@ -692,6 +695,7 @@ select option{background:var(--surface2)}
               <option value="mcp-tradingview">mcp-tradingview</option>
               <option value="mcp-massive">mcp-massive</option>
               <option value="mcp-unusualwhales">mcp-unusualwhales</option>
+              <option value="mcp-eodhd">mcp-eodhd</option>
               <option value="chat-agent">chat-agent</option>
             </select>
             <select class="select-input" id="logs-lines-select">
@@ -5643,6 +5647,7 @@ const TOPO_NODES = [
   { id: 'mcp-tradingview',         label: 'MCP TradingView',    x: 555, y: 230, group: 'mcp'      },
   { id: 'mcp-massive',             label: 'MCP Massive',        x: 280, y: 450, group: 'mcp'      },
   { id: 'mcp-unusualwhales',       label: 'MCP Unusual Whales', x: 90,  y: 515, group: 'mcp'      },
+  { id: 'mcp-eodhd',               label: 'MCP EODHD',          x: 460, y: 520, group: 'mcp'      },
   // ── Interface ─────────────────────────────────────────────────────────────
   { id: 'chat-agent',              label: 'Chat Agent',         x: 930, y: 140, group: 'interface'},
 ];
@@ -5701,11 +5706,14 @@ const TOPO_EDGES = [
   { from: 'mcp-massive',            to: 'predictor',               label: 'market data',      color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-massive',            to: 'aggregator',              label: 'market data',      color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   { from: 'mcp-unusualwhales',      to: 'predictor',               label: 'options flow',     color: '#f97316', markerId: 'arrow-orange', dashed: false },
+  { from: 'mcp-eodhd',              to: 'aggregator',              label: 'fundamentals',     color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
+  { from: 'mcp-eodhd',              to: 'predictor',               label: 'earnings/ratings', color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
   // ── Chat Agent queries ────────────────────────────────────────────────────
   { from: 'chat-agent',             to: 'mcp-alpaca',              label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
   { from: 'chat-agent',             to: 'mcp-tradingview',         label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
   { from: 'chat-agent',             to: 'mcp-massive',             label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
   { from: 'chat-agent',             to: 'mcp-unusualwhales',       label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
+  { from: 'chat-agent',             to: 'mcp-eodhd',               label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
 ];
 
 function healthColor(health) {
@@ -5756,6 +5764,7 @@ function resetTopoLayout() {
     'mcp-alpaca':735,'mcp-alpaca_y':310,
     'mcp-massive':280,'mcp-massive_y':450,
     'mcp-unusualwhales':90,'mcp-unusualwhales_y':515,
+    'mcp-eodhd':460,'mcp-eodhd_y':520,
     'chat-agent':930,'chat-agent_y':140,
   };
   TOPO_NODES.forEach(n => {
