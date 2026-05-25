@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.2] - 2026-05-25
+
+### Added
+- **Unusual Options Flow panel in Options Dashboard**: new card between Portfolio Greeks and the positions table showing incremental volume activity across all active underlyings; loaded on page open and via Refresh button; displays contract, strike, type, expiry, Vol Δ, notional, delta, direction badge (BULL/BEAR), and a scored bar chart
+- **Volume delta tracking in options_monitor**: on each scan cycle `_scan_unusual_flow()` fetches Polygon v3 snapshot per underlying, diffs current `day.volume` against a per-contract Redis baseline (`options:vol_snap:{underlying}`), filters by configurable `FLOW_MIN_VOL_DELTA` (default 10 contracts) and `FLOW_MIN_NOTIONAL` (default $5K), scores hits using weighted formula (0.40 × normalized notional + 0.30 × normalized vol delta + 0.20 × type weight + 0.10 × direction confidence), and writes top `FLOW_TOP_N` (default 25) hits to `options:flow:latest` (90-min TTL)
+- **Three-method direction inference**: uses `greeks.delta` sign when present (confidence 0.5–0.9 scaled by |Δ|), falls back to `day.change_percent` sign (confidence 0.65), then call/put type heuristic (confidence 0.5); confidence feeds the importance score
+- **`GET /api/options/unusual-flow`** endpoint reading `options:flow:latest` from Redis; returns structured hits array with `ts`, `count`, and `source` fields
+
 ## [3.9.1] - 2026-05-25
 
 ### Added

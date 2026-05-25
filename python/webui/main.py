@@ -13379,6 +13379,141 @@ async def get_portfolio_greeks(mode: str = "live"):
     }
 
 
+# ── Implied Volatility solver (Newton-Raphson) ────────────────────────────────
+
+@app.get("/api/options/implied-vol")
+async def options_implied_vol(
+    spot: float, strike: float, T: float, market_price: float,
+    option_type: str = "call", r: float = 0.045, token: str = "",
+):
+    """Newton-Raphson implied volatility solver. T is years to expiry."""
+    check_token(token)
+    import math as _m
+
+    def _bs(S, K, t, sig, ri, opt):
+        if t <= 0 or sig <= 0 or S <= 0 or K <= 0:
+            return max(0.0, S - K) if opt == "call" else max(0.0, K - S)
+        try:
+            st = _m.sqrt(t)
+            d1 = (_m.log(S / K) + (ri + 0.5 * sig ** 2) * t) / (sig * st)
+            d2 = d1 - sig * st
+            nc = lambda x: (1 + _m.erf(x / _m.sqrt(2))) / 2
+            er = _m.exp(-ri * t)
+            return S * nc(d1) - K * er * nc(d2) if opt == "call" else K * er * nc(-d2) - S * nc(-d1)
+        except Exception:
+            return None
+
+    def _vega(S, K, t, sig, ri):
+        if t <= 0 or sig <= 0 or S <= 0 or K <= 0:
+            return 0.0
+        try:
+            d1 = (_m.log(S / K) + (ri + 0.5 * sig ** 2) * t) / (sig * _m.sqrt(t))
+            return S * _m.exp(-0.5 * d1 ** 2) / _m.sqrt(2 * _m.pi) * _m.sqrt(t)
+        except Exception:
+            return 0.0
+
+    sigma = 0.20
+    converged = False
+    iters = 0
+    for iters in range(100):
+        price = _bs(spot, strike, T, sigma, r, option_type)
+        if price is None:
+            break
+        diff = price - market_price
+        if abs(diff) < 1e-6:
+            converged = True
+            break
+        vega = _vega(spot, strike, T, sigma, r)
+        if abs(vega) < 1e-8:
+            break
+        sigma = max(0.001, min(5.0, sigma - diff / vega))
+
+    return {
+        "implied_vol":     round(sigma, 6),
+        "implied_vol_pct": round(sigma * 100, 3),
+        "iterations":      iters + 1,
+        "converged":       converged,
+    }
+
+
+# ── Portfolio VaR / Expected Shortfall (delta-gamma approx) ───────────────────
+
+@app.get("/api/options/portfolio-var")
+async def options_portfolio_var(
+    mode: str = "live", confidence: float = 0.95, token: str = "",
+):
+    """
+    Delta-gamma portfolio VaR across 200 spot scenarios (±25%).
+    Each position's P&L: qty × 100 × (Δ·ΔS + ½Γ·ΔS²).
+    """
+    check_token(token)
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """SELECT underlying, option_type, qty, strike, underlying_entry,
+                  delta, gamma, theta
+           FROM option_positions
+           WHERE status = 'active' AND mode = $1""",
+        mode,
+    )
+    if not rows:
+        return {"var_95": None, "es_95": None, "max_loss": None,
+                "pop": None, "theta_daily": None, "position_count": 0}
+
+    import math as _m
+    N = 200
+    moves = [-0.25 + i * 0.50 / (N - 1) for i in range(N)]
+    pnl   = [0.0] * N
+
+    for row in rows:
+        delta = float(row["delta"] or 0)
+        gamma = float(row["gamma"] or 0)
+        qty   = float(row["qty"]   or 0)
+        spot0 = float(row["underlying_entry"] or 0)
+        if spot0 <= 0:
+            continue
+        for i, mv in enumerate(moves):
+            ds    = mv * spot0
+            pnl[i] += qty * 100 * (delta * ds + 0.5 * gamma * ds * ds)
+
+    sorted_pnl = sorted(pnl)
+    idx  = max(0, int(_m.ceil((1.0 - confidence) * N)) - 1)
+    var  = -sorted_pnl[idx]
+    tail = [-p for p in sorted_pnl[: idx + 1] if p < 0]
+    es   = sum(tail) / len(tail) if tail else 0.0
+    theta_daily = sum(float(r["theta"] or 0) * float(r["qty"] or 0) * 100 for r in rows)
+
+    return {
+        "var_95":         round(var, 2),
+        "es_95":          round(es, 2),
+        "max_loss":       round(-min(sorted_pnl), 2),
+        "pop":            round(sum(1 for p in pnl if p > 0) / N, 3),
+        "theta_daily":    round(theta_daily, 2),
+        "position_count": len(rows),
+        "confidence":     confidence,
+    }
+
+
+# ── Unusual options flow (volume delta + importance score) ───────────────────
+
+@app.get("/api/options/unusual-flow")
+async def get_unusual_flow():
+    """
+    Return unusual options flow hits from the most recent options_monitor scan.
+    Each hit: underlying, contract, strike, expiry, type, price, vol_delta,
+              notional, direction, dir_confidence, change_pct, delta, score.
+    Written to Redis key 'options:flow:latest' by options_monitor every scan cycle.
+    """
+    try:
+        redis = await get_redis()
+        raw = await redis.get("options:flow:latest")
+        if not raw:
+            return {"hits": [], "ts": None, "count": 0, "source": "none"}
+        data = json.loads(raw)
+        return {**data, "source": "redis"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 # ── Options expiry calendar ───────────────────────────────────────────────────
 
 @app.get("/api/options/expiry-calendar")

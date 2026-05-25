@@ -56,6 +56,12 @@ OI_WALL_MIN_OI         = int(os.getenv("OI_WALL_MIN_OI", "3000"))
 OI_WALL_DROP_THRESHOLD = float(os.getenv("OI_WALL_DROP_PCT", "0.40"))
 # TTL for OI wall Redis cache — 2× the scan interval so one missed scan doesn't clear state
 OI_WALL_CACHE_TTL      = SCAN_INTERVAL_MIN * 60 * 2
+# Unusual flow scanner thresholds
+FLOW_MIN_VOL_DELTA     = int(os.getenv("FLOW_MIN_VOL_DELTA", "10"))    # min new contracts per scan
+FLOW_MIN_NOTIONAL      = float(os.getenv("FLOW_MIN_NOTIONAL", "5000")) # min $ notional (vol_delta×price×100)
+FLOW_TOP_N             = int(os.getenv("FLOW_TOP_N", "25"))            # top hits to surface
+FLOW_CACHE_TTL         = 90 * 60   # 90 min Redis TTL for flow snapshot
+VOL_SNAP_TTL           = 8 * 3600  # 8 h Redis TTL for per-contract volume baseline
 
 
 def _parse_option_expiry(raw) -> Optional[date]:
@@ -1255,6 +1261,9 @@ class OptionsMonitor(BaseAgent):
         # ── 3. Scan OI walls for each active underlying ───────────────────────
         await self._scan_oi_walls(pool)
 
+        # ── 4. Scan unusual options flow (volume delta + importance score) ────
+        await self._scan_unusual_flow(pool)
+
         log.info("options_monitor.scan_complete")
 
     async def _scan_oi_walls(self, pool: asyncpg.Pool):
@@ -1386,6 +1395,159 @@ class OptionsMonitor(BaseAgent):
 
             except Exception as _oe:
                 log.error("options_monitor.oi_wall_scan_error", underlying=underlying, error=str(_oe))
+
+    async def _scan_unusual_flow(self, pool: asyncpg.Pool):
+        """
+        Detect unusual options flow for each active underlying.
+
+        Per scan cycle:
+          1. Fetch Polygon v3 snapshot for each underlying (same key used by OI wall scan).
+          2. Load per-contract volume baseline from Redis (options:vol_snap:{underlying}).
+          3. Compute vol_delta = current_day_volume - baseline_volume per contract.
+          4. Filter contracts below FLOW_MIN_VOL_DELTA or FLOW_MIN_NOTIONAL.
+          5. Score each hit: 0.40 × norm_notional + 0.30 × norm_vol_delta
+                            + 0.20 × type_weight  + 0.10 × dir_confidence
+          6. Write top FLOW_TOP_N hits to Redis "options:flow:latest" (FLOW_CACHE_TTL).
+          7. Persist updated volume snapshot for next cycle comparison.
+        """
+        if not POLYGON_API_KEY:
+            return
+
+        rows = await pool.fetch(
+            "SELECT DISTINCT underlying FROM option_positions WHERE status='active'"
+        )
+        underlyings = [r["underlying"] for r in rows]
+        if not underlyings:
+            return
+
+        import aiohttp as _ah
+
+        flow_hits: list[dict] = []
+
+        for underlying in underlyings:
+            try:
+                url = (
+                    f"https://api.polygon.io/v3/snapshot/options/{underlying.upper()}"
+                    f"?limit=250&apiKey={POLYGON_API_KEY}"
+                )
+                async with _ah.ClientSession() as sess:
+                    async with sess.get(url, timeout=_ah.ClientTimeout(total=15)) as resp:
+                        if resp.status != 200:
+                            continue
+                        data = await resp.json()
+
+                snaps = data.get("results") or []
+                if not snaps:
+                    continue
+
+                # Load previous volume baseline
+                snap_key  = f"options:vol_snap:{underlying}"
+                prev_raw  = await self.redis.get(snap_key)
+                prev_vols: dict[str, int] = json.loads(prev_raw) if prev_raw else {}
+                new_vols:  dict[str, int] = {}
+
+                candidates: list[dict] = []
+
+                for snap in snaps:
+                    details    = snap.get("details") or {}
+                    day        = snap.get("day") or {}
+                    greeks     = snap.get("greeks") or {}
+                    last_quote = snap.get("last_quote") or {}
+
+                    contract = snap.get("ticker", "")
+                    if not contract:
+                        continue
+
+                    vol    = int(day.get("volume") or 0)
+                    price  = float(
+                        day.get("vwap") or day.get("last_price") or
+                        last_quote.get("midpoint") or 0
+                    )
+                    strike     = float(details.get("strike_price") or 0)
+                    expiry     = details.get("expiration_date") or ""
+                    ctype      = (details.get("contract_type") or "").lower()
+                    change_pct = float(day.get("change_percent") or 0)
+                    delta      = float(greeks.get("delta") or 0)
+
+                    new_vols[contract] = vol
+                    vol_delta = max(0, vol - prev_vols.get(contract, 0))
+
+                    if vol_delta < FLOW_MIN_VOL_DELTA or price <= 0:
+                        continue
+                    notional = vol_delta * price * 100
+                    if notional < FLOW_MIN_NOTIONAL:
+                        continue
+
+                    # Direction inference — 3-method fallback with confidence score
+                    direction      = "unknown"
+                    dir_confidence = 0.5
+                    if delta != 0:
+                        direction      = "bullish" if delta > 0 else "bearish"
+                        dir_confidence = min(0.9, 0.5 + abs(delta) * 0.4)
+                    elif change_pct != 0:
+                        direction      = "bullish" if change_pct > 0 else "bearish"
+                        dir_confidence = 0.65
+                    elif ctype == "call":
+                        direction      = "bullish"
+                        dir_confidence = 0.5
+                    elif ctype == "put":
+                        direction      = "bearish"
+                        dir_confidence = 0.5
+
+                    candidates.append({
+                        "underlying":     underlying,
+                        "contract":       contract,
+                        "strike":         strike,
+                        "expiry":         expiry,
+                        "type":           ctype,
+                        "price":          round(price, 2),
+                        "vol_delta":      vol_delta,
+                        "notional":       round(notional),
+                        "direction":      direction,
+                        "dir_confidence": round(dir_confidence, 2),
+                        "change_pct":     round(change_pct, 2),
+                        "delta":          round(delta, 3),
+                    })
+
+                # Score candidates within this underlying
+                if candidates:
+                    max_n = max(c["notional"]  for c in candidates) or 1
+                    max_v = max(c["vol_delta"]  for c in candidates) or 1
+                    for c in candidates:
+                        norm_n = c["notional"]  / max_n
+                        norm_v = c["vol_delta"]  / max_v
+                        # type_weight: both call and put score equally (flow is directionally agnostic)
+                        tw = 0.85 if c["type"] in ("call", "put") else 0.5
+                        c["score"] = round(
+                            0.40 * norm_n + 0.30 * norm_v + 0.20 * tw + 0.10 * c["dir_confidence"],
+                            3,
+                        )
+                    flow_hits.extend(candidates)
+
+                # Persist updated volume baseline for next scan
+                await self.redis.setex(snap_key, VOL_SNAP_TTL, json.dumps(new_vols))
+
+            except Exception as _fe:
+                log.error("options_monitor.flow_scan_error", underlying=underlying, error=str(_fe))
+
+        # Sort globally by score, keep top N
+        flow_hits.sort(key=lambda x: -x["score"])
+        top_hits = flow_hits[:FLOW_TOP_N]
+
+        payload = json.dumps({
+            "hits":  top_hits,
+            "ts":    datetime.now(timezone.utc).isoformat(),
+            "count": len(top_hits),
+        })
+        await self.redis.setex("options:flow:latest", FLOW_CACHE_TTL, payload)
+
+        if top_hits:
+            log.info(
+                "options_monitor.flow_scan_complete",
+                hits=len(top_hits),
+                top_score=top_hits[0]["score"],
+                top_contract=top_hits[0]["contract"],
+            )
 
     async def _process_position(self, pool: asyncpg.Pool, bp: dict):
         contract_symbol = bp["contract_symbol"]
