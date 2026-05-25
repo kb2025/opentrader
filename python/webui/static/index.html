@@ -19362,6 +19362,7 @@ async function loadChainAnalytics() {
   }
 
   _renderChainAnalytics(el, d);
+  _showCGS('delta');
 }
 
 function _chainSvgPath(vals, W, H, padX, padY) {
@@ -19393,6 +19394,69 @@ function _chainYZeroLine(W, H, padX, padY, vals) {
 function _chainXLabel(i, n, val, W, padX, H) {
   const x = (padX + (i / Math.max(n-1,1)) * (W - padX*2)).toFixed(1);
   return `<text x="${x}" y="${H-2}" font-size="8" text-anchor="middle" fill="#64748b">${val}</text>`;
+}
+
+// Greeks surface state — populated by _renderChainAnalytics, consumed by _showCGS
+let _cgsData = null;
+
+function _showCGS(key) {
+  const el = document.getElementById('chain-gs-body');
+  if (!el || !_cgsData) return;
+  const {spotAxis, dteAxis, sigma, K, spot: cSpot} = _cgsData;
+  const grid = _cgsData[key];
+  if (!grid) return;
+
+  // Color scale shared with price heatmap
+  const all = grid.flat();
+  const mn = Math.min(...all), mx = Math.max(...all);
+  function cgColor(v) {
+    const stops = [[15,23,42],[30,100,180],[52,211,153],[251,191,36],[239,68,68]];
+    const range = mx - mn;
+    const t = range > 0 ? Math.max(0, Math.min(1, (v-mn)/range)) : 0.5;
+    const raw = t*(stops.length-1);
+    const lo = stops[Math.min(Math.floor(raw), stops.length-1)];
+    const hi = stops[Math.min(Math.ceil(raw),  stops.length-1)];
+    const frac = raw - Math.floor(raw);
+    const r2 = Math.round(lo[0]+(hi[0]-lo[0])*frac);
+    const g2 = Math.round(lo[1]+(hi[1]-lo[1])*frac);
+    const b2 = Math.round(lo[2]+(hi[2]-lo[2])*frac);
+    const lum = 0.299*r2+0.587*g2+0.114*b2;
+    return {bg:`rgb(${r2},${g2},${b2})`, fg: lum>128 ? '#0f172a' : '#f1f5f9'};
+  }
+
+  const labels = {delta:'Δ call', gamma:'Γ', vega:'ν /1%IV', theta:'Θ /day'};
+  const fmtFn  = {delta: v=>v.toFixed(3), gamma: v=>v.toFixed(4), vega: v=>v.toFixed(2), theta: v=>v.toFixed(2)};
+
+  let hdr = `<th style="font-size:8px;padding:2px 5px;color:var(--muted);white-space:nowrap">DTE↓ S→</th>`;
+  spotAxis.forEach(s => {
+    const isCur = Math.abs(s - cSpot) === Math.min(...spotAxis.map(x => Math.abs(x - cSpot)));
+    hdr += `<th style="font-size:7.5px;padding:2px 3px;text-align:center;color:${isCur?'#22d3ee':'var(--muted)'};font-weight:${isCur?700:400}">${s}</th>`;
+  });
+
+  let body = '';
+  dteAxis.forEach((dte, di) => {
+    body += `<tr><td style="font-size:8px;padding:2px 5px;color:var(--muted);white-space:nowrap">${dte}d</td>`;
+    spotAxis.forEach((_, si) => {
+      const v = grid[di][si];
+      const c = cgColor(v);
+      body += `<td style="background:${c.bg};color:${c.fg};font-size:8px;padding:2px 3px;text-align:center;font-weight:600">${(fmtFn[key]||fmtFn.delta)(v)}</td>`;
+    });
+    body += '</tr>';
+  });
+
+  el.innerHTML = `
+    <div style="font-size:9.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">
+      ${labels[key] || key} surface — K=${K} · σ=${(sigma*100).toFixed(1)}% · spot column highlighted
+    </div>
+    <div style="overflow-x:auto;border-radius:4px;border:1px solid var(--border)">
+      <table style="border-collapse:collapse;min-width:100%">
+        <thead><tr>${hdr}</tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+    <div style="font-size:9px;color:var(--muted);margin-top:3px">
+      B-S call Greeks across spot (±30%) × DTE · ATM-IV σ=${(sigma*100).toFixed(1)}% · current spot highlighted
+    </div>`;
 }
 
 function _renderChainAnalytics(el, d) {
@@ -19677,6 +19741,67 @@ function _renderChainAnalytics(el, d) {
         </div>
         <div style="font-size:9px;color:var(--muted);margin-top:3px">
           B-S European price across spot (±30%) × vol (5–150%) space · current spot column highlighted
+        </div>`;
+      })()}
+
+      ${(() => {
+        // Greeks surface — precompute all four Greeks across spot × DTE, store in _cgsData
+        const hm     = d.vol_heatmap;
+        const sigma  = d.atm_iv || 0.20;
+        const K      = hm ? hm.atm_strike : (d.max_pain || spot);
+        const sAxis  = hm ? hm.spot_axis : Array.from({length:12},(_,i)=>+(spot*(0.70+i*0.60/11)).toFixed(0));
+        const T_full = hm ? Math.max(hm.T_years, 1/365) : 30/365;
+        const r      = 0.045;
+
+        // DTE axis: 8 levels from full DTE down to 1 day (non-uniform, denser near expiry)
+        const fracs   = [1.0, 0.75, 0.50, 0.25, 0.10, 0.05];
+        const rawDtes = fracs.map(f => Math.max(1, Math.round(f * T_full * 365)));
+        const near    = [5, 3, 1].filter(d2 => d2 < rawDtes[rawDtes.length-1]);
+        const dteAxis = [...new Set([...rawDtes, ...near])].sort((a,b)=>b-a).slice(0, 9);
+
+        const ncdf2 = x => (1 + _spbErf(x / Math.SQRT2)) / 2;
+        const phi2  = x => Math.exp(-x*x/2) / Math.sqrt(2*Math.PI);
+
+        function bsG(S_, T_, sig) {
+          if (T_<=1e-6||sig<=0||S_<=0||K<=0) return {delta:0,gamma:0,vega:0,theta:0};
+          const sq=Math.sqrt(T_);
+          const d1=(Math.log(S_/K)+(r+0.5*sig*sig)*T_)/(sig*sq);
+          const d2=d1-sig*sq;
+          const phiD1=phi2(d1);
+          return {
+            delta: ncdf2(d1),
+            gamma: phiD1/(S_*sig*sq),
+            vega:  S_*phiD1*sq/100,
+            theta: -(S_*phiD1*sig/(2*sq)+r*K*Math.exp(-r*T_)*ncdf2(d2))/365,
+          };
+        }
+
+        const gs = {delta:[], gamma:[], vega:[], theta:[]};
+        dteAxis.forEach(dte => {
+          const T_ = dte/365;
+          const row = {delta:[], gamma:[], vega:[], theta:[]};
+          sAxis.forEach(S_ => {
+            const g = bsG(S_, T_, sigma);
+            Object.keys(gs).forEach(gk => row[gk].push(g[gk]));
+          });
+          Object.keys(gs).forEach(gk => gs[gk].push(row[gk]));
+        });
+
+        _cgsData = {...gs, spotAxis: sAxis, dteAxis, sigma, K, spot, r};
+
+        return `
+        <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">Greeks Surface</span>
+            <select id="chain-gs-select" onchange="_showCGS(this.value)"
+              style="background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:3px 8px;font-size:11px">
+              <option value="delta">Delta (Δ)</option>
+              <option value="gamma">Gamma (Γ)</option>
+              <option value="vega">Vega (ν)</option>
+              <option value="theta">Theta (Θ)</option>
+            </select>
+          </div>
+          <div id="chain-gs-body"></div>
         </div>`;
       })()}
 
@@ -24655,6 +24780,57 @@ const _SPB_VALIDATE = {
   iron_condor:    (k) => !(k[0]<k[1] && k[1]<k[2] && k[2]<k[3]) ? 'Strikes must be ordered: LP < SP < SC < LC' : null,
 };
 
+// Horner-style erf approximation (shared by SPB and chain Greeks surface)
+function _spbErf(x) {
+  const s = x < 0 ? -1 : 1, ax = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * ax);
+  return s * (1 - (0.254829592*t - 0.284496736*t*t + 1.421413741*t*t*t
+             - 1.453152027*t*t*t*t + 1.061405429*t*t*t*t*t) * Math.exp(-ax*ax));
+}
+
+// Leg type table for B-S time-slice pricing: type call|put|stock, sign +1/-1, mult integer
+const _SPB_LEGS = {
+  long_call:      [{type:'call',  sign:+1, mult:1}],
+  long_put:       [{type:'put',   sign:+1, mult:1}],
+  covered_call:   [{type:'stock', sign:+1, mult:1}, {type:'call',  sign:-1, mult:1}],
+  cash_put:       [{type:'put',   sign:-1, mult:1}],
+  long_straddle:  [{type:'call',  sign:+1, mult:1}, {type:'put',   sign:+1, mult:1}],
+  short_straddle: [{type:'call',  sign:-1, mult:1}, {type:'put',   sign:-1, mult:1}],
+  long_strangle:  [{type:'put',   sign:+1, mult:1}, {type:'call',  sign:+1, mult:1}],
+  short_strangle: [{type:'put',   sign:-1, mult:1}, {type:'call',  sign:-1, mult:1}],
+  bull_call:      [{type:'call',  sign:+1, mult:1}, {type:'call',  sign:-1, mult:1}],
+  bear_put:       [{type:'put',   sign:+1, mult:1}, {type:'put',   sign:-1, mult:1}],
+  long_butterfly: [{type:'call',  sign:+1, mult:1}, {type:'call',  sign:-1, mult:2}, {type:'call', sign:+1, mult:1}],
+  iron_condor:    [{type:'put',   sign:+1, mult:1}, {type:'put',   sign:-1, mult:1}, {type:'call', sign:-1, mult:1}, {type:'call', sign:+1, mult:1}],
+};
+
+// B-S theoretical P&L (per contract, ×100) for a strategy at a given time-to-expiry
+function _spbBsValue(stratKey, S, k, p, T_rem, sigma, r) {
+  const legDefs = _SPB_LEGS[stratKey];
+  if (!legDefs || sigma <= 0) return null;
+  const ncdf = x => (1 + _spbErf(x / Math.SQRT2)) / 2;
+  function bsP(s, K, T, sig, type) {
+    if (T <= 1e-6) return type === 'call' ? Math.max(s-K, 0) : Math.max(K-s, 0);
+    const sq = Math.sqrt(T);
+    const d1 = (Math.log(s/K) + (r + 0.5*sig*sig)*T) / (sig*sq);
+    const d2 = d1 - sig*sq;
+    return type === 'call'
+      ? s*ncdf(d1) - K*Math.exp(-r*T)*ncdf(d2)
+      : K*Math.exp(-r*T)*ncdf(-d2) - s*ncdf(-d1);
+  }
+  let total = 0;
+  legDefs.forEach(({type, sign, mult}, i) => {
+    if (type === 'stock') {
+      total += sign * mult * (S - k[i]);
+    } else {
+      const bsVal = T_rem > 0 ? bsP(S, k[i], T_rem, sigma, type)
+                              : (type === 'call' ? Math.max(S-k[i],0) : Math.max(k[i]-S,0));
+      total += sign * mult * (bsVal - p[i]);
+    }
+  });
+  return total * 100;
+}
+
 function _spbStratChange() {
   const strat = document.getElementById('spb-strategy').value;
   const cfg = _SPB_STRATS[strat];
@@ -24674,10 +24850,10 @@ function _spbStratChange() {
   }
 }
 
-function _spbPayoffSvg(pts, S_min, S_max, strikes, spot, beArr, horizons) {
+function _spbPayoffSvg(pts, S_min, S_max, strikes, spot, beArr, horizons, curves) {
   const W = 860, H = 220, px = 52, py = 18;
-  const pnlVals = pts.map(p => p.pnl);
-  const rawMin = Math.min(...pnlVals), rawMax = Math.max(...pnlVals);
+  const allPnl = [...pts.map(p => p.pnl), ...(curves||[]).flatMap(c => c.pts.map(p => p.pnl))];
+  const rawMin = Math.min(...allPnl), rawMax = Math.max(...allPnl);
   const pad = Math.max(Math.abs(rawMax), Math.abs(rawMin)) * 0.12 || 10;
   const pnlMin = rawMin - pad, pnlMax = rawMax + pad;
   const pnlRng = pnlMax - pnlMin || 1;
@@ -24706,6 +24882,10 @@ function _spbPayoffSvg(pts, S_min, S_max, strikes, spot, beArr, horizons) {
     return `<line x1="${px}" y1="${hy}" x2="${W-px}" y2="${hy}" stroke="${color}" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.7"/>
             <text x="${W-px+3}" y="${hy+4}" font-size="7" fill="${color}">${label}</text>`;
   }).join('');
+  const curveSvg = (curves||[]).map(({pts: cp, color, dash}) => {
+    const cStr = cp.map((p,i) => `${i===0?'M':'L'}${xS(p.S)},${yS(p.pnl)}`).join(' ');
+    return `<path d="${cStr}" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="${dash||'none'}" opacity="0.85"/>`;
+  }).join('');
   const yTicks = [pnlMin,0,pnlMax].map(v =>
     `<text x="${px-4}" y="${yS(v)+4}" font-size="8" fill="#64748b" text-anchor="end">$${v.toFixed(0)}</text>`).join('');
   const xTicks = Array.from({length:7}, (_,i) => {
@@ -24720,7 +24900,7 @@ function _spbPayoffSvg(pts, S_min, S_max, strikes, spot, beArr, horizons) {
     <path d="${closed}" fill="#34d399" fill-opacity="0.18" clip-path="url(#${uid}p)"/>
     <path d="${closed}" fill="#f87171" fill-opacity="0.18" clip-path="url(#${uid}l)"/>
     <line x1="${px}" y1="${zeroY}" x2="${W-px}" y2="${zeroY}" stroke="#475569" stroke-width="0.8"/>
-    ${vLines}${beLines}${spotSvg}${horizSvg}
+    ${vLines}${beLines}${spotSvg}${horizSvg}${curveSvg}
     <path d="${ptStr}" fill="none" stroke="#e2e8f0" stroke-width="2"/>
     ${yTicks}${xTicks}
   </svg>`;
@@ -24782,7 +24962,19 @@ function _spbBuild() {
   if (m.maxL != null && isFinite(m.maxL) && m.maxL > 0)
     horizons.push({pnl: -m.maxL, color: '#f87171', label: `-$${m.maxL.toFixed(0)}`});
 
-  const svg = _spbPayoffSvg(pts, S_min, S_max, strikes, spot, beArr, horizons);
+  // Time-slice B-S curves (only when market params are provided)
+  const curves = [];
+  if (spot > 0 && sigma > 0 && T > 0 && _SPB_LEGS[strat]) {
+    const Nc = 150;
+    const bsCurve = (T_rem) => Array.from({length:Nc}, (_,i) => {
+      const S = S_min + (i/(Nc-1))*(S_max-S_min);
+      return {S, pnl: _spbBsValue(strat, S, k, p, T_rem, sigma, r) ?? 0};
+    });
+    curves.push({pts: bsCurve(T/2), color:'#fbbf24', dash:'5,3', label:'50% DTE'});
+    curves.push({pts: bsCurve(T),   color:'#22d3ee', dash:'3,2', label:'Today'});
+  }
+
+  const svg = _spbPayoffSvg(pts, S_min, S_max, strikes, spot, beArr, horizons, curves);
   const beStr = m.BEs.map(b => `$${b.toFixed(2)}`).join(' / ');
   const stats = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;align-items:center">
     ${m.maxP!=null?`<div><span style="color:var(--muted)">Max Profit:</span> <strong style="color:#34d399">+$${m.maxP.toFixed(0)}</strong></div>`
@@ -24793,7 +24985,12 @@ function _spbBuild() {
     <div><span style="color:var(--muted)">Break-Even${m.BEs.length>1?'s':''}:</span> <strong>${beStr}</strong></div>
     ${pop!=null?`<div><span style="color:var(--muted)">PoP (risk-neutral):</span> <strong style="color:#22d3ee">${(pop*100).toFixed(1)}%</strong></div>`:''}
   </div>`;
-  el.innerHTML = svg + stats;
+  const legend = curves.length ? `<div style="display:flex;gap:12px;font-size:9px;color:var(--muted);margin-top:3px">
+    <span><span style="color:#e2e8f0">━━</span> Expiry (intrinsic)</span>
+    <span><span style="color:#22d3ee">╌╌</span> Today (B-S theoretical)</span>
+    <span><span style="color:#fbbf24">╌╌</span> 50% DTE (B-S)</span>
+  </div>` : '';
+  el.innerHTML = svg + stats + legend;
 }
 
 async function _spbSolveIV() {

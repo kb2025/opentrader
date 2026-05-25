@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.8.9] - 2026-05-25
+
+### Added
+- **P&L curves at multiple time slices in Strategy Payoff Builder**: when Spot, IV%, and DTE are provided, two additional B-S theoretical value curves are overlaid on the payoff SVG — cyan dashed "Today" (full DTE remaining) and amber dashed "50% DTE" — computed via Black-Scholes using `_spbBsValue()` with per-strategy leg type definitions (`_SPB_LEGS`); y-axis scale expands to cover all three curves; legend row below SVG identifies each line; at-expiry intrinsic curve remains the solid white reference
+- **Greeks surface in chain analytics**: after the price sensitivity heatmap, a new "Greeks Surface" section shows a color-coded 2D table (spot ±30% × DTE) for the selected Greek — Delta, Gamma, Vega, or Theta; Greek selector dropdown triggers instant client-side re-render via `_showCGS()`; uses ATM-IV from chain data as constant sigma; current spot column highlighted in cyan; same 5-stop deep-blue→red color scale as the price heatmap; precomputed for all four Greeks on each chain load via `_cgsData`
+
 ## [3.8.8] - 2026-05-24
 
 ### Added
