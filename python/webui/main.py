@@ -763,12 +763,12 @@ KNOWN_AGENTS = [
     "scraper-etf-flows", "scraper-macro-regime", "scraper-news", "scraper-eodhd-news",
     "scraper-finnhub-insider",
     "aggregator", "review-agent", "broker-gateway", "directive-agent",
-    # MCP servers & chat agent — health derived from Podman (no heartbeat)
-    "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-eodhd", "chat-agent",
+    # MCP servers, market-data gateway, and chat agent — health derived from Podman (no heartbeat)
+    "market-data", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-yahoo", "chat-agent",
 ]
 
 # Containers that don't publish heartbeats — health is read from Podman status
-PODMAN_HEALTH_ONLY = {"mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-eodhd", "chat-agent"}
+PODMAN_HEALTH_ONLY = {"market-data", "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-yahoo", "chat-agent"}
 
 CONTAINER_MAP = {
     "orchestrator":    "ot-orchestrator",
@@ -789,11 +789,12 @@ CONTAINER_MAP = {
     "review-agent":    "ot-review-agent",
     "broker-gateway":  "ot-broker-gateway",
     "directive-agent": "ot-directive-agent",
+    "market-data":        "ot-market-data",
     "mcp-alpaca":         "ot-mcp-alpaca",
     "mcp-tradingview":    "ot-mcp-tradingview",
     "mcp-massive":        "ot-mcp-massive",
     "mcp-unusualwhales":  "ot-mcp-unusualwhales",
-    "mcp-eodhd":          "ot-mcp-eodhd",
+    "mcp-yahoo":          "ot-mcp-yahoo",
     "chat-agent":         "ot-chat-agent",
     "redis":           "ot-redis",
     "timescaledb":     "ot-timescaledb",

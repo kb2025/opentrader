@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.14] - 2026-05-25
+
+### Fixed
+- **Topology: market-data and mcp-yahoo showing "unknown" status**: Added `market-data` and `mcp-yahoo` to `KNOWN_AGENTS`, `PODMAN_HEALTH_ONLY`, and `CONTAINER_MAP` in webui; removed `mcp-eodhd` from all three — both new nodes now derive health from Podman container state (same pattern as other MCP servers)
+
 ## [4.0.13] - 2026-05-25
 
 ### Changed
