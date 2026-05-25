@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.19] - 2026-05-25
+
+### Fixed
+- **CDN/browser cache bypass**: `serve_ui()` now appends `?v=<version>` to all `/static/` asset URLs and adds `Surrogate-Control: no-store` + `CDN-Cache-Control: no-store` headers so Cloudflare does not serve stale HTML after a release
+
 ## [4.0.18] - 2026-05-25
 
 ### Fixed

@@ -18380,16 +18380,21 @@ async def set_predictor_schedule(body: dict):
 async def serve_ui():
     with open("/app/webui/static/index.html") as f:
         html = f.read()
-    # Inject version meta tag only — token is NOT exposed in HTML source
+    # Inject version meta tag and cache-bust static asset references
     html = html.replace(
         "<head>",
         f'<head>\n<meta name="ot-version" content="{APP_VERSION}">',
         1,
     )
+    # Stamp static asset URLs with ?v=<version> so CDN/browser re-fetches on each release
+    import re as _re
+    html = _re.sub(r'(src|href)="/static/([^"?]+)"', lambda m: f'{m.group(1)}="/static/{m.group(2)}?v={APP_VERSION}"', html)
     return HTMLResponse(
         content=html,
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate",
-            "Pragma": "no-cache",
+            "Pragma":        "no-cache",
+            "Surrogate-Control": "no-store",
+            "CDN-Cache-Control": "no-store",
         },
     )
