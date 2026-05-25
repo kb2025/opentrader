@@ -38,6 +38,7 @@ GROUPS = {
     "scraper-news":             "scraper-news-group",
     "scraper-etf-flows":        "scraper-etf-flows-group",
     "scraper-macro-regime":     "scraper-macro-regime-group",
+    "scraper-eodhd-news":       "scraper-eodhd-news-group",
     "aggregator":         "aggregator-group",
     "review":             "review-agent-group",
     # Broker gateway

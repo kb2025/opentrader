@@ -412,6 +412,12 @@ async def job_scrape_news_sentiment(redis: aioredis.Redis):
     await trigger(redis, "scrape_news_sentiment", {"source": "alphavantage"})
 
 
+@tracked
+async def job_scrape_eodhd_news(redis: aioredis.Redis):
+    """Trigger EODHD per-ticker news scraper — every 30m during session + once after close."""
+    await trigger(redis, "scrape_eodhd_news", {})
+
+
 # ── Feature 7: Trending symbols update ───────────────────────────────────────
 
 @tracked

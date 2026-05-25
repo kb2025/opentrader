@@ -1894,6 +1894,27 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- EODHD Ticker News -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="padding:10px 16px">
+          <span class="card-title">EODHD Ticker News</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <input id="eodhd-news-ticker" type="text" placeholder="Ticker…"
+              style="width:72px;font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px;text-transform:uppercase"
+              onkeydown="if(event.key==='Enter')loadEodhdNews()">
+            <select id="eodhd-news-hours" onchange="loadEodhdNews()" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
+              <option value="24">24h</option>
+              <option value="48" selected>48h</option>
+              <option value="168">7d</option>
+            </select>
+            <button class="btn btn-ghost btn-xs" onclick="loadEodhdNews()">&#8635;</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;max-height:420px;overflow-y:auto">
+          <div id="eodhd-news-list"><div style="padding:12px 16px;font-size:12px;color:var(--muted)">Enter a ticker or refresh to load recent news.</div></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ════════════════════════════════════════
@@ -5297,7 +5318,7 @@ function navigate(pageId) {
     case 'page-platform-insights':  ciLoadAll();         break;
     case 'page-platform-profile':   loadProfilePage();   break;
     case 'page-platform-config':    loadConfigPage();    break;
-    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); loadPredictorSignals(); loadTrendingSymbols(); loadETFFlows(); loadMacroRegime(); loadUnifiedNews(); _startPnlAutoRefresh(); break;
+    case 'page-trading-dashboard':  _initTdHeaders(); loadOvtlyrMarketSignals(); ovtlyrSelectList(_ovtlyrCurrentList); loadTotalPositions(); _loadTdTradeStats(); _refreshBreadth(); loadMarketBarsChart('SPY'); loadPortfolioNavChart(); loadDailyLossWidget(); loadPredictorSignals(); loadTrendingSymbols(); loadETFFlows(); loadMacroRegime(); loadUnifiedNews(); loadEodhdNews(); _startPnlAutoRefresh(); break;
     case 'page-trading-unified':    loadUnifiedPositions(); break;
 
     case 'page-trading-trades':     loadTradesPage();    break;
@@ -23684,6 +23705,47 @@ async function loadUnifiedNews() {
     }).join('');
   } catch(e) {
     el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">News feed unavailable</div>';
+  }
+}
+
+async function loadEodhdNews() {
+  const el = document.getElementById('eodhd-news-list');
+  if (!el) return;
+  const ticker = ((document.getElementById('eodhd-news-ticker') || {}).value || '').trim().toUpperCase();
+  const hours  = (document.getElementById('eodhd-news-hours') || {}).value || '48';
+  el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">Loading…</div>';
+  try {
+    let url = `/api/sentiment/eodhd-news?hours=${hours}&limit=30`;
+    if (ticker) url += `&ticker=${encodeURIComponent(ticker)}`;
+    const data = await apiFetch(url);
+    const articles = data.articles || [];
+    if (!articles.length) {
+      el.innerHTML = `<div style="padding:12px 16px;font-size:12px;color:var(--muted)">${ticker ? `No recent news for ${ticker}` : 'No news available — scraper may not have run yet'}</div>`;
+      return;
+    }
+    el.innerHTML = articles.map(a => {
+      const pol = parseFloat(a.polarity || 0);
+      const polColor = pol >  0.1 ? 'var(--green)' : pol < -0.1 ? 'var(--red)' : 'var(--muted)';
+      const polLabel = pol >  0.1 ? 'Bullish' : pol < -0.1 ? 'Bearish' : 'Neutral';
+      const polChip  = `<span class="chip ${pol > 0.1 ? 'chip-green' : pol < -0.1 ? 'chip-red' : 'chip-muted'}" style="font-size:9px">${polLabel}</span>`;
+      const tickerBadge = a.ticker ? `<span style="font-size:10px;background:rgba(59,130,246,.12);color:var(--blue);border-radius:3px;padding:1px 5px;font-weight:600">${a.ticker}</span>` : '';
+      const eodBadge = `<span style="font-size:9px;font-weight:700;letter-spacing:.03em;background:rgba(139,92,246,.15);color:var(--purple);border-radius:3px;padding:1px 5px">EODHD</span>`;
+      const polScore = `<span style="margin-left:auto;font-size:10px;font-weight:600;color:${polColor}">${pol > 0 ? '+' : ''}${pol.toFixed(3)}</span>`;
+      const pubDate = a.published_at ? new Date(a.published_at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+      const byline = [a.source, pubDate].filter(Boolean).join(' · ');
+      const summary = a.llm_summary ? `<div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35;font-style:italic">${a.llm_summary}</div>` : '';
+      const keywords = (a.llm_keywords || []).length
+        ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px">${a.llm_keywords.map(k => `<span style="font-size:9px;background:var(--surface2);color:var(--dim);border-radius:3px;padding:1px 5px">${k}</span>`).join('')}</div>`
+        : '';
+      return `<div style="padding:8px 14px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;flex-wrap:wrap">${eodBadge}${tickerBadge}${polChip}${polScore}</div>
+        <div style="font-size:12px;color:var(--fg);line-height:1.4">${a.url ? `<a href="${a.url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${a.title}</a>` : a.title}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:2px">${byline}</div>
+        ${summary}${keywords}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:var(--muted)">EODHD news unavailable</div>';
   }
 }
 

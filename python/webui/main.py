@@ -759,7 +759,7 @@ KNOWN_AGENTS = [
     "orchestrator", "scheduler", "predictor",
     "trader-equity", "trader-options", "options-monitor",
     "scraper-ovtlyr", "scraper-wsb", "scraper-seekalpha",
-    "scraper-etf-flows", "scraper-macro-regime", "scraper-news",
+    "scraper-etf-flows", "scraper-macro-regime", "scraper-news", "scraper-eodhd-news",
     "aggregator", "review-agent", "broker-gateway", "directive-agent",
     # MCP servers & chat agent — health derived from Podman (no heartbeat)
     "mcp-alpaca", "mcp-tradingview", "mcp-massive", "mcp-unusualwhales", "mcp-eodhd", "chat-agent",
@@ -781,6 +781,7 @@ CONTAINER_MAP = {
     "scraper-etf-flows":        "ot-scraper-etf-flows",
     "scraper-macro-regime":     "ot-scraper-macro-regime",
     "scraper-news":             "ot-scraper-news",
+    "scraper-eodhd-news":       "ot-scraper-eodhd-news",
     "aggregator":      "ot-aggregator",
     "review-agent":    "ot-review-agent",
     "broker-gateway":  "ot-broker-gateway",
@@ -1493,6 +1494,34 @@ async def on_startup():
             await pool.execute("DELETE FROM api_traffic WHERE ts < NOW() - INTERVAL '7 days'")
         except Exception as e:
             log.warning("api_traffic.table_init_failed", error=str(e))
+
+        try:
+            await pool.execute("""
+                CREATE TABLE IF NOT EXISTS eodhd_news (
+                    id           BIGSERIAL PRIMARY KEY,
+                    ticker       TEXT        NOT NULL,
+                    title        TEXT        NOT NULL,
+                    url          TEXT,
+                    published_at TIMESTAMPTZ,
+                    source_name  TEXT,
+                    polarity     REAL        DEFAULT 0,
+                    pos_score    REAL        DEFAULT 0,
+                    neg_score    REAL        DEFAULT 0,
+                    neu_score    REAL        DEFAULT 0,
+                    llm_summary  TEXT,
+                    llm_keywords JSONB       DEFAULT '[]',
+                    scraped_at   TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(ticker, url)
+                )
+            """)
+            await pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_eodhd_news_ticker ON eodhd_news(ticker)"
+            )
+            await pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_eodhd_news_published ON eodhd_news(published_at DESC)"
+            )
+        except Exception as e:
+            log.warning("eodhd_news.table_init_failed", error=str(e))
 
     # Start price alert checker background loop
     asyncio.create_task(_price_alert_loop())
@@ -12782,6 +12811,59 @@ async def get_news_sentiment(category: str = "", ticker: str = "", limit: int = 
         ],
         "source": "db",
     }
+
+
+@app.get("/api/sentiment/eodhd-news")
+async def get_eodhd_news(ticker: str = "", hours: int = 48, limit: int = 20):
+    """Return EODHD per-ticker news articles with native + LLM sentiment."""
+    limit = min(limit, 100)
+    _redis = await get_redis()
+
+    # Fast path: Redis cache for single-ticker recent requests
+    if ticker:
+        ticker = ticker.upper()
+        cached = await _redis.get(f"eodhd_news:{ticker}")
+        if cached:
+            items = json.loads(cached)
+            return {"ticker": ticker, "articles": items[:limit], "source": "cache"}
+
+    pool = await _get_db_pool()
+    where_parts = [f"published_at >= NOW() - INTERVAL '{hours} hours'"]
+    args: list = []
+    if ticker:
+        args.append(ticker)
+        where_parts.append(f"ticker = ${len(args)}")
+
+    where = " AND ".join(where_parts)
+    args.append(limit)
+    rows = await pool.fetch(
+        f"""SELECT ticker, title, url, published_at, source_name,
+                   polarity, pos_score, neg_score, neu_score,
+                   llm_summary, llm_keywords, scraped_at
+            FROM eodhd_news
+            WHERE {where}
+            ORDER BY published_at DESC
+            LIMIT ${len(args)}""",
+        *args,
+    )
+    articles = [
+        {
+            "ticker":       r["ticker"],
+            "title":        r["title"],
+            "url":          r["url"],
+            "published_at": r["published_at"].isoformat() if r["published_at"] else None,
+            "source":       r["source_name"],
+            "polarity":     float(r["polarity"] or 0),
+            "pos":          float(r["pos_score"] or 0),
+            "neg":          float(r["neg_score"] or 0),
+            "neu":          float(r["neu_score"] or 0),
+            "llm_summary":  r["llm_summary"],
+            "llm_keywords": r["llm_keywords"] or [],
+            "scraped_at":   r["scraped_at"].isoformat() if r["scraped_at"] else None,
+        }
+        for r in rows
+    ]
+    return {"ticker": ticker or None, "articles": articles, "source": "db"}
 
 
 # ── Feature 6: Per-symbol technical analysis snapshots ───────────────────────

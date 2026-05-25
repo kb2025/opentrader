@@ -35,6 +35,7 @@ from .jobs import (
     job_scrape_etf_flows,
     job_scrape_macro_regime,
     job_scrape_news_sentiment,
+    job_scrape_eodhd_news,
     job_update_trending_symbols,
 )
 from .calendar import TZ
@@ -244,6 +245,14 @@ class Scheduler(BaseAgent):
             IntervalTrigger(minutes=30, timezone=TZ),
             args=[r], id="scrape_news_sentiment",
             name="Alpha Vantage news sentiment every 30m",
+            replace_existing=True,
+        )
+
+        self.apscheduler.add_job(
+            job_scrape_eodhd_news,
+            IntervalTrigger(minutes=30, timezone=TZ),
+            args=[r], id="scrape_eodhd_news",
+            name="EODHD per-ticker news every 30m",
             replace_existing=True,
         )
 

@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.8] - 2026-05-25
+
+### Added
+- **EODHD News Scraper** — new `scraper-eodhd-news` agent (`ot-scraper-eodhd-news`) fetches per-ticker news from EODHD for all assigned tickers + SPY/QQQ/IWM every 30 min; EODHD natively provides per-article sentiment scores (`polarity`, `pos`, `neg`, `neu`) so no extra sentiment LLM is required for basic scoring
+- **LLM article enrichment** — for articles where `|polarity| >= 0.2`, an optional LLM pass extracts a 2–3 sentence market-impact summary and up to 5 keywords/catalysts; enabled by default, configurable via `EODHD_NEWS_LLM_ENRICH` and `EODHD_NEWS_LLM_THRESHOLD`
+- **`eodhd_news` DB table** — persists all fetched articles with EODHD sentiment scores, LLM summary, and LLM keywords; `ON CONFLICT` upsert preserves existing enrichment when polarity is unchanged
+- **Aggregator integration** — scraper publishes per-ticker average polarity to `market.ticks` stream as `source=eodhd` so the aggregator folds EODHD news sentiment into the predictor signal alongside WSB/SeekingAlpha/Yahoo
+- **`GET /api/sentiment/eodhd-news`** — returns articles with full sentiment fields; supports `?ticker=`, `?hours=`, `?limit=`; Redis cache for single-ticker recent requests
+- **EODHD Ticker News panel** — added to Trading Dashboard below Market News; shows per-article polarity chip (bullish/bearish/neutral), score, LLM summary, keyword chips, and external headline link; ticker input + time range selector
+
 ## [3.9.7] - 2026-05-25
 
 ### Added
