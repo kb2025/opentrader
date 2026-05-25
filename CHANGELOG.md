@@ -3,6 +3,18 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.17] - 2026-05-25
+
+### Added
+- **Platform Dashboard — Service Connectors panel**: SVG flow diagram showing data-flow arrows between consumers, the Market Data Gateway, and providers
+  - Left column: 7 agent consumer nodes (aggregator, predictor, traders, options-monitor, ETF flows, macro regime) with health-colored borders
+  - Center: Market Data Gateway node with health border
+  - Right column: connector provider nodes (Massive, TradingView, Yahoo Finance, Alpha Vantage, Finnhub, FRED, Tradier) with green/amber/red health dots and capability tooltips
+  - Arrows: agents → gateway (teal, labeled "data request") and gateway → providers (teal, labeled "data")
+  - Below: direct-connection chips for Chat Agent → MCP servers and Broker Gateway ← MCP Alpaca
+  - Badge in card header shows "N/M connectors online"
+  - Re-renders on every WebSocket heartbeat cycle (agent health) and gateway health poll
+
 ## [4.0.16] - 2026-05-25
 
 ### Fixed
