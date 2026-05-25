@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.9] - 2026-05-25
+
+### Added
+- **FRED Economic Dashboard** (`Sector Insight → FRED Macro`) — dedicated macro page with sparkline charts for inflation (CPI, Core CPI, Core PCE), credit spreads (HY/IG OAS), employment (unemployment rate, initial jobless claims), monetary policy (Fed Funds Rate), and M2 money supply; uses FRED public CSV (no API key required); cached 1 hour
+- **Monthly Returns Heatmap** — new card on Portfolio Analytics page; calendar grid (years × months) color-coded by monthly P&L (green=positive, red=negative, intensity = magnitude); summary chips for best/worst month, positive month count, avg monthly return
+- **Trade Statistics** — new card on Portfolio Analytics page; win rate, profit factor, expectancy, avg win/loss, max consecutive wins/losses computed from the `trades` table
+- **Volatility Surface** — new panel on Options Dashboard (below Chain Analytics); IV heatmap table (strikes × expirations, color-coded blue→red for low→high IV); ATM strikes highlighted in amber; call/put toggle; loads from Tradier market API
+- **DCF Valuation inline** — Quick Intel now auto-fetches the DCF model after analysis renders; shows intrinsic value, market price, margin of safety %, and WACC in a compact strip; hidden when DCF data is unavailable
+- **Investor Persona Agents** — Quick Intel now has five persona buttons (Buffett, Graham, Lynch, Munger, Klarman); each runs an LLM analysis through a persona-specific system prompt encoding their investment philosophy; results cached 1 hour per ticker/persona
+
 ## [3.9.8] - 2026-05-25
 
 ### Added

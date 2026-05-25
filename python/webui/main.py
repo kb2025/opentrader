@@ -17626,6 +17626,476 @@ async def analyze_telemetry(body: _TelemetryAnalyzeBody, token: str = ""):
 
 # ── Serve frontend ────────────────────────────────────────────────────────────
 
+# ══════════════════════════════════════════════════════════════════════════════
+# FRED Economic Dashboard — time series for macro indicators
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/fred/dashboard")
+async def fred_dashboard(token: str = ""):
+    """
+    FRED macro time series for the Economic Dashboard page.
+    Returns 24 months of inflation, employment, monetary policy, money supply, and
+    90 days of credit spreads. Uses public FRED CSV (no API key required).
+    Cached 1 hour.
+    """
+    check_token(token)
+    cache_key = "fred:dashboard:v1"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    def _fmt(pairs: list) -> list:
+        return [{"date": d, "value": v} for d, v in pairs]
+
+    try:
+        (cpi, core_cpi, core_pce, unrate, claims,
+         fedfunds, m2, hy_oas, ig_oas) = await asyncio.gather(
+            _fred_history("CPIAUCSL",    24),   # monthly, 24 pts
+            _fred_history("CPILFESL",    24),
+            _fred_history("PCEPILFE",    24),
+            _fred_history("UNRATE",      24),
+            _fred_history("ICSA",        52),   # weekly, 52 pts
+            _fred_history("FEDFUNDS",    24),
+            _fred_history("M2SL",        24),
+            _fred_history("BAMLH0A0HYM2", 90),  # daily, 90 pts
+            _fred_history("BAMLC0A0CM",   90),
+        )
+
+        result = {
+            "inflation": {
+                "cpi":      _fmt(cpi),
+                "core_cpi": _fmt(core_cpi),
+                "core_pce": _fmt(core_pce),
+            },
+            "employment": {
+                "unemployment":    _fmt(unrate),
+                "jobless_claims":  _fmt(claims),
+            },
+            "monetary": {
+                "fed_funds": _fmt(fedfunds),
+            },
+            "money_supply": {
+                "m2": _fmt(m2),
+            },
+            "credit_spreads": {
+                "hy_oas": _fmt(hy_oas),
+                "ig_oas": _fmt(ig_oas),
+            },
+            "updated": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            if _r:
+                await _r.setex(cache_key, 3600, json.dumps(result))
+        except Exception:
+            pass
+        return result
+    except Exception as e:
+        log.error("fred_dashboard.error", error=str(e))
+        return {"error": str(e)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Analytics — monthly returns heatmap + trade statistics
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/analytics/monthly-returns")
+async def analytics_monthly_returns(mode: str = "live", token: str = ""):
+    """
+    Monthly returns calendar from portfolio_snapshots.
+    Returns a grid of {year, month, return_pct} suitable for a heatmap.
+    """
+    check_token(token)
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """
+        SELECT date_trunc('month', snapshot_date) AS month_start,
+               SUM(total_nav) AS nav
+        FROM portfolio_snapshots
+        WHERE mode = $1
+        GROUP BY month_start
+        ORDER BY month_start ASC
+        """,
+        mode,
+    )
+    if len(rows) < 2:
+        return {"heatmap": [], "best": None, "worst": None, "positive": 0, "negative": 0}
+
+    heatmap = []
+    for i in range(1, len(rows)):
+        prev_nav = float(rows[i - 1]["nav"])
+        curr_nav = float(rows[i]["nav"])
+        ret_pct  = round((curr_nav / prev_nav - 1) * 100, 2) if prev_nav > 0 else 0.0
+        dt = rows[i]["month_start"]
+        heatmap.append({"year": dt.year, "month": dt.month, "return_pct": ret_pct})
+
+    rets = [h["return_pct"] for h in heatmap]
+    return {
+        "heatmap":   heatmap,
+        "best":      max(rets) if rets else None,
+        "worst":     min(rets) if rets else None,
+        "positive":  sum(1 for r in rets if r > 0),
+        "negative":  sum(1 for r in rets if r < 0),
+        "avg_month": round(sum(rets) / len(rets), 2) if rets else None,
+    }
+
+
+@app.get("/api/analytics/trade-stats")
+async def analytics_trade_stats(mode: str = "live", days: int = 252, token: str = ""):
+    """
+    Trade-level statistics from the trades table: win rate, profit factor,
+    avg win/loss, expectancy, consecutive wins/losses.
+    """
+    check_token(token)
+    pool = await _get_db_pool()
+    rows = await pool.fetch(
+        """
+        SELECT pnl, ts
+        FROM trades
+        WHERE mode = $1
+          AND status IN ('closed', 'fill')
+          AND pnl IS NOT NULL
+          AND ts >= NOW() - ($2 || ' days')::INTERVAL
+        ORDER BY ts ASC
+        """,
+        mode, str(days),
+    )
+    if not rows:
+        return {"error": "No closed trades with P&L found", "mode": mode, "days": days}
+
+    pnls    = [float(r["pnl"]) for r in rows]
+    wins    = [p for p in pnls if p > 0]
+    losses  = [p for p in pnls if p <= 0]
+    total   = len(pnls)
+    n_win   = len(wins)
+    n_loss  = len(losses)
+
+    avg_win  = sum(wins)  / n_win  if n_win  else 0.0
+    avg_loss = sum(losses) / n_loss if n_loss else 0.0
+    profit_factor = abs(sum(wins) / sum(losses)) if sum(losses) != 0 else float("inf")
+    expectancy = (n_win / total * avg_win + n_loss / total * avg_loss) if total else 0.0
+
+    # Consecutive streaks
+    max_consec_wins = max_consec_losses = cur_wins = cur_losses = 0
+    for p in pnls:
+        if p > 0:
+            cur_wins += 1; cur_losses = 0
+            max_consec_wins = max(max_consec_wins, cur_wins)
+        else:
+            cur_losses += 1; cur_wins = 0
+            max_consec_losses = max(max_consec_losses, cur_losses)
+
+    return {
+        "total_trades":        total,
+        "wins":                n_win,
+        "losses":              n_loss,
+        "win_rate":            round(n_win / total * 100, 1) if total else 0.0,
+        "profit_factor":       round(profit_factor, 2) if profit_factor != float("inf") else None,
+        "avg_win":             round(avg_win, 2),
+        "avg_loss":            round(avg_loss, 2),
+        "total_pnl":           round(sum(pnls), 2),
+        "expectancy":          round(expectancy, 2),
+        "max_consec_wins":     max_consec_wins,
+        "max_consec_losses":   max_consec_losses,
+        "mode":                mode,
+        "days":                days,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Options — volatility surface (IV across strikes × expirations)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/options/volatility-surface/{ticker}")
+async def options_volatility_surface(ticker: str, token: str = ""):
+    """
+    Build an IV surface matrix for a ticker: strikes (rows) × expirations (cols).
+    Fetches up to 6 nearest expirations from Tradier market API.
+    Returns separate call and put surfaces.
+    Cached 15 min.
+    """
+    check_token(token)
+    ticker    = ticker.upper()
+    cache_key = f"options:vol_surface:{ticker}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        _r = None
+
+    tradier_key = os.getenv("TRADIER_MARKET_TOKEN", "") or os.getenv("TRADIER_ACCESS_TOKEN", "")
+    if not tradier_key:
+        return {"error": "Tradier API key not configured"}
+
+    import aiohttp as _ah
+    base_url = "https://api.tradier.com/v1"
+    headers  = {"Authorization": f"Bearer {tradier_key}", "Accept": "application/json"}
+    timeout  = _ah.ClientTimeout(total=12)
+
+    try:
+        async with _ah.ClientSession(headers=headers) as s:
+            # Get current price
+            price = 0.0
+            async with s.get(f"{base_url}/markets/quotes",
+                             params={"symbols": ticker, "greeks": "false"},
+                             timeout=timeout) as r:
+                if r.status == 200:
+                    q = ((await r.json(content_type=None))
+                         .get("quotes", {}).get("quote", {}))
+                    if isinstance(q, dict):
+                        price = float(q.get("last") or q.get("prevclose") or 0)
+
+            # Get expirations
+            async with s.get(f"{base_url}/markets/options/expirations",
+                             params={"symbol": ticker, "includeAllRoots": "false"},
+                             timeout=timeout) as r:
+                exps = []
+                if r.status == 200:
+                    d = await r.json(content_type=None)
+                    raw = (d.get("expirations") or {})
+                    if raw and raw != "null":
+                        dates = raw.get("date", [])
+                        exps = dates if isinstance(dates, list) else [dates]
+            exps = exps[:6]
+            if not exps:
+                return {"error": "No expirations found", "ticker": ticker}
+
+            # Fetch chains in parallel
+            async def _fetch(exp: str):
+                async with s.get(f"{base_url}/markets/options/chains",
+                                 params={"symbol": ticker, "expiration": exp, "greeks": "true"},
+                                 timeout=timeout) as r:
+                    if r.status != 200:
+                        return exp, []
+                    d = await r.json(content_type=None)
+                    opts = d.get("options") or {}
+                    raw  = opts.get("option", []) if opts and opts != "null" else []
+                    return exp, (raw if isinstance(raw, list) else [raw])
+
+            chain_results = await asyncio.gather(*[_fetch(e) for e in exps])
+
+        # Build strike-aligned IV matrices
+        atm  = price or 100
+        lo_s = atm * 0.80
+        hi_s = atm * 1.20
+
+        # Gather all valid strikes in range
+        all_strikes: set[float] = set()
+        exp_data: dict[str, dict] = {}   # exp → {strike: {call_iv, put_iv}}
+        for exp, contracts in chain_results:
+            exp_data[exp] = {}
+            for c in contracts:
+                if not isinstance(c, dict):
+                    continue
+                strike = float(c.get("strike") or 0)
+                if not (lo_s <= strike <= hi_s):
+                    continue
+                iv  = float(c.get("greeks", {}).get("smv_vol") or c.get("implied_volatility") or 0) * 100
+                otyp = (c.get("option_type") or "").lower()
+                if strike not in exp_data[exp]:
+                    exp_data[exp][strike] = {"call_iv": None, "put_iv": None}
+                if otyp == "call":
+                    exp_data[exp][strike]["call_iv"] = round(iv, 2) if iv > 0 else None
+                else:
+                    exp_data[exp][strike]["put_iv"]  = round(iv, 2) if iv > 0 else None
+                all_strikes.add(strike)
+
+        strikes = sorted(all_strikes)
+        call_surface = []
+        put_surface  = []
+        for exp in exps:
+            call_row = [exp_data[exp].get(s, {}).get("call_iv") for s in strikes]
+            put_row  = [exp_data[exp].get(s, {}).get("put_iv")  for s in strikes]
+            call_surface.append(call_row)
+            put_surface.append(put_row)
+
+        result = {
+            "ticker":      ticker,
+            "price":       round(price, 2),
+            "expirations": exps,
+            "strikes":     strikes,
+            "call_surface": call_surface,
+            "put_surface":  put_surface,
+            "updated":     datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            if _r:
+                await _r.setex(cache_key, 900, json.dumps(result))
+        except Exception:
+            pass
+        return result
+
+    except Exception as e:
+        log.error("vol_surface.error", ticker=ticker, error=str(e))
+        return {"error": str(e), "ticker": ticker}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Investor Persona Agents — Buffett / Graham / Lynch / Munger / Klarman
+# ══════════════════════════════════════════════════════════════════════════════
+
+_PERSONA_PROMPTS: dict[str, str] = {
+    "buffett": """You are Warren Buffett conducting a stock analysis. Focus on:
+- Economic moat (durable competitive advantage: brand, network effects, switching costs, cost advantage, efficient scale)
+- Owner earnings (net income + D&A - maintenance capex) and their predictability over 10 years
+- Return on invested capital (ROIC) — ideally >15% consistently
+- Management quality and capital allocation (buybacks, dividends, acquisitions)
+- Margin of safety vs. intrinsic value (DCF with conservative assumptions)
+- Simple, understandable business model ("can I understand it in 10 minutes?")
+Verdict format: BUY / HOLD / AVOID with a confidence 1–10 and 3–4 concise bullet points.""",
+
+    "graham": """You are Benjamin Graham conducting a defensive stock screen. Focus on:
+- P/E ratio (ideally < 15x) and P/B ratio (ideally < 1.5x)
+- Earnings yield vs. bond yield (equity must offer premium)
+- Current ratio > 2x and long-term debt < 2x net current assets
+- Earnings stability: no losses in last 10 years
+- Dividend record: uninterrupted payments for 20 years
+- Net-net value: NCAV (current assets - total liabilities) vs. market cap
+- Margin of safety (require at least 1/3 discount to intrinsic value)
+Verdict format: BUY / HOLD / AVOID with a confidence 1–10 and 3–4 concise bullet points.""",
+
+    "lynch": """You are Peter Lynch conducting a growth stock analysis. Focus on:
+- PEG ratio (P/E ÷ growth rate) — ideally < 1.0; below 0.5 is exceptional
+- Category classification: stalwart / fast grower / slow grower / cyclical / turnaround / asset play
+- The "story" — can you explain in 2 sentences why this company will grow?
+- Institutional ownership (low = opportunity; high = crowded)
+- Insider buying (smart money signal)
+- Cash position and debt level relative to earnings
+- 5-year EPS growth rate consistency
+Verdict format: BUY / HOLD / AVOID with a confidence 1–10 and 3–4 concise bullet points.""",
+
+    "munger": """You are Charlie Munger conducting a business quality assessment. Focus on:
+- Invert: what would cause this business to fail? How likely is that?
+- Mental models: network effects, economies of scale, brand loyalty, regulatory moat
+- Management integrity and long-term track record (not just recent quarters)
+- Return on tangible equity — does the business require little capital to grow?
+- Pricing power — can they raise prices without losing customers?
+- Circle of competence — is this business truly understandable?
+- Price matters only after quality is confirmed; a wonderful company at a fair price
+Verdict format: BUY / HOLD / AVOID with a confidence 1–10 and 3–4 concise bullet points.""",
+
+    "klarman": """You are Seth Klarman conducting a value/distressed analysis. Focus on:
+- Downside scenario first: what is the liquidation value? What is the worst-case outcome?
+- Asymmetric risk/reward: how much can you lose vs. how much can you gain?
+- Catalyst: what specific event will unlock value? (earnings inflection, spin-off, buyback, debt payoff)
+- Margin of safety: require at least 30–50% discount to conservative intrinsic value
+- Balance sheet strength: cash, tangible book, debt covenant headroom
+- Quality of earnings: recurring vs. one-time; free cash flow vs. reported net income
+- Investor sentiment: is this hated, ignored, or misunderstood?
+Verdict format: BUY / HOLD / AVOID with a confidence 1–10 and 3–4 concise bullet points.""",
+}
+
+_PERSONA_NAMES: dict[str, str] = {
+    "buffett": "Warren Buffett",
+    "graham":  "Benjamin Graham",
+    "lynch":   "Peter Lynch",
+    "munger":  "Charlie Munger",
+    "klarman": "Seth Klarman",
+}
+
+
+@app.post("/api/market/stock-analysis/{ticker}/persona")
+async def stock_persona_analysis(ticker: str, request: Request):
+    """
+    Investor-persona stock analysis using an LLM.
+    Body: {"persona": "buffett"|"graham"|"lynch"|"munger"|"klarman", "token": "..."}
+    Returns structured analysis in the persona's investment style.
+    """
+    from llm.connector import LLMConnector as _LLM
+    body    = await request.json()
+    token   = body.get("token", "")
+    persona = body.get("persona", "buffett").lower()
+    check_token(token)
+
+    ticker = ticker.upper()
+    if persona not in _PERSONA_PROMPTS:
+        return {"error": f"Unknown persona: {persona}. Use: {list(_PERSONA_PROMPTS.keys())}"}
+
+    cache_key = f"persona:{persona}:{ticker}"
+    try:
+        _r = await get_redis()
+        cached = await _r.get(cache_key)
+        if cached:
+            return {**json.loads(cached), "source": "cache"}
+    except Exception:
+        _r = None
+
+    # Gather fundamental data
+    api_key = os.getenv("MASSIVE_API_KEY", "")
+    fin, price = await asyncio.gather(
+        _fetch_poly_financials(ticker, api_key) if api_key else asyncio.sleep(0, result={}),
+        _fetch_poly_price(ticker, api_key)      if api_key else asyncio.sleep(0, result=0.0),
+    )
+
+    # Fetch recent news headlines for context
+    news_lines: list[str] = []
+    try:
+        _r2 = await get_redis()
+        cached_news = await _r2.get(f"eodhd_news:{ticker}")
+        if cached_news:
+            articles = json.loads(cached_news)[:5]
+            news_lines = [f"- {a.get('title', '')} ({a.get('source', '')})" for a in articles]
+    except Exception:
+        pass
+
+    # Build data context for the LLM
+    fin_ctx = ""
+    if fin:
+        rev_b   = round(fin.get("revenue", 0) / 1e9, 2)
+        ebitda_b = round(fin.get("ebitda", 0) / 1e9, 2)
+        margin  = round(fin.get("ebit", 0) / fin.get("revenue", 1) * 100, 1) if fin.get("revenue") else None
+        rev_g   = round(fin.get("rev_growth", 0) * 100, 1)
+        net_d   = round(fin.get("net_debt", 0) / 1e9, 2)
+        fin_ctx = (
+            f"Revenue: ${rev_b}B (YoY growth: {rev_g}%)\n"
+            f"EBITDA: ${ebitda_b}B\n"
+            f"Operating margin: {margin}%\n"
+            f"Net debt: ${net_d}B\n"
+            f"Tax rate: {round(fin.get('tax_rate', 0) * 100, 0)}%\n"
+        )
+
+    news_ctx = "\nRecent news:\n" + "\n".join(news_lines) if news_lines else ""
+
+    prompt = (
+        f"Ticker: {ticker}\n"
+        f"Current price: ${round(float(price or 0), 2)}\n"
+        f"{fin_ctx}"
+        f"{news_ctx}\n\n"
+        f"Provide your analysis as {_PERSONA_NAMES[persona]}."
+    )
+
+    try:
+        llm    = _LLM("persona")
+        result_text = await llm.complete(
+            prompt=prompt,
+            system=_PERSONA_PROMPTS[persona],
+            max_tokens=600,
+            temperature=0.3,
+        )
+    except Exception as e:
+        return {"error": f"LLM error: {str(e)}", "ticker": ticker, "persona": persona}
+
+    result = {
+        "ticker":      ticker,
+        "persona":     persona,
+        "persona_name": _PERSONA_NAMES[persona],
+        "price":       round(float(price or 0), 2),
+        "analysis":    result_text,
+        "ts":          datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        if _r:
+            await _r.setex(cache_key, 3600, json.dumps(result))
+    except Exception:
+        pass
+    return {**result, "source": "fresh"}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     with open("/app/webui/static/index.html") as f:

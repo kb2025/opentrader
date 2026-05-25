@@ -386,6 +386,9 @@ select option{background:var(--surface2)}
         <div class="nav-subitem" draggable="true" onclick="navigate('page-si-market-health')" data-page="page-si-market-health">
           <span class="nav-dot" style="background:#f43f5e;width:6px;height:6px"></span>Market Health
         </div>
+        <div class="nav-subitem" draggable="true" onclick="navigate('page-si-fred')" data-page="page-si-fred">
+          <span class="nav-dot" style="background:#60a5fa;width:6px;height:6px"></span>FRED Macro
+        </div>
         <div style="padding:4px 10px 2px 28px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)">Sector Map</div>
         <div class="nav-subitem" id="nav-si-sectormap" data-sm-index="sp500" onclick="_smNavSelect('sp500')">
           <span class="nav-dot" style="background:#38bdf8;width:6px;height:6px"></span>S&amp;P 500
@@ -1967,6 +1970,20 @@ select option{background:var(--surface2)}
         </div>
         <div class="card-body" style="padding:12px 16px">
           <div id="quick-intel-result"><div style="font-size:12px;color:var(--dim)">Enter a ticker above to generate a snapshot analysis from predictor signals + OVTLYR data.</div></div>
+          <!-- DCF Valuation inline -->
+          <div id="quick-intel-dcf" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"></div>
+          <!-- Investor Persona Agents -->
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px">Investor Persona Analysis</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+              <button class="btn btn-ghost btn-xs" onclick="_loadPersona('buffett')" style="font-size:10px">Buffett</button>
+              <button class="btn btn-ghost btn-xs" onclick="_loadPersona('graham')"  style="font-size:10px">Graham</button>
+              <button class="btn btn-ghost btn-xs" onclick="_loadPersona('lynch')"   style="font-size:10px">Lynch</button>
+              <button class="btn btn-ghost btn-xs" onclick="_loadPersona('munger')"  style="font-size:10px">Munger</button>
+              <button class="btn btn-ghost btn-xs" onclick="_loadPersona('klarman')" style="font-size:10px">Klarman</button>
+            </div>
+            <div id="quick-intel-persona" style="font-size:12px;color:var(--dim)">Select a persona to generate analysis.</div>
+          </div>
         </div>
       </div>
 
@@ -2758,6 +2775,24 @@ select option{background:var(--surface2)}
         </div>
         <div id="chain-analytics-body" class="card-body" style="padding:14px 16px">
           <div style="font-size:12px;color:var(--muted)">Enter a ticker to load chain analytics.</div>
+        </div>
+      </div>
+
+      <!-- Volatility Surface -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Volatility Surface</span>
+          <span style="font-size:11px;color:var(--muted)">IV across strikes × expirations</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <select id="volsurf-type" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
+              <option value="call">Calls</option>
+              <option value="put">Puts</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="loadVolSurface()">Load Surface</button>
+          </div>
+        </div>
+        <div id="vol-surface-body" class="card-body" style="padding:14px 16px">
+          <div style="font-size:12px;color:var(--muted)">Enter a ticker in Chain Analytics above, then click Load Surface.</div>
         </div>
       </div>
 
@@ -4535,6 +4570,28 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- Row 11: Monthly Returns Heatmap -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <span style="font-weight:600">Monthly Returns Heatmap</span>
+          <span style="font-size:11px;color:var(--muted)">Calendar view of portfolio monthly P&L</span>
+        </div>
+        <div id="analytics-monthly-body" class="card-body" style="padding:12px 16px">
+          <div style="font-size:12px;color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Row 12: Trade Statistics -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <span style="font-weight:600">Trade Statistics</span>
+          <span style="font-size:11px;color:var(--muted)">Win rate · Profit factor · Expectancy · Streaks</span>
+        </div>
+        <div id="analytics-tradestats-body" class="card-body" style="padding:12px 16px">
+          <div style="font-size:12px;color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+
     </div><!-- /page-analytics -->
 
     <!-- ════════════════════════════════════════
@@ -4560,6 +4617,49 @@ select option{background:var(--surface2)}
       </div>
       <div id="sl-grid" style="display:none;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
     </div><!-- /page-equities-sector-leaders -->
+
+
+    <!-- ── page-si-fred ── -->
+    <div class="page" id="page-si-fred">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--fg)">FRED Economic Dashboard</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">Inflation · Employment · Monetary Policy · Credit Spreads · Money Supply</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadFredDashboard(true)">&#8635; Refresh</button>
+      </div>
+
+      <!-- Row 1: Inflation + Credit Spreads -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="card">
+          <div class="card-header"><span style="font-weight:600">Inflation</span><span style="font-size:11px;color:var(--muted)">CPI · Core CPI · Core PCE</span></div>
+          <div id="fred-inflation-body" class="card-body" style="padding:12px 16px"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span style="font-weight:600">Credit Spreads</span><span style="font-size:11px;color:var(--muted)">HY OAS · IG OAS (bps)</span></div>
+          <div id="fred-spreads-body" class="card-body" style="padding:12px 16px"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
+        </div>
+      </div>
+
+      <!-- Row 2: Employment + Monetary Policy -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div class="card">
+          <div class="card-header"><span style="font-weight:600">Employment</span><span style="font-size:11px;color:var(--muted)">Unemployment · Jobless Claims</span></div>
+          <div id="fred-employment-body" class="card-body" style="padding:12px 16px"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span style="font-weight:600">Monetary Policy</span><span style="font-size:11px;color:var(--muted)">Federal Funds Rate</span></div>
+          <div id="fred-monetary-body" class="card-body" style="padding:12px 16px"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
+        </div>
+      </div>
+
+      <!-- Row 3: M2 full width -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><span style="font-weight:600">Money Supply (M2)</span><span style="font-size:11px;color:var(--muted)">Seasonally adjusted, $B</span></div>
+        <div id="fred-m2-body" class="card-body" style="padding:12px 16px"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
+      </div>
+
+    </div><!-- /page-si-fred -->
 
 
     <!-- ── page-si-market-health ── -->
@@ -5186,6 +5286,7 @@ const PAGE_TITLES = {
   'page-plan-optimizer':    'Portfolio Optimizer',
   'page-equities-sector-leaders': 'Sector Leaders',
   'page-si-market-health':        'Market Health',
+  'page-si-fred':                 'FRED Macro',
   'page-shadow-account':    'Trading Hindsights',
   'page-analytics':         'Portfolio Analytics',
   'page-resources-library':    'Library',
@@ -5338,6 +5439,7 @@ function navigate(pageId) {
     case 'page-plan-optimizer':    loadOptimizerPage();    break;
     case 'page-equities-sector-leaders': loadSectorLeadersPage(); break;
     case 'page-si-market-health':        loadMarketHealthPage();  break;
+    case 'page-si-fred':                 loadFredDashboard();     break;
     case 'page-shadow-account':    loadShadowPage(); loadReviewRecommendations(); break;
     case 'page-analytics':         loadAnalyticsPage(); break;
     case 'page-resources-library':    loadLibraryResourcePage(); break;
@@ -21856,6 +21958,8 @@ async function loadAnalyticsPage(force = false) {
   _analyticsRenderYieldCurve(ycRes.status === 'fulfilled' ? ycRes.value : null);
   _analyticsRenderBreadth(breadthRes.status === 'fulfilled' ? breadthRes.value : null);
   _analyticsRenderTSMOM(tsmomRes.status === 'fulfilled' ? tsmomRes.value : null);
+  _analyticsLoadMonthly(mode, days);
+  _analyticsLoadTradeStats(mode, days);
 }
 
 function _analyticsStatRow(label, value, sub = '') {
@@ -23750,6 +23854,260 @@ async function loadEodhdNews() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// FRED Economic Dashboard
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadFredDashboard(force) {
+  ['fred-inflation-body','fred-spreads-body','fred-employment-body','fred-monetary-body','fred-m2-body']
+    .forEach(id => { const el = document.getElementById(id); if (el && !force) el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>'; });
+  let data;
+  try { data = await apiFetch('/api/fred/dashboard'); } catch(e) { return; }
+  if (!data || data.error) return;
+
+  function _spark(series, color, label, units) {
+    if (!series || !series.length) return `<div style="font-size:11px;color:var(--muted)">No data</div>`;
+    const vals  = series.map(d => d.value);
+    const dates = series.map(d => d.date);
+    const min   = Math.min(...vals), max = Math.max(...vals);
+    const range = max - min || 1;
+    const latest = vals[vals.length - 1];
+    const prev   = vals[vals.length - 2] || latest;
+    const chg    = latest - prev;
+    const chgColor = chg > 0 ? 'var(--red)' : chg < 0 ? 'var(--green)' : 'var(--muted)';
+    const w = 240, h = 55;
+    const pts = vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * w;
+      const y = h - ((v - min) / range) * h;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">
+        <span style="font-size:11px;font-weight:600;color:var(--muted)">${label}</span>
+        <span style="font-size:13px;font-weight:700;color:var(--fg)">${latest.toFixed(2)}<span style="font-size:9px;color:var(--muted);margin-left:2px">${units}</span></span>
+        <span style="font-size:10px;color:${chgColor}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}</span>
+      </div>
+      <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:55px;display:block">
+        <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--dim)">
+        <span>${dates[0] || ''}</span><span>${dates[dates.length-1] || ''}</span>
+      </div>
+    </div>`;
+  }
+
+  const infl = data.inflation || {};
+  document.getElementById('fred-inflation-body').innerHTML =
+    _spark(infl.cpi, 'var(--red)', 'CPI', '%') +
+    _spark(infl.core_cpi, 'var(--amber)', 'Core CPI', '%') +
+    _spark(infl.core_pce, 'var(--purple)', 'Core PCE', '%');
+
+  const spr = data.credit_spreads || {};
+  document.getElementById('fred-spreads-body').innerHTML =
+    _spark(spr.hy_oas, 'var(--red)', 'HY OAS', 'bps') +
+    _spark(spr.ig_oas, 'var(--blue)', 'IG OAS', 'bps');
+
+  const emp = data.employment || {};
+  document.getElementById('fred-employment-body').innerHTML =
+    _spark(emp.unemployment, 'var(--amber)', 'Unemployment Rate', '%') +
+    _spark(emp.jobless_claims, 'var(--fg)', 'Initial Jobless Claims', 'K');
+
+  const mon = data.monetary || {};
+  document.getElementById('fred-monetary-body').innerHTML =
+    _spark(mon.fed_funds, 'var(--green)', 'Fed Funds Rate', '%');
+
+  const m2 = data.money_supply || {};
+  document.getElementById('fred-m2-body').innerHTML =
+    _spark(m2.m2, 'var(--blue)', 'M2 Money Supply', '$B');
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Analytics — monthly returns heatmap + trade statistics
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function _analyticsLoadMonthly(mode, days) {
+  const el = document.getElementById('analytics-monthly-body');
+  if (!el) return;
+  try {
+    const data = await apiFetch(`/api/analytics/monthly-returns?mode=${mode}`);
+    const hm   = data.heatmap || [];
+    if (!hm.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Insufficient NAV history</div>'; return; }
+
+    const best  = data.best  || 0;
+    const worst = data.worst || 0;
+    const abs_max = Math.max(Math.abs(best), Math.abs(worst), 0.01);
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    // Group by year
+    const byYear = {};
+    hm.forEach(h => { (byYear[h.year] = byYear[h.year] || {})[h.month] = h.return_pct; });
+    const years = Object.keys(byYear).sort();
+
+    let html = `<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      <span class="stat-mini"><span class="stat-mini-val" style="color:var(--green)">${best > 0 ? '+' : ''}${best.toFixed(1)}%</span><span class="stat-mini-lbl">Best</span></span>
+      <span class="stat-mini"><span class="stat-mini-val" style="color:var(--red)">${worst.toFixed(1)}%</span><span class="stat-mini-lbl">Worst</span></span>
+      <span class="stat-mini"><span class="stat-mini-val">${data.positive}/${data.positive + data.negative}</span><span class="stat-mini-lbl">Green months</span></span>
+      <span class="stat-mini"><span class="stat-mini-val">${data.avg_month != null ? (data.avg_month > 0 ? '+' : '') + data.avg_month.toFixed(1) + '%' : '—'}</span><span class="stat-mini-lbl">Avg/mo</span></span>
+    </div>
+    <div style="overflow-x:auto">
+    <table style="border-collapse:collapse;font-size:11px;min-width:520px">
+      <thead><tr><th style="padding:3px 8px;text-align:left;color:var(--muted)">Year</th>
+        ${MONTHS.map(m => `<th style="padding:3px 6px;color:var(--muted);text-align:right">${m}</th>`).join('')}
+      </tr></thead><tbody>`;
+    years.forEach(y => {
+      html += `<tr><td style="padding:3px 8px;font-weight:600;color:var(--fg)">${y}</td>`;
+      for (let m = 1; m <= 12; m++) {
+        const v = byYear[y][m];
+        if (v == null) { html += '<td style="padding:3px 6px"></td>'; continue; }
+        const intensity = Math.min(1, Math.abs(v) / abs_max);
+        const bg = v >= 0
+          ? `rgba(34,197,94,${(0.15 + intensity * 0.5).toFixed(2)})`
+          : `rgba(239,68,68,${(0.15 + intensity * 0.5).toFixed(2)})`;
+        html += `<td style="padding:3px 6px;background:${bg};text-align:right;font-weight:600;border-radius:3px;color:var(--fg)">${v > 0 ? '+' : ''}${v.toFixed(1)}%</td>`;
+      }
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Monthly returns unavailable</div>';
+  }
+}
+
+async function _analyticsLoadTradeStats(mode, days) {
+  const el = document.getElementById('analytics-tradestats-body');
+  if (!el) return;
+  try {
+    const d = await apiFetch(`/api/analytics/trade-stats?mode=${mode}&days=${days}`);
+    if (d.error) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${d.error}</div>`; return; }
+    const pf = d.profit_factor != null ? d.profit_factor.toFixed(2) : '—';
+    const pfColor = d.profit_factor > 1.5 ? 'var(--green)' : d.profit_factor > 1.0 ? 'var(--amber)' : 'var(--red)';
+    const wrColor = d.win_rate > 55 ? 'var(--green)' : d.win_rate > 45 ? 'var(--amber)' : 'var(--red)';
+    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">
+      ${[
+        ['Win Rate',       `${d.win_rate}%`,             wrColor],
+        ['Profit Factor',  pf,                            pfColor],
+        ['Expectancy',     `$${(d.expectancy||0).toFixed(2)}`, d.expectancy >= 0 ? 'var(--green)' : 'var(--red)'],
+        ['Total Trades',   d.total_trades,                'var(--fg)'],
+        ['Avg Win',        `$${(d.avg_win||0).toFixed(2)}`, 'var(--green)'],
+        ['Avg Loss',       `$${(d.avg_loss||0).toFixed(2)}`, 'var(--red)'],
+        ['Consec. Wins',   d.max_consec_wins,             'var(--green)'],
+        ['Consec. Losses', d.max_consec_losses,           'var(--red)'],
+      ].map(([lbl, val, col]) => `
+        <div style="background:var(--surface2);border-radius:6px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px">${lbl}</div>
+          <div style="font-size:15px;font-weight:700;color:${col}">${val}</div>
+        </div>`).join('')}
+    </div>`;
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Trade statistics unavailable</div>';
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Volatility Surface heatmap
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadVolSurface() {
+  const el = document.getElementById('vol-surface-body');
+  if (!el) return;
+  const ticker = (document.getElementById('chain-ticker') || {}).value || '';
+  if (!ticker) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Enter a ticker in Chain Analytics above first.</div>'; return; }
+  const type = (document.getElementById('volsurf-type') || {}).value || 'call';
+  el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Fetching surface…</div>';
+  const token = getToken();
+  try {
+    const data = await apiFetch(`/api/options/volatility-surface/${ticker.toUpperCase()}?token=${encodeURIComponent(token)}`);
+    if (data.error) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${data.error}</div>`; return; }
+
+    const surface = type === 'call' ? data.call_surface : data.put_surface;
+    const strikes = data.strikes || [];
+    const exps    = data.expirations || [];
+
+    if (!strikes.length || !exps.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No surface data available</div>'; return; }
+
+    // Find IV range for color scaling
+    let minIV = Infinity, maxIV = -Infinity;
+    surface.forEach(row => row.forEach(v => { if (v != null) { minIV = Math.min(minIV, v); maxIV = Math.max(maxIV, v); } }));
+    if (minIV === Infinity) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No IV data in range</div>'; return; }
+    const ivRange = maxIV - minIV || 1;
+
+    // Short expiry labels
+    const expLabels = exps.map(e => { const parts = e.split('-'); return `${parts[1]}/${parts[2]}`; });
+    const price = data.price;
+
+    let html = `<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">${ticker} @ $${price} · ${type.charAt(0).toUpperCase()+type.slice(1)} IV surface · <span style="color:var(--dim)">color = IV level (blue=low, red=high)</span></div>`;
+    html += '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:10px">';
+    // Header row: expirations
+    html += `<tr><th style="padding:4px 8px;text-align:left;color:var(--muted)">Strike</th>`;
+    expLabels.forEach(e => { html += `<th style="padding:4px 8px;text-align:center;color:var(--muted);white-space:nowrap">${e}</th>`; });
+    html += '</tr>';
+    // Strike rows (expirations as columns)
+    strikes.forEach((strike, si) => {
+      const nearATM = Math.abs(strike - price) / price < 0.02;
+      html += `<tr style="${nearATM ? 'outline:1px solid var(--amber);' : ''}">`;
+      html += `<td style="padding:3px 8px;font-weight:${nearATM?700:400};color:${nearATM?'var(--amber)':'var(--fg)'}">$${strike}</td>`;
+      exps.forEach((_, ei) => {
+        const iv = surface[ei] ? surface[ei][si] : null;
+        if (iv == null) { html += '<td style="padding:3px 6px;text-align:center;color:var(--dim)">—</td>'; return; }
+        const t = (iv - minIV) / ivRange;  // 0=low, 1=high
+        const r = Math.round(59 + t * 180);
+        const g = Math.round(130 - t * 90);
+        const b = Math.round(246 - t * 180);
+        html += `<td style="padding:3px 6px;text-align:center;background:rgba(${r},${g},${b},0.25);font-weight:600;color:var(--fg);border-radius:2px">${iv.toFixed(1)}%</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</table></div>';
+    html += `<div style="font-size:10px;color:var(--dim);margin-top:6px">Updated ${new Date(data.updated).toLocaleTimeString()}</div>`;
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Volatility surface unavailable</div>';
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Investor Persona Agents (Quick Intel)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function _loadPersona(persona) {
+  const el = document.getElementById('quick-intel-persona');
+  if (!el) return;
+  const ticker = ((document.getElementById('quick-intel-ticker') || {}).value || '').trim().toUpperCase();
+  if (!ticker) { el.innerHTML = '<div style="font-size:12px;color:var(--amber)">Enter a ticker first, then click a persona.</div>'; return; }
+  const token = getToken();
+  const names = { buffett: 'Warren Buffett', graham: 'Benjamin Graham', lynch: 'Peter Lynch', munger: 'Charlie Munger', klarman: 'Seth Klarman' };
+  const colors = { buffett: 'var(--amber)', graham: 'var(--blue)', lynch: 'var(--green)', munger: 'var(--purple)', klarman: 'var(--red)' };
+  el.innerHTML = `<div style="font-size:12px;color:var(--muted)">Analyzing ${ticker} as ${names[persona]}…</div>`;
+  try {
+    const data = await apiFetch(`/api/market/stock-analysis/${ticker}/persona`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ persona, token }),
+    });
+    if (data.error) { el.innerHTML = `<div style="font-size:12px;color:var(--muted)">${data.error}</div>`; return; }
+    const col   = colors[persona] || 'var(--fg)';
+    const badge = `<span style="font-size:9px;font-weight:700;background:${col}22;color:${col};border-radius:3px;padding:1px 6px;border:1px solid ${col}44">${(names[persona] || persona).toUpperCase()}</span>`;
+    const lines = (data.analysis || '').split('\n').filter(Boolean);
+    const formatted = lines.map(l => {
+      if (l.startsWith('- ') || l.startsWith('• ') || l.startsWith('▲') || l.startsWith('▼') || l.startsWith('*')) {
+        return `<div style="font-size:12px;color:var(--muted);margin:2px 0;padding-left:10px">${l}</div>`;
+      }
+      if (l.toLowerCase().includes('buy') || l.toLowerCase().includes('hold') || l.toLowerCase().includes('avoid')) {
+        return `<div style="font-size:13px;font-weight:700;color:${col};margin:4px 0">${l}</div>`;
+      }
+      return `<div style="font-size:12px;color:var(--fg);margin:2px 0">${l}</div>`;
+    }).join('');
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">${badge}<span style="font-size:11px;color:var(--dim)">${ticker} · $${data.price}</span><span style="font-size:10px;color:var(--dim);margin-left:auto">${data.source === 'cache' ? 'Cached' : 'Fresh'}</span></div>${formatted}`;
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Persona analysis unavailable</div>';
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Feature 6: Quick Intel (per-symbol analysis)
 // ══════════════════════════════════════════════════════════════════════════════
 async function loadQuickIntel() {
@@ -23835,11 +24193,41 @@ async function loadQuickIntel() {
         </div>
         <div id="qi-past-outcomes" style="display:none"></div>
       </div>`;
-    // Load past outcomes and sentiment breakdown asynchronously
+    // Load past outcomes, sentiment breakdown, and DCF asynchronously
     _loadPastOutcomes(ticker);
     _attachSentimentBreakdown(ticker);
+    _loadQuickIntelDCF(ticker);
   } catch(e) {
     el.innerHTML = `<div style="font-size:12px;color:var(--coral)">Analysis unavailable: ${e.message || e}</div>`;
+  }
+}
+
+async function _loadQuickIntelDCF(ticker) {
+  const el = document.getElementById('quick-intel-dcf');
+  if (!el) return;
+  const token = getToken();
+  try {
+    const d = await apiFetch(`/api/analytics/dcf/${ticker}?token=${encodeURIComponent(token)}`);
+    if (d.error) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    const gap    = parseFloat(d.dcf_gap_pct || 0);
+    const gapCol = gap > 15 ? 'var(--green)' : gap < -15 ? 'var(--red)' : 'var(--amber)';
+    const gapLbl = gap > 15 ? 'Undervalued' : gap < -15 ? 'Overvalued' : 'Fairly Valued';
+    el.innerHTML = `
+      <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px">DCF Valuation</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:baseline">
+        <div><div style="font-size:10px;color:var(--muted)">Intrinsic Value</div>
+          <div style="font-size:15px;font-weight:700;color:var(--fg)">$${d.intrinsic_per_share.toFixed(2)}</div></div>
+        <div><div style="font-size:10px;color:var(--muted)">Market Price</div>
+          <div style="font-size:14px;font-weight:600;color:var(--muted)">$${d.market_price.toFixed(2)}</div></div>
+        <div><div style="font-size:10px;color:var(--muted)">Margin of Safety</div>
+          <div style="font-size:15px;font-weight:700;color:${gapCol}">${gap > 0 ? '+' : ''}${gap.toFixed(1)}%
+            <span style="font-size:10px;margin-left:4px">${gapLbl}</span></div></div>
+        <div><div style="font-size:10px;color:var(--muted)">WACC</div>
+          <div style="font-size:13px;font-weight:600;color:var(--fg)">${d.wacc != null ? d.wacc.toFixed(1) + '%' : '—'}</div></div>
+      </div>`;
+  } catch(e) {
+    el.style.display = 'none';
   }
 }
 
