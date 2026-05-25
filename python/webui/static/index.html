@@ -91,6 +91,9 @@ nav{padding:8px;flex:1;overflow-y:auto}
 .stat-label{font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.05em}
 .stat-value{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1}
 .stat-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.stat-mini{background:var(--card-header);border:1px solid var(--border);border-radius:8px;padding:8px 14px;min-width:80px}
+.stat-mini-val{font-size:16px;font-weight:700;line-height:1.2}
+.stat-mini-lbl{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.05em}
 
 /* ── Cards ── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:16px}
@@ -991,6 +994,25 @@ select option{background:var(--surface2)}
             <span id="ct-page-info"></span>
             <div style="display:flex;gap:4px" id="ct-page-btns"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- API Traffic Monitor Panel -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header">
+          <span class="card-title">API Traffic</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <select id="traffic-hours" class="select-input" style="width:90px;padding:4px 6px;font-size:12px" onchange="loadTrafficStats()">
+              <option value="1">1 h</option>
+              <option value="4">4 h</option>
+              <option value="24" selected>24 h</option>
+              <option value="168">7 d</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadTrafficStats()">&#8635;</button>
+          </div>
+        </div>
+        <div id="traffic-body" class="card-body" style="padding:14px 16px">
+          <div style="font-size:12px;color:var(--muted)">Loading&#8230;</div>
         </div>
       </div>
     </div>
@@ -2014,6 +2036,25 @@ select option{background:var(--surface2)}
       </div>
       <div id="broker-grid" style="display:flex;flex-direction:column;gap:16px;max-width:860px">
         <div class="empty-state">Loading&#8230;</div>
+      </div>
+
+      <!-- Broker Latency Panel -->
+      <div class="card" style="margin-top:20px;max-width:860px">
+        <div class="card-header">
+          <span class="card-title">Order Latency</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <select id="latency-hours" class="select-input" style="width:90px;padding:4px 6px;font-size:12px" onchange="loadBrokerLatency()">
+              <option value="1">1 h</option>
+              <option value="4">4 h</option>
+              <option value="24" selected>24 h</option>
+              <option value="168">7 d</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadBrokerLatency()">&#8635;</button>
+          </div>
+        </div>
+        <div id="latency-body" class="card-body" style="padding:14px 16px">
+          <div style="font-size:12px;color:var(--muted)">Loading&#8230;</div>
+        </div>
       </div>
     </div>
 
@@ -6888,6 +6929,7 @@ async function loadSystemPage() {
 
     // Streams — fetch separately for display
     loadStreamsTable();
+    loadTrafficStats();
 
     // Containers — store in module state then paginate
     _ctAllContainers = sys.containers || [];
@@ -10220,6 +10262,7 @@ async function loadBrokerPage() {
         this.className = 'bk-ai-select ' + ({read_only:'ai-read', mentor:'ai-mentor', ai_enabled:'ai-enabled'}[this.value] || 'ai-read');
       });
     });
+    loadBrokerLatency();
   } catch(e) {
     grid.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
   }
@@ -10678,6 +10721,130 @@ async function saveBrokerCfg() {
     toast('success', `${m.name} Saved`, 'Credentials stored — ot-broker-gateway restarting');
     loadBrokerPage();
   } catch(e) { toast('error', 'Save Failed', e.message); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Broker Latency
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadBrokerLatency() {
+  const el = document.getElementById('latency-body');
+  if (!el) return;
+  const hours = document.getElementById('latency-hours')?.value || 24;
+  try {
+    const d = await apiFetch(`/api/broker/latency?hours=${hours}`);
+    if (d.error) { el.innerHTML = `<div class="empty-state">${d.error}</div>`; return; }
+    const s = d.summary || {};
+    const total = s.total ?? 0;
+    if (!total) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No order latency data for this period.</div>';
+      return;
+    }
+    const pct = v => v != null ? `${v} ms` : '—';
+    const errPct = s.errors && total ? ` <span style="color:var(--red)">(${s.errors} err)</span>` : '';
+    let html = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="stat-mini"><div class="stat-mini-val">${total}${errPct}</div><div class="stat-mini-lbl">Orders</div></div>
+        <div class="stat-mini"><div class="stat-mini-val">${pct(s.avg_ms)}</div><div class="stat-mini-lbl">Avg</div></div>
+        <div class="stat-mini"><div class="stat-mini-val">${pct(s.p50_ms)}</div><div class="stat-mini-lbl">p50</div></div>
+        <div class="stat-mini"><div class="stat-mini-val">${pct(s.p95_ms)}</div><div class="stat-mini-lbl">p95</div></div>
+      </div>`;
+    if (d.stats && d.stats.length) {
+      html += `<div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">By Broker / Command</div>
+        <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr>
+          <th>Broker</th><th>Command</th><th>Count</th><th>Avg</th><th>p50</th><th>p95</th><th>Errors</th>
+        </tr></thead><tbody>
+        ${d.stats.map(r => `<tr>
+          <td>${r.broker||'—'}</td><td class="mono" style="font-size:11px">${r.command||'—'}</td>
+          <td>${r.count}</td><td>${r.avg_ms??'—'} ms</td><td>${r.p50_ms??'—'} ms</td><td>${r.p95_ms??'—'} ms</td>
+          <td style="color:${r.errors>0?'var(--red)':'var(--muted)'}">${r.errors||0}</td>
+        </tr>`).join('')}
+        </tbody></table></div>`;
+    }
+    if (d.recent && d.recent.length) {
+      html += `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Recent (${d.recent.length})</summary>
+        <div class="table-wrap" style="margin-top:8px;max-height:260px;overflow-y:auto"><table><thead><tr>
+          <th>Time</th><th>Broker</th><th>Command</th><th>Account</th><th>Status</th><th>RTT</th>
+        </tr></thead><tbody>
+        ${d.recent.map(r => {
+          const ok = r.status === 'ok' || r.status === 'filled' || r.status === 'submitted';
+          const sc = ok ? 'var(--green)' : r.status === 'error' ? 'var(--red)' : 'var(--muted)';
+          return `<tr>
+            <td style="white-space:nowrap;font-size:11px">${new Date(r.ts).toLocaleTimeString()}</td>
+            <td>${r.broker||'—'}</td>
+            <td class="mono" style="font-size:11px">${r.command||'—'}</td>
+            <td style="font-size:11px">${r.account_label||'—'}</td>
+            <td style="color:${sc}">${r.status||'—'}</td>
+            <td class="mono">${r.rtt_ms??'—'} ms</td>
+          </tr>`;
+        }).join('')}
+        </tbody></table></div></details>`;
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// API Traffic Monitor
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadTrafficStats() {
+  const el = document.getElementById('traffic-body');
+  if (!el) return;
+  const hours = document.getElementById('traffic-hours')?.value || 24;
+  try {
+    const d = await apiFetch(`/api/system/traffic?hours=${hours}`);
+    if (d.error) { el.innerHTML = `<div class="empty-state">${d.error}</div>`; return; }
+    const s = d.summary || {};
+    const total = s.total ?? 0;
+    if (!total) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No traffic data for this period.</div>';
+      return;
+    }
+    const errPct = total > 0 && s.errors ? ` <span style="color:var(--red)">(${s.errors} err, ${Math.round(s.errors/total*100)}%)</span>` : '';
+    let html = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="stat-mini"><div class="stat-mini-val">${total}${errPct}</div><div class="stat-mini-lbl">Requests</div></div>
+        <div class="stat-mini"><div class="stat-mini-val">${s.avg_ms != null ? s.avg_ms+' ms' : '—'}</div><div class="stat-mini-lbl">Avg</div></div>
+        <div class="stat-mini"><div class="stat-mini-val">${s.p95_ms != null ? s.p95_ms+' ms' : '—'}</div><div class="stat-mini-lbl">p95</div></div>
+      </div>`;
+    if (d.top_paths && d.top_paths.length) {
+      html += `<div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Top Paths</div>
+        <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr>
+          <th>Path</th><th>Calls</th><th>Avg</th><th>p95</th><th>Errors</th>
+        </tr></thead><tbody>
+        ${d.top_paths.map(r => `<tr>
+          <td class="mono" style="font-size:11px">${r.path}</td>
+          <td>${r.count}</td>
+          <td>${r.avg_ms??'—'} ms</td>
+          <td>${r.p95_ms??'—'} ms</td>
+          <td style="color:${r.error_count>0?'var(--red)':'var(--muted)'}">${r.error_count||0}</td>
+        </tr>`).join('')}
+        </tbody></table></div>`;
+    }
+    if (d.recent && d.recent.length) {
+      html += `<details><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Recent (${d.recent.length})</summary>
+        <div class="table-wrap" style="margin-top:8px;max-height:260px;overflow-y:auto"><table><thead><tr>
+          <th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>ms</th>
+        </tr></thead><tbody>
+        ${d.recent.map(r => {
+          const sc = r.status_code >= 500 ? 'var(--red)' : r.status_code >= 400 ? 'var(--amber)' : 'var(--text)';
+          return `<tr>
+            <td style="white-space:nowrap;font-size:11px">${new Date(r.ts).toLocaleTimeString()}</td>
+            <td class="mono" style="font-size:10px">${r.method}</td>
+            <td class="mono" style="font-size:11px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.path}">${r.path}</td>
+            <td style="color:${sc}">${r.status_code}</td>
+            <td class="mono">${r.duration_ms}</td>
+          </tr>`;
+        }).join('')}
+        </tbody></table></div></details>`;
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

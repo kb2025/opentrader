@@ -3,6 +3,16 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.6] - 2026-05-25
+
+### Added
+- **Order Latency Tracker** — broker-gateway now emits a `broker_latency` TelemetryEvent (via `system.telemetry`) for every command processed, recording `duration_ms`, broker, command, account_label, and status; persisted to `execution_events` by the existing telemetry consumer
+- **`GET /api/broker/latency`** — queries `execution_events` for `broker_latency` events and returns per-broker/command aggregate stats (count, avg, p50, p95, errors) plus 200 most-recent entries; supports `?hours=` window
+- **Broker Latency panel** — added to Broker Configuration page: stat chips (orders, avg, p50, p95), by-broker/command breakdown table, and collapsible recent-orders list; refreshes with the page and has an independent time-range selector
+- **HTTP Traffic Monitor** — new `traffic_middleware` in webui records every `/api/*` request (method, path, status code, duration_ms) as a fire-and-forget DB write to the new `api_traffic` TimescaleDB table (7-day retention, indexed on `ts` and `path`)
+- **`GET /api/system/traffic`** — returns traffic summary (total, errors, avg/p95 ms), top-20 paths by call count with per-path avg/p95/error counts, and 200 most-recent requests
+- **API Traffic panel** — added to System page: summary stat chips, top-paths table, collapsible recent-requests log; time-range selector (1h/4h/24h/7d); loads automatically with the System page
+
 ## [3.9.5] - 2026-05-25
 
 ### Added

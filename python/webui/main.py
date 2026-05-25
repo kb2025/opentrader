@@ -218,6 +218,37 @@ async def auth_middleware(request: Request, call_next):
         return RedirectResponse("/setup" if users == 0 else "/login")
     return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
+# ── Traffic monitor middleware ────────────────────────────────────────────────
+
+_TRAFFIC_SKIP_PREFIXES = ("/static", "/login", "/setup")
+_TRAFFIC_SKIP_EXACT    = {"/api/auth/login", "/api/auth/logout", "/api/auth/check",
+                           "/api/auth/setup", "/api/system/traffic"}
+
+@app.middleware("http")
+async def traffic_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith(_TRAFFIC_SKIP_PREFIXES) or path in _TRAFFIC_SKIP_EXACT or not path.startswith("/api/"):
+        return await call_next(request)
+    t0 = time.time()
+    response = await call_next(request)
+    duration_ms = (time.time() - t0) * 1000.0
+    asyncio.create_task(_record_traffic(request.method, path, response.status_code, duration_ms))
+    return response
+
+
+async def _record_traffic(method: str, path: str, status_code: int, duration_ms: float):
+    if not DB_URL:
+        return
+    try:
+        pool = await _get_db_pool()
+        await pool.execute(
+            "INSERT INTO api_traffic (method, path, status_code, duration_ms) VALUES ($1,$2,$3,$4)",
+            method, path, status_code, duration_ms,
+        )
+    except Exception:
+        pass
+
+
 # ── Auth endpoints ────────────────────────────────────────────────────────────
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1440,6 +1471,28 @@ async def on_startup():
             """)
         except Exception as e:
             log.warning("execution_events.table_init_failed", error=str(e))
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute("""
+                CREATE TABLE IF NOT EXISTS api_traffic (
+                    id          BIGSERIAL PRIMARY KEY,
+                    ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    method      TEXT NOT NULL,
+                    path        TEXT NOT NULL,
+                    status_code INT NOT NULL,
+                    duration_ms DOUBLE PRECISION NOT NULL
+                )
+            """)
+            await pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_api_traffic_ts ON api_traffic (ts DESC)"
+            )
+            await pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_api_traffic_path ON api_traffic (path, ts DESC)"
+            )
+            await pool.execute("DELETE FROM api_traffic WHERE ts < NOW() - INTERVAL '7 days'")
+        except Exception as e:
+            log.warning("api_traffic.table_init_failed", error=str(e))
 
     # Start price alert checker background loop
     asyncio.create_task(_price_alert_loop())
@@ -3512,6 +3565,100 @@ async def resume_system(token: str = ""):
     redis = await get_redis()
     await redis.delete("system:halted")
     return {"resumed": True}
+
+
+@app.get("/api/system/traffic")
+async def get_api_traffic(token: str = "", hours: int = 24):
+    check_token(token)
+    if not DB_URL:
+        return {"recent": [], "top_paths": [], "summary": {}}
+    try:
+        pool = await _get_db_pool()
+        recent = await pool.fetch("""
+            SELECT ts, method, path, status_code,
+                   ROUND(duration_ms::numeric, 1) AS duration_ms
+            FROM api_traffic
+            WHERE ts >= NOW() - INTERVAL '1 hour' * $1
+            ORDER BY ts DESC LIMIT 200
+        """, hours)
+        top_paths = await pool.fetch("""
+            SELECT path,
+                   COUNT(*) AS count,
+                   ROUND(AVG(duration_ms)::numeric, 1) AS avg_ms,
+                   ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)::numeric, 1) AS p95_ms,
+                   COUNT(*) FILTER (WHERE status_code >= 400) AS error_count
+            FROM api_traffic
+            WHERE ts >= NOW() - INTERVAL '1 hour' * $1
+            GROUP BY path
+            ORDER BY count DESC LIMIT 20
+        """, hours)
+        summary = await pool.fetchrow("""
+            SELECT COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE status_code >= 400) AS errors,
+                   ROUND(AVG(duration_ms)::numeric, 1) AS avg_ms,
+                   ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)::numeric, 1) AS p95_ms
+            FROM api_traffic
+            WHERE ts >= NOW() - INTERVAL '1 hour' * $1
+        """, hours)
+        return {
+            "recent":    [dict(r) for r in recent],
+            "top_paths": [dict(r) for r in top_paths],
+            "summary":   dict(summary) if summary else {},
+        }
+    except Exception as e:
+        return {"error": str(e), "recent": [], "top_paths": [], "summary": {}}
+
+
+@app.get("/api/broker/latency")
+async def get_broker_latency(token: str = "", hours: int = 24):
+    check_token(token)
+    if not DB_URL:
+        return {"recent": [], "stats": [], "summary": {}}
+    try:
+        pool = await _get_db_pool()
+        recent = await pool.fetch("""
+            SELECT ts,
+                   ROUND(duration_ms::numeric, 1) AS rtt_ms,
+                   payload->>'broker'        AS broker,
+                   payload->>'command'       AS command,
+                   payload->>'account_label' AS account_label,
+                   payload->>'status'        AS status
+            FROM execution_events
+            WHERE event_name = 'broker_latency'
+              AND ts >= NOW() - INTERVAL '1 hour' * $1
+            ORDER BY ts DESC LIMIT 200
+        """, hours)
+        stats = await pool.fetch("""
+            SELECT payload->>'broker'  AS broker,
+                   payload->>'command' AS command,
+                   COUNT(*)            AS count,
+                   ROUND(AVG(duration_ms)::numeric, 1)  AS avg_ms,
+                   ROUND(PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY duration_ms)::numeric, 1) AS p50_ms,
+                   ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)::numeric, 1) AS p95_ms,
+                   COUNT(*) FILTER (WHERE payload->>'status' = 'error') AS errors
+            FROM execution_events
+            WHERE event_name = 'broker_latency'
+              AND ts >= NOW() - INTERVAL '1 hour' * $1
+            GROUP BY payload->>'broker', payload->>'command'
+            ORDER BY count DESC
+        """, hours)
+        summary = await pool.fetchrow("""
+            SELECT COUNT(*) AS total,
+                   ROUND(AVG(duration_ms)::numeric, 1)  AS avg_ms,
+                   ROUND(PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY duration_ms)::numeric, 1) AS p50_ms,
+                   ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)::numeric, 1) AS p95_ms,
+                   COUNT(*) FILTER (WHERE payload->>'status' = 'error') AS errors
+            FROM execution_events
+            WHERE event_name = 'broker_latency'
+              AND ts >= NOW() - INTERVAL '1 hour' * $1
+        """, hours)
+        return {
+            "recent":  [dict(r) for r in recent],
+            "stats":   [dict(r) for r in stats],
+            "summary": dict(summary) if summary else {},
+        }
+    except Exception as e:
+        return {"error": str(e), "recent": [], "stats": [], "summary": {}}
 
 
 @app.get("/api/history")

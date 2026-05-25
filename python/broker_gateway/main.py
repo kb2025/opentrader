@@ -13,11 +13,13 @@ import asyncio
 import json
 import logging
 import os
+import time
 
 import structlog
 
 from shared.base_agent   import BaseAgent
 from shared.redis_client import STREAMS, GROUPS, get_redis, ensure_consumer_group
+from shared.telemetry    import emit as _tel_emit, TelemetryEvent
 from .registry           import BrokerRegistry
 from .router             import BrokerRouter
 
@@ -99,6 +101,7 @@ class BrokerGatewayAgent(BaseAgent):
                     self.redis = await get_redis()
 
     async def _handle_command(self, msg_id: str, cmd: dict):
+        t0         = time.monotonic()
         command    = cmd.get("command", "unknown")
         request_id = cmd.get("request_id", "")
         issued_by  = cmd.get("issued_by", "unknown")
@@ -154,6 +157,20 @@ class BrokerGatewayAgent(BaseAgent):
 
         # Acknowledge message
         await self.redis.xack(STREAMS["broker_commands"], GROUPS["broker_gateway"], msg_id)
+
+        rtt_ms = (time.monotonic() - t0) * 1000.0
+        asyncio.create_task(_tel_emit(TelemetryEvent(
+            agent      = "broker-gateway",
+            event_name = "broker_latency",
+            severity   = "info",
+            payload    = {
+                "command":       command,
+                "broker":        results[0].get("broker", "") if results else "",
+                "account_label": results[0].get("account_label", "") if results else "",
+                "status":        results[0].get("status", "error") if results else "error",
+            },
+            duration_ms = rtt_ms,
+        )))
 
         log.info(
             "broker-gateway.command_done",
