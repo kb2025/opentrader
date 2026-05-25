@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.0] - 2026-05-25
+
+### Added
+- **Greeks sensitivity line charts in Strategy Payoff Builder**: after "Build Payoff", four sparkline SVGs render in a 2×2 grid below the main payoff diagram — Δ (green), Γ (violet), ν/1%IV (sky), Θ/day (orange) — each plotted vs. spot across the full payoff range (50 points); portfolio Greeks are summed across all active legs weighted by sign and multiplier; current spot marked with a vertical grey line; zero-crossing line shown when curve changes sign; only renders when Spot + IV% + DTE are all provided
+- **Per-leg price + Greeks breakdown table in Strategy Payoff Builder**: compact 10-column table rendered below the sensitivity charts for every "Build Payoff" call — shows each leg's label, strike, direction/type/multiplier, entry premium, current B-S theoretical value, net dollar P&L per contract (B-S minus entry × sign × mult × 100), and individual Δ/Γ/ν/Θ contributions; when market params are absent the table renders with strike and entry only, prompting the user to enter Spot + IV% + DTE for live values; uses `_spbLegGreeks()` for individual leg B-S and `_spbPortfolioGreeks()` for the sensitivity aggregation
+
 ## [3.8.9] - 2026-05-25
 
 ### Added

@@ -24831,6 +24831,177 @@ function _spbBsValue(stratKey, S, k, p, T_rem, sigma, r) {
   return total * 100;
 }
 
+// B-S price + Greeks for a single option leg at (S, K, T, sigma, r, type)
+function _spbLegGreeks(S, K, T, sigma, r, type) {
+  const ncdf = x => (1 + _spbErf(x / Math.SQRT2)) / 2;
+  const phi  = x => Math.exp(-x*x/2) / Math.sqrt(2*Math.PI);
+  if (T <= 1e-6 || sigma <= 0 || S <= 0 || K <= 0) {
+    const intr = type === 'call' ? Math.max(S-K,0) : Math.max(K-S,0);
+    return {price:intr, delta:type==='call'?(S>K?1:0):(S>K?0:-1), gamma:0, vega:0, theta:0};
+  }
+  const sq = Math.sqrt(T);
+  const d1 = (Math.log(S/K) + (r + 0.5*sigma*sigma)*T) / (sigma*sq);
+  const d2 = d1 - sigma*sq;
+  const phiD1 = phi(d1);
+  const gamma = phiD1 / (S*sigma*sq);
+  const vega  = S*phiD1*sq / 100;
+  let price, delta, theta;
+  if (type === 'call') {
+    price = S*ncdf(d1) - K*Math.exp(-r*T)*ncdf(d2);
+    delta = ncdf(d1);
+    theta = -(S*phiD1*sigma/(2*sq) + r*K*Math.exp(-r*T)*ncdf(d2)) / 365;
+  } else {
+    price = K*Math.exp(-r*T)*ncdf(-d2) - S*ncdf(-d1);
+    delta = ncdf(d1) - 1;
+    theta = -(S*phiD1*sigma/(2*sq) - r*K*Math.exp(-r*T)*ncdf(-d2)) / 365;
+  }
+  return {price, delta, gamma, vega, theta};
+}
+
+// Aggregate portfolio Greeks at spot S (per-share, raw — not multiplied by 100)
+function _spbPortfolioGreeks(stratKey, S, k, T, sigma, r) {
+  const legDefs = _SPB_LEGS[stratKey];
+  if (!legDefs) return {delta:0, gamma:0, vega:0, theta:0};
+  let delta=0, gamma=0, vega=0, theta=0;
+  legDefs.forEach(({type, sign, mult}, i) => {
+    if (type === 'stock') {
+      delta += sign * mult;
+    } else if (sigma > 0 && T > 0) {
+      const g = _spbLegGreeks(S, k[i], T, sigma, r, type);
+      delta += sign * mult * g.delta;
+      gamma += sign * mult * g.gamma;
+      vega  += sign * mult * g.vega;
+      theta += sign * mult * g.theta;
+    }
+  });
+  return {delta, gamma, vega, theta};
+}
+
+// Render a single Greek sensitivity sparkline SVG
+function _spbGreekSparkline(curvePts, label, color, spot, S_min, S_max) {
+  const W=430, H=88, px=38, py=8;
+  const vals = curvePts.map(p => p.val);
+  const rawMin = Math.min(...vals), rawMax = Math.max(...vals);
+  const pad = Math.max(Math.abs(rawMax), Math.abs(rawMin)) * 0.15 || 0.0001;
+  const vMin = rawMin - pad, vMax = rawMax + pad;
+  const vRng = vMax - vMin || 1;
+  const xS = S  => +(px + (S  - S_min) / (S_max - S_min) * (W - px*2)).toFixed(1);
+  const yS = v  => +(py + (1  - (v - vMin) / vRng)        * (H - py*2)).toFixed(1);
+  const zeroY = yS(0);
+  const path = curvePts.map((p,i) => `${i===0?'M':'L'}${xS(p.S)},${yS(p.val)}`).join(' ');
+  // Zero line (only when curve crosses zero)
+  const zLine = (rawMin < 0 && rawMax > 0)
+    ? `<line x1="${px}" y1="${zeroY}" x2="${W-px}" y2="${zeroY}" stroke="#475569" stroke-width="0.6" stroke-dasharray="2,2"/>` : '';
+  const spotLine = (spot > S_min && spot < S_max)
+    ? `<line x1="${xS(spot)}" y1="${py}" x2="${xS(spot)}" y2="${H-py}" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3,2"/>` : '';
+  const fmt = v => Math.abs(v) < 0.0001 ? '0' : Math.abs(v) < 0.01 ? v.toFixed(4) : Math.abs(v) < 1 ? v.toFixed(3) : v.toFixed(2);
+  const yLabels = [vMax, vMin].map(v =>
+    `<text x="${px-3}" y="${yS(v)+3}" font-size="7" fill="#64748b" text-anchor="end">${fmt(v)}</text>`).join('');
+  const xLabels = [S_min, (S_min+S_max)/2, S_max].map(S =>
+    `<text x="${xS(S)}" y="${H-1}" font-size="7" fill="#64748b" text-anchor="middle">${S.toFixed(0)}</text>`).join('');
+  return `<div>
+    <div style="font-size:9px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">${label}</div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;background:var(--bg);border-radius:3px;border:1px solid var(--border)">
+      ${zLine}${spotLine}
+      <path d="${path}" fill="none" stroke="${color}" stroke-width="1.8"/>
+      ${yLabels}${xLabels}
+    </svg>
+  </div>`;
+}
+
+// Build the full Greeks sensitivity panel (2×2 grid)
+function _spbGreeksPanel(stratKey, k, T, sigma, r, S_min, S_max, spot) {
+  if (!_SPB_LEGS[stratKey] || sigma <= 0 || T <= 0) return '';
+  const N = 50;
+  const curvePts = Array.from({length:N}, (_,i) => {
+    const S = S_min + (i/(N-1))*(S_max-S_min);
+    const g = _spbPortfolioGreeks(stratKey, S, k, T, sigma, r);
+    return {S, ...g};
+  });
+  const toDelta = curvePts.map(p => ({S:p.S, val:p.delta}));
+  const toGamma = curvePts.map(p => ({S:p.S, val:p.gamma}));
+  const toVega  = curvePts.map(p => ({S:p.S, val:p.vega}));
+  const toTheta = curvePts.map(p => ({S:p.S, val:p.theta}));
+  return `
+  <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px">
+      Greeks Sensitivity vs. Spot · σ=${(sigma*100).toFixed(0)}% · DTE=${Math.round(T*365)}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${_spbGreekSparkline(toDelta, 'Δ Delta',  '#22c55e', spot, S_min, S_max)}
+      ${_spbGreekSparkline(toGamma, 'Γ Gamma',  '#a78bfa', spot, S_min, S_max)}
+      ${_spbGreekSparkline(toVega,  'ν Vega /1%','#38bdf8', spot, S_min, S_max)}
+      ${_spbGreekSparkline(toTheta, 'Θ Theta/day','#fb923c', spot, S_min, S_max)}
+    </div>
+  </div>`;
+}
+
+// Build the per-leg price + Greeks breakdown table
+function _spbLegTable(stratKey, cfg, k, p, T, sigma, r, spot) {
+  const legDefs = _SPB_LEGS[stratKey];
+  if (!legDefs) return '';
+  const hasMarket = spot > 0 && sigma > 0 && T > 0;
+  const fG = (v, dp=3) => v != null ? v.toFixed(dp) : '—';
+  const dirColor = sign => sign > 0 ? '#34d399' : '#f87171';
+  const dirLabel = sign => sign > 0 ? 'Long' : 'Short';
+
+  let rows = '';
+  legDefs.forEach(({type, sign, mult}, i) => {
+    const Ki = k[i], Pi = p[i];
+    const lbl = cfg.lbl[i];
+    let bsPrice=null, legDelta=null, legGamma=null, legVega=null, legTheta=null, netVal=null;
+    if (hasMarket && type !== 'stock') {
+      const g = _spbLegGreeks(spot, Ki, T, sigma, r, type);
+      bsPrice  = g.price;
+      legDelta = sign * mult * g.delta;
+      legGamma = sign * mult * g.gamma;
+      legVega  = sign * mult * g.vega;
+      legTheta = sign * mult * g.theta;
+      netVal   = sign * mult * (g.price - Pi) * 100;
+    } else if (hasMarket && type === 'stock') {
+      legDelta = sign * mult;
+      netVal   = sign * mult * (spot - Ki) * 100;
+    }
+    const netColor = netVal == null ? 'var(--muted)' : netVal >= 0 ? '#34d399' : '#f87171';
+    rows += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:4px 8px;font-size:11px;font-weight:700;color:${dirColor(sign)}">${lbl.title}</td>
+      <td style="padding:4px 6px;font-size:11px;text-align:right">$${Ki}</td>
+      <td style="padding:4px 6px;font-size:11px;text-align:right;color:var(--muted)">${mult > 1 ? `×${mult} ` : ''}${dirLabel(sign)} ${type}</td>
+      <td style="padding:4px 6px;font-size:11px;text-align:right">$${Pi.toFixed(2)}</td>
+      <td style="padding:4px 6px;font-size:11px;text-align:right;color:#22d3ee">${bsPrice != null ? '$'+bsPrice.toFixed(2) : '—'}</td>
+      <td style="padding:4px 6px;font-size:11px;text-align:right;color:${netColor};font-weight:600">${netVal != null ? (netVal>=0?'+':'')+netVal.toFixed(0) : '—'}</td>
+      <td style="padding:4px 6px;font-family:monospace;font-size:10px;text-align:right">${legDelta!=null?fG(legDelta):'—'}</td>
+      <td style="padding:4px 6px;font-family:monospace;font-size:10px;text-align:right">${legGamma!=null?fG(legGamma,4):'—'}</td>
+      <td style="padding:4px 6px;font-family:monospace;font-size:10px;text-align:right">${legVega!=null?fG(legVega):'—'}</td>
+      <td style="padding:4px 6px;font-family:monospace;font-size:10px;text-align:right">${legTheta!=null?fG(legTheta):'—'}</td>
+    </tr>`;
+  });
+
+  return `
+  <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;overflow-x:auto">
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px">
+      Per-Leg Analysis${hasMarket ? ` · S=$${spot} · σ=${(sigma*100).toFixed(0)}% · DTE=${Math.round(T*365)}` : ' · enter Spot + IV% + DTE for live values'}
+    </div>
+    <table style="width:100%;border-collapse:collapse;min-width:640px">
+      <thead>
+        <tr style="background:var(--surface2)">
+          <th style="padding:4px 8px;font-size:9px;text-align:left;color:var(--muted);text-transform:uppercase">Leg</th>
+          <th style="padding:4px 6px;font-size:9px;text-align:right;color:var(--muted);text-transform:uppercase">Strike</th>
+          <th style="padding:4px 6px;font-size:9px;text-align:right;color:var(--muted);text-transform:uppercase">Dir / Type</th>
+          <th style="padding:4px 6px;font-size:9px;text-align:right;color:var(--muted);text-transform:uppercase">Entry</th>
+          <th style="padding:4px 6px;font-size:9px;text-align:right;color:#22d3ee;text-transform:uppercase">B-S Value</th>
+          <th style="padding:4px 6px;font-size:9px;text-align:right;color:var(--muted);text-transform:uppercase">Net $/contract</th>
+          <th style="padding:4px 6px;font-size:9px;text-align:right;color:#22c55e;text-transform:uppercase">Δ</th>
+          <th style="padding:4px 6px;font-size:9px;text-align:right;color:#a78bfa;text-transform:uppercase">Γ</th>
+          <th style="padding:4px 6px;font-size:9px;text-align:right;color:#38bdf8;text-transform:uppercase">ν/1%</th>
+          <th style="padding:4px 6px;font-size:9px;text-align:right;color:#fb923c;text-transform:uppercase">Θ/day</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
 function _spbStratChange() {
   const strat = document.getElementById('spb-strategy').value;
   const cfg = _SPB_STRATS[strat];
@@ -24990,7 +25161,11 @@ function _spbBuild() {
     <span><span style="color:#22d3ee">╌╌</span> Today (B-S theoretical)</span>
     <span><span style="color:#fbbf24">╌╌</span> 50% DTE (B-S)</span>
   </div>` : '';
-  el.innerHTML = svg + stats + legend;
+
+  const greeksPanel = _spbGreeksPanel(strat, k, T, sigma, r, S_min, S_max, spot);
+  const legTable    = _spbLegTable(strat, cfg, k, p, T, sigma, r, spot);
+
+  el.innerHTML = svg + stats + legend + greeksPanel + legTable;
 }
 
 async function _spbSolveIV() {
