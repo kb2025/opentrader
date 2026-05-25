@@ -604,6 +604,51 @@ services:
       redis:
         condition: service_healthy
 
+  # ── Market Data Gateway ──────────────────────────────────────────────────────
+
+  market-data:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    container_name: ot-market-data
+    restart: unless-stopped
+    command: python -m market_data.main
+    ports:
+      - "8090:8090"
+    environment:
+      REDIS_URL: redis://ot-redis:6379
+      SERVICE_NAME: market-data
+      MARKET_DATA_PORT: "8090"
+      DATA_PROVIDERS_CONFIG: /app/config/data_providers.toml
+      # MCP URLs
+      MASSIVE_MCP_URL: http://ot-mcp-massive:8000/mcp
+      TRADINGVIEW_MCP_URL: http://ot-mcp-tradingview:8000/mcp
+      UNUSUALWHALES_MCP_URL: http://ot-mcp-unusualwhales:8000/mcp
+      ALPACA_MCP_URL: http://ot-mcp-alpaca:8000/mcp
+      YAHOO_MCP_URL: http://ot-mcp-yahoo:8000/mcp
+      # API keys (read from .env)
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      UNUSUAL_WHALES_API_KEY: ${UNUSUAL_WHALES_API_KEY:-}
+      ALPACA_KEY_ID: ${ALPACA_KEY_ID:-}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
+      TRADIER_API_KEY: ${TRADIER_PRODUCTION_API_KEY:-${TRADIER_SANDBOX_API_KEY:-}}
+      TRADIER_MARKET_MODE: ${TRADIER_MARKET_MODE:-sandbox}
+      FRED_API_KEY: ${FRED_API_KEY:-}
+      ALPHA_VANTAGE_API_KEY: ${ALPHA_VANTAGE_API_KEY:-}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+    env_file: [.env]
+    volumes:
+      - ./logs/python:/app/logs
+      - ./config:/app/config:ro
+    networks: [trading-net]
+    depends_on:
+      redis:
+        condition: service_healthy
+      mcp-massive:
+        condition: service_started
+      mcp-tradingview:
+        condition: service_started
+
   # ── Chat Agent (Discord + Telegram) ─────────────────────────────────────────
 
   mcp-tradingview:
