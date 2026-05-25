@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.5] - 2026-05-25
+
+### Added
+- **`mcp/insights-mcp/`** — new MCP server exposing OpenTrader telemetry and codebase to Claude Desktop; listens on `localhost:8094`; 6 tools: `get_summary`, `get_events`, `get_event_detail`, `resolve_event`, `read_source_file`, `search_codebase`, `list_source_files`
+- **`compose.yml` `mcp-insights` service** — builds from `./mcp/insights-mcp`, mounts `./python` read-only at `/repo/python`, binds port `127.0.0.1:8094:8000` (localhost only, no external exposure)
+- **Claude Desktop configured** — `~/.config/Claude/claude_desktop_config.json` updated with `opentrader-insights` MCP server entry pointing to `http://localhost:8094/mcp`; connection is permanent (survives Claude Desktop restarts)
+
 ## [3.9.4] - 2026-05-25
 
 ### Added

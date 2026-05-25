@@ -363,6 +363,23 @@ services:
       EODHD_API_KEY: ${EODHD_API_KEY:-}
     networks: [trading-net]
 
+  mcp-insights:
+    build:
+      context: ./mcp/insights-mcp
+      dockerfile: Dockerfile
+    container_name: ot-mcp-insights
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8094:8000"
+    environment:
+      FASTMCP_HOST: "0.0.0.0"
+      FASTMCP_PORT: "8000"
+      DB_URL: ${DB_URL:-}
+      REPO_ROOT: "/repo/python"
+    volumes:
+      - ./python:/repo/python:ro
+    networks: [trading-net]
+
 
   scraper-etf-flows:
     build:
