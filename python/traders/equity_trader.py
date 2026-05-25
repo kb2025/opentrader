@@ -28,6 +28,7 @@ from shared.risk_controls import (
     get_risk_controls, check_slippage, check_liquidity,
     check_daily_loss,
 )
+from shared.telemetry import emit as _tel_emit, TelemetryEvent
 from scheduler.calendar import is_market_open, is_trading_day
 
 log = structlog.get_logger("trader-equity")
@@ -108,6 +109,11 @@ CONSUMER_NAME  = os.getenv("HOSTNAME", "trader-equity-0")
 TRADE_MODE_DEFAULT   = os.getenv("TRADE_MODE", "sandbox")
 SANDBOX_IGNORE_HOURS = os.getenv("SANDBOX_IGNORE_HOURS", "true").lower() == "true"
 GATEWAY_TIMEOUT      = int(os.getenv("BROKER_GATEWAY_TIMEOUT_SEC", "15"))
+
+# Split order — disabled by default (threshold=0); set SPLIT_ORDER_THRESHOLD_USD > 0 to enable
+SPLIT_THRESHOLD_USD = float(os.getenv("SPLIT_ORDER_THRESHOLD_USD", "0"))
+SPLIT_CHUNKS        = max(2, int(os.getenv("SPLIT_ORDER_CHUNKS", "3")))
+SPLIT_DELAY_MS      = float(os.getenv("SPLIT_ORDER_DELAY_MS", "500"))
 
 
 class EquityTrader(BaseAgent):
@@ -346,6 +352,22 @@ class EquityTrader(BaseAgent):
                  account=account_label, strategy=strategy_name,
                  mode=trade_mode)
 
+        # ── 3a. Analyze mode — log and return without touching the broker ──────
+        if trade_mode == "analyze":
+            await self._emit_analyze_order(
+                ticker, direction, qty, price, account_label, strategy_name, asset_cls
+            )
+            return
+
+        # ── 3b. Split order — place in sequential chunks when enabled ──────────
+        pos_usd = qty * price
+        if SPLIT_THRESHOLD_USD > 0 and pos_usd >= SPLIT_THRESHOLD_USD and qty >= SPLIT_CHUNKS:
+            await self._place_chunked_orders(
+                ticker, side, qty, price, account_label, strategy_name, asset_cls,
+                trade_mode, assignment,
+            )
+            return
+
         # ── 3. Send to broker gateway — route to the assigned account ─────────
         request_id = str(uuid.uuid4())
         cmd = {
@@ -465,6 +487,150 @@ class EquityTrader(BaseAgent):
             log.info("trader-equity.order_event",
                      ticker=ticker, account=acct, broker=broker,
                      strategy=strategy_name, evt=event_type, order_id=order_id)
+
+    async def _emit_analyze_order(
+        self,
+        ticker: str, direction: str, qty: int, price: float,
+        account_label: str, strategy_name: str, asset_cls: str,
+    ):
+        """Log a would-be order to telemetry + orders stream without touching the broker."""
+        asyncio.create_task(_tel_emit(TelemetryEvent(
+            agent      = "trader-equity",
+            event_name = "analyze_order",
+            severity   = "info",
+            payload    = {
+                "ticker":        ticker,
+                "direction":     direction,
+                "qty":           qty,
+                "price":         price,
+                "account_label": account_label,
+                "strategy":      strategy_name,
+                "asset_class":   asset_cls,
+                "position_usd":  round(qty * price, 2),
+            },
+        )))
+        await self.redis.xadd(
+            ORD_STREAM,
+            {
+                "event_type":    "fill",
+                "account_id":    account_label,
+                "broker":        "analyze",
+                "mode":          "analyze",
+                "ticker":        ticker,
+                "asset_class":   asset_cls,
+                "direction":     direction,
+                "qty":           str(qty),
+                "price":         str(price),
+                "order_id":      f"ANALYZE-{uuid.uuid4().hex[:8]}",
+                "strategy":      strategy_name,
+                "reject_reason": "",
+            },
+            maxlen=10_000,
+        )
+        log.info("trader-equity.analyze_mode",
+                 ticker=ticker, direction=direction, qty=qty,
+                 price=price, account=account_label, strategy=strategy_name)
+
+    async def _place_chunked_orders(
+        self,
+        ticker: str, side: str, qty: int, price: float,
+        account_label: str, strategy_name: str, asset_cls: str,
+        trade_mode: str, assignment: dict,
+    ):
+        """Place a large order in SPLIT_CHUNKS sequential smaller orders."""
+        base_qty  = qty // SPLIT_CHUNKS
+        remainder = qty % SPLIT_CHUNKS
+        direction = "long" if side == "buy" else "short"
+        log.info("trader-equity.split_order_start",
+                 ticker=ticker, total_qty=qty, chunks=SPLIT_CHUNKS, delay_ms=SPLIT_DELAY_MS)
+
+        for i in range(SPLIT_CHUNKS):
+            chunk_qty = base_qty + (1 if i < remainder else 0)
+            if chunk_qty < 1:
+                continue
+            request_id = str(uuid.uuid4())
+            cmd = {
+                "command":       "place_order",
+                "request_id":    request_id,
+                "asset_class":   "equity",
+                "account_label": account_label,
+                "symbol":        ticker,
+                "side":          side,
+                "quantity":      str(chunk_qty),
+                "order_type":    "market",
+                "duration":      "day",
+                "strategy_tag":  strategy_name,
+                "tag":           f"ot-{ticker}-{direction[:1]}-c{i+1}",
+                "issued_by":     "trader-equity",
+            }
+            await self.redis.xadd(STREAMS["broker_commands"], cmd, maxlen=10_000)
+            reply_raw = await self.redis.blpop(
+                f"broker:reply:{request_id}", timeout=GATEWAY_TIMEOUT
+            )
+            if reply_raw is None:
+                log.warning("trader-equity.split_chunk_timeout",
+                            ticker=ticker, chunk=i + 1, chunks=SPLIT_CHUNKS)
+                break
+            _, reply_json = reply_raw
+            try:
+                results = json.loads(reply_json)
+            except Exception:
+                log.error("trader-equity.split_chunk_parse_error", chunk=i + 1)
+                break
+            if not isinstance(results, list):
+                results = [results]
+            for r in results:
+                acct   = r.get("account_label", account_label)
+                broker = r.get("broker", assignment.get("broker", ""))
+                mode   = r.get("mode", trade_mode)
+                if r.get("status") == "error":
+                    log.warning("trader-equity.split_chunk_rejected",
+                                chunk=i + 1, error=r.get("error"))
+                    continue
+                data       = r.get("data", {})
+                order_id   = str(data.get("id", data.get("orderId", "")))
+                status     = data.get("status", "ok")
+                event_type = "fill" if status in (
+                    "ok", "filled", "open", "accepted", "pending_new", "new"
+                ) else "reject"
+                if event_type == "fill":
+                    self._positions_today.add(ticker)
+                payload = OrderEventPayload(
+                    event_type  = event_type,
+                    account_id  = acct,
+                    broker      = broker,
+                    mode        = mode,
+                    ticker      = ticker,
+                    asset_class = asset_cls,
+                    direction   = direction,
+                    qty         = float(chunk_qty),
+                    price       = price or None,
+                    order_id    = order_id,
+                    strategy    = strategy_name,
+                )
+                await self.redis.xadd(
+                    ORD_STREAM,
+                    {
+                        "event_type":    payload.event_type,
+                        "account_id":    payload.account_id,
+                        "broker":        payload.broker,
+                        "mode":          payload.mode,
+                        "ticker":        payload.ticker,
+                        "asset_class":   payload.asset_class,
+                        "direction":     payload.direction,
+                        "qty":           str(payload.qty),
+                        "price":         str(payload.price or ""),
+                        "order_id":      payload.order_id,
+                        "strategy":      payload.strategy,
+                        "reject_reason": "",
+                    },
+                    maxlen=10_000,
+                )
+                log.info("trader-equity.split_chunk_placed",
+                         chunk=i + 1, chunks=SPLIT_CHUNKS, qty=chunk_qty,
+                         ticker=ticker, order_id=order_id, event=event_type)
+            if i < SPLIT_CHUNKS - 1:
+                await asyncio.sleep(SPLIT_DELAY_MS / 1000.0)
 
     async def _get_quote(self, ticker: str, trade_mode: str) -> dict:
         """Fetch full quote (last, bid, ask) via broker gateway. Returns {} on failure."""

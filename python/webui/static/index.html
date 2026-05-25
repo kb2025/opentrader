@@ -7206,7 +7206,7 @@ function renderTradingDashboard(data) {
           pnl:     `<td class="mono" style="color:${parseFloat(t.pnl||0)>=0?'var(--green)':'var(--red)'}">${t.pnl ? (parseFloat(t.pnl)>=0?'+':'')+parseFloat(t.pnl).toFixed(2) : '—'}</td>`,
           broker:  `<td style="font-size:12px">${brokerCell}</td>`,
           account: `<td>${acctCell}</td>`,
-          mode:    `<td>${t.mode ? `<span class="chip ${t.mode==='live'?'chip-green':'chip-amber'}">${t.mode}</span>` : '—'}</td>`,
+          mode:    `<td>${t.mode ? `<span class="chip ${t.mode==='live'?'chip-green':t.mode==='analyze'?'chip-purple':'chip-amber'}">${t.mode}</span>` : '—'}</td>`,
           status:  `<td>${statusChip(t.event_type)}</td>`,
         };
         return `<tr>${actOrder.map(k => cells[k] || '<td>—</td>').join('')}</tr>`;
@@ -8710,7 +8710,7 @@ async function loadTradesPage() {
       price:    `<td class="mono">${t.price ? '$' + parseFloat(t.price).toFixed(2) : '—'}</td>`,
       account:  `<td style="font-size:11px">${dispName}</td>`,
       acct_num: `<td class="mono" style="font-size:11px;color:var(--muted)">${acctNum}</td>`,
-      mode:     `<td>${t.mode ? `<span class="chip ${t.mode==='live'?'chip-green':'chip-amber'}">${t.mode}</span>` : '—'}</td>`,
+      mode:     `<td>${t.mode ? `<span class="chip ${t.mode==='live'?'chip-green':t.mode==='analyze'?'chip-purple':'chip-amber'}">${t.mode}</span>` : '—'}</td>`,
       status:   `<td>${statusCell}</td>`,
     };
     const order = _colOrder('trades_hist_col', _TRADE_HIST_DEFAULTS);

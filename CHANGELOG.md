@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.7] - 2026-05-25
+
+### Added
+- **Split Order** — equity trader splits large orders into sequential chunks when position size exceeds `SPLIT_ORDER_THRESHOLD_USD` (default disabled); configurable via `SPLIT_ORDER_CHUNKS` (default 3) and `SPLIT_ORDER_DELAY_MS` (default 500ms) env vars; each chunk emits its own fill event to the orders stream
+- **Analyzer Mode** — both equity and options traders short-circuit order placement when `TRADE_MODE=analyze`; would-be orders are logged to telemetry (`analyze_order` event) and published to the orders stream with `mode=analyze` and `broker=analyze` so they appear in the Trading Log without touching any broker
+- **Analyze chip** — Trading Log mode column now renders `analyze` orders with a purple chip (distinct from live green / sandbox amber) in both the active-trades and trade-history views
+
 ## [3.9.6] - 2026-05-25
 
 ### Added

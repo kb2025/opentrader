@@ -29,6 +29,7 @@ from shared.assignments import load_active_assignments
 from shared.exclusions import is_excluded
 from shared.risk_controls import get_risk_controls, check_slippage, check_liquidity
 from shared.market_tone import get_market_tone, get_tone_thresholds
+from shared.telemetry import emit as _tel_emit, TelemetryEvent
 from scheduler.calendar import is_market_open, is_trading_day
 
 log = structlog.get_logger("trader-options")
@@ -323,6 +324,43 @@ class OptionsTrader(BaseAgent):
         if not contract_symbol:
             log.warning("trader-options.no_contract",
                         ticker=ticker, opt_type=opt_type, strike=target_strike)
+            return
+
+        # ── Analyze mode — log without touching the broker ────────────────────
+        if trade_mode == "analyze":
+            asyncio.create_task(_tel_emit(TelemetryEvent(
+                agent="trader-options", event_name="analyze_order", severity="info",
+                payload={
+                    "ticker":          ticker,
+                    "contract":        contract_symbol,
+                    "option_type":     opt_type,
+                    "strike":          target_strike,
+                    "contracts":       MAX_CONTRACTS,
+                    "limit_price":     limit_price,
+                    "price_tier":      price_tier,
+                    "account_label":   account_label,
+                    "strategy":        strategy_name,
+                    "position_usd":    round((limit_price or 0) * MAX_CONTRACTS * 100, 2),
+                },
+            )))
+            await self.redis.xadd(ORD_STREAM, {
+                "event_type":  "fill",
+                "account_id":  account_label,
+                "broker":      "analyze",
+                "mode":        "analyze",
+                "ticker":      contract_symbol,
+                "asset_class": "options",
+                "direction":   direction,
+                "qty":         str(MAX_CONTRACTS),
+                "price":       str(limit_price or 0),
+                "order_id":    f"ANALYZE-{uuid.uuid4().hex[:8]}",
+                "strategy":    strategy_name,
+                "reject_reason": "",
+            }, maxlen=10_000)
+            log.info("trader-options.analyze_mode",
+                     ticker=ticker, contract=contract_symbol,
+                     opt_type=opt_type, contracts=MAX_CONTRACTS,
+                     limit_price=limit_price, account=account_label)
             return
 
         request_id = str(uuid.uuid4())
