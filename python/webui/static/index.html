@@ -384,7 +384,7 @@ select option{background:var(--surface2)}
         </div>
         <div style="padding:4px 10px 2px 28px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)">Sector Insights</div>
         <div class="nav-subitem" draggable="true" onclick="navigate('page-resources-groups')" data-page="page-resources-groups">
-          <span class="nav-dot" style="background:#34d399;width:6px;height:6px"></span>Market Groups
+          <span class="nav-dot" style="background:#34d399;width:6px;height:6px"></span>Sector Groups
         </div>
         <div class="nav-subitem" draggable="true" onclick="navigate('page-equities-sector-leaders')" data-page="page-equities-sector-leaders">
           <span class="nav-dot" style="background:#f59e0b;width:6px;height:6px"></span>Sector Leaders
@@ -4971,7 +4971,7 @@ select option{background:var(--surface2)}
     <!-- ── page-resources-groups ── -->
     <div class="page" id="page-resources-groups">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-        <h2 style="font-size:18px;font-weight:700;color:var(--fg);margin:0">Market Groups</h2>
+        <h2 style="font-size:18px;font-weight:700;color:var(--fg);margin:0">Sector Groups</h2>
         <div style="display:flex;gap:6px;align-items:center">
           <div id="mg-tabs" style="display:flex;gap:4px">
             <button class="mg-tab active" onclick="_mgSetTab('sectors')">Sectors</button>
@@ -5291,7 +5291,7 @@ const PAGE_TITLES = {
   'page-analytics':         'Portfolio Analytics',
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
-  'page-resources-groups':     'Market Groups',
+  'page-resources-groups':     'Sector Groups',
   'page-macro-hub':            'Macro Hub',
 };
 
@@ -13014,7 +13014,7 @@ function _slRender(data) {
   grid.style.display = 'grid';
 }
 
-// ── Market Groups ─────────────────────────────────────────────────────────────
+// ── Sector Groups ─────────────────────────────────────────────────────────────
 let _mgTab     = 'sectors';
 let _mgData    = [];
 let _mgSortCol = 'perf_1d';

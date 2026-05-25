@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.3] - 2026-05-25
+
+### Changed
+- **Navigation** — renamed "Market Groups" to "Sector Groups" (nav label, page heading, page title)
+
 ## [4.0.2] - 2026-05-25
 
 ### Changed
