@@ -16,7 +16,7 @@ providers = ["alpaca", "massive"]
 ttl = 300
 
 [fundamentals]
-providers = ["yahoo", "alpha_vantage", "finnhub", "massive"]
+providers = ["yahoo", "alpha_vantage", "finnhub", "massive", "eodhd"]
 ttl = 86400
 
 [analyst_consensus]
@@ -24,15 +24,15 @@ providers = ["yahoo"]
 ttl = 14400
 
 [earnings]
-providers = ["yahoo", "finnhub", "massive"]
+providers = ["yahoo", "finnhub", "massive", "eodhd"]
 ttl = 86400
 
 [dividends]
-providers = ["yahoo", "massive"]
+providers = ["yahoo", "massive", "eodhd"]
 ttl = 86400
 
 [news]
-providers = ["finnhub", "alpha_vantage"]
+providers = ["finnhub", "alpha_vantage", "eodhd"]
 ttl = 3600
 
 [sentiment_news]
@@ -60,7 +60,7 @@ providers = ["fred"]
 ttl = 86400
 
 [breadth]
-providers = []
+providers = ["eoddata", "eodhd"]
 ttl = 900
 
 [classification]
@@ -72,7 +72,7 @@ providers = ["massive", "unusualwhales"]
 ttl = 86400
 
 [insider_transactions]
-providers = ["finnhub"]
+providers = ["finnhub", "eodhd"]
 ttl = 86400
 
 [avg_volume]

@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.22] - 2026-05-25
+
+### Added
+- **EODHD gateway connector** (`market_data/connectors/eodhd.py`): capabilities news, fundamentals, dividends, earnings, insider_transactions, breadth; added as fallback in routing table for each
+- **EODData gateway connector** (`market_data/connectors/eoddata.py`): breadth indicator capability (MMFI, MMTH, HIGN, LOWN via INDEX quotes); wired as primary breadth provider (previously `[breadth]` had no providers)
+- Both appear in the Service Connectors diagram once the market-data container is rebuilt
+
 ## [4.0.21] - 2026-05-25
 
 ### Fixed
