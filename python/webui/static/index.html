@@ -5734,12 +5734,13 @@ function renderConnectorFlow(agentsArr) {
   const agLookup = {};
   if (agentsArr) agentsArr.forEach(a => { agLookup[a.name] = a; });
 
-  // build provider list from health data (preserve order, configured first)
+  // only show providers when health data is available
   const rawHealth = _connectorHealth || {};
-  const providerKeys = Object.keys(CONN_PROVIDER_LABELS).filter(k => rawHealth[k] !== undefined);
-  // fall back to hardcoded order if health not loaded yet
-  const providers = (providerKeys.length ? providerKeys : Object.keys(CONN_PROVIDER_LABELS))
-    .map(k => ({ id: k, label: CONN_PROVIDER_LABELS[k], info: rawHealth[k] || null }));
+  const healthLoaded = Object.keys(rawHealth).length > 0;
+  const providerKeys = healthLoaded
+    ? Object.keys(CONN_PROVIDER_LABELS).filter(k => rawHealth[k] !== undefined)
+    : Object.keys(CONN_PROVIDER_LABELS);
+  const providers = providerKeys.map(k => ({ id: k, label: CONN_PROVIDER_LABELS[k], info: rawHealth[k] || null }));
 
   // ── Layout ────────────────────────────────────────────────────────────────
   const ITEM_H = 26, GAP = 10, PAD_T = 18, PAD_B = 18;
@@ -5754,16 +5755,19 @@ function renderConnectorFlow(agentsArr) {
   const rightCenters = Array.from({length: nRight}, (_, i) => PAD_T + 13 + i * (ITEM_H + GAP));
   const lMidY = leftCenters[Math.floor((nLeft  - 1) / 2)];
   const rMidY = rightCenters[Math.floor((nRight - 1) / 2)];
-  const gwCY  = (lMidY + rMidY) / 2;  // gateway vertical centre
+  const gwCY  = (lMidY + rMidY) / 2;
 
+  // x positions — provider chip wider to fit dot+text
   const AGT_X = 8,   AGT_W = 122;
   const L_BUS = 148, GW_X  = 238, GW_W = 144, GW_H = 50;
-  const R_BUS = 500, PRV_X = 514, PRV_W = 128;
-  const DOT_X = PRV_X + PRV_W + 10;
+  const R_BUS = 492, PRV_X = 506, PRV_W = 140;
+  // dot is INSIDE the chip at left edge: cx = PRV_X + 11
+  const DOT_IN_X = PRV_X + 11;
+  const TXT_X    = PRV_X + 22;  // text starts after dot
 
   // ── Defs ──────────────────────────────────────────────────────────────────
   const defs = document.createElementNS(NS, 'defs');
-  ['teal:#14b8a6','gray:#6b7394'].forEach(s => {
+  ['teal:#14b8a6'].forEach(s => {
     const [id, color] = s.split(':');
     const m = document.createElementNS(NS, 'marker');
     m.setAttribute('id', `cf-${id}`); m.setAttribute('markerWidth','8');
@@ -5781,28 +5785,41 @@ function renderConnectorFlow(agentsArr) {
     if (text !== undefined) e.textContent = text;
     return e;
   }
-  function hColor(h) { return h==='healthy'?'#22c55e':h==='degraded'?'#f59e0b':h==='dead'?'#ef4444':'#3d4566'; }
-  function pColor(info) {
-    if (!info || !info.configured) return '#3d4566';
+  // agent health → border colour
+  function hColor(h) {
+    return h === 'healthy' ? '#22c55e' : h === 'degraded' ? '#f59e0b' : h === 'dead' ? '#ef4444' : '#3d4566';
+  }
+  // connector health → status dot colour (inside chip)
+  function pDotColor(info) {
+    if (!info) return '#3d4566';            // loading / unknown
+    if (!info.configured) return '#6b7394'; // not configured
     return info.state === 'ok' ? '#22c55e' : info.state === 'half_open' ? '#f59e0b' : '#ef4444';
   }
+  // connector health → chip border colour
+  function pBorderColor(info) {
+    if (!info || !info.configured) return '#2a3050';
+    return info.state === 'ok' ? '#1e3a2a' : info.state === 'half_open' ? '#3a2e14' : '#3a1a1a';
+  }
 
-  // ── Consumer boxes + horizontal stems to left bus ─────────────────────────
+  // ── Consumer boxes + stems ────────────────────────────────────────────────
   CONN_CONSUMERS.forEach((c, i) => {
     const cy = leftCenters[i];
     const ag = agLookup[c.id];
     const stroke = hColor(ag ? ag.health : 'unknown');
-    svg.appendChild(el('rect',  { x:AGT_X, y:cy-13, width:AGT_W, height:ITEM_H, rx:6, fill:'#1a1e2b', stroke, 'stroke-width':1.5 }));
-    svg.appendChild(el('text',  { x:AGT_X+AGT_W/2, y:cy+4, fill:'#c8cde0', 'font-size':10.5, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, c.label));
-    svg.appendChild(el('line',  { x1:AGT_X+AGT_W, y1:cy, x2:L_BUS, y2:cy, stroke:'#14b8a6', 'stroke-width':1.2, opacity:0.55 }));
+    svg.appendChild(el('rect', { x:AGT_X, y:cy-13, width:AGT_W, height:ITEM_H, rx:6, fill:'#1a1e2b', stroke, 'stroke-width':1.5 }));
+    // health dot inside chip
+    const dotC = hColor(ag ? ag.health : 'unknown');
+    svg.appendChild(el('circle', { cx:AGT_X+10, cy, r:4, fill:dotC }));
+    svg.appendChild(el('text',   { x:AGT_X+20, y:cy+4, fill:'#c8cde0', 'font-size':10.5, 'text-anchor':'start', 'font-family':'system-ui,sans-serif' }, c.label));
+    svg.appendChild(el('line',   { x1:AGT_X+AGT_W, y1:cy, x2:L_BUS, y2:cy, stroke:'#14b8a6', 'stroke-width':1.2, opacity:0.5 }));
   });
 
   // ── Left vertical bus ─────────────────────────────────────────────────────
-  svg.appendChild(el('line', { x1:L_BUS, y1:leftCenters[0], x2:L_BUS, y2:leftCenters[nLeft-1], stroke:'#14b8a6', 'stroke-width':1.5, opacity:0.55 }));
+  svg.appendChild(el('line', { x1:L_BUS, y1:leftCenters[0], x2:L_BUS, y2:leftCenters[nLeft-1], stroke:'#14b8a6', 'stroke-width':1.5, opacity:0.5 }));
 
-  // ── Arrow: bus → gateway ──────────────────────────────────────────────────
+  // ── Arrow bus → gateway ───────────────────────────────────────────────────
   svg.appendChild(el('line', { x1:L_BUS, y1:lMidY, x2:GW_X-2, y2:gwCY, stroke:'#14b8a6', 'stroke-width':2, 'marker-end':'url(#cf-teal)' }));
-  svg.appendChild(el('text', { x:(L_BUS+GW_X)/2, y:Math.min(lMidY,gwCY)-5, fill:'#4b5577', 'font-size':9, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, 'data request'));
+  svg.appendChild(el('text', { x:(L_BUS+GW_X)/2, y:Math.min(lMidY,gwCY)-5, fill:'#4b5577', 'font-size':9, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, 'request'));
 
   // ── Gateway box ───────────────────────────────────────────────────────────
   const gwAg = agLookup['market-data'];
@@ -5811,59 +5828,75 @@ function renderConnectorFlow(agentsArr) {
   svg.appendChild(el('text', { x:GW_X+GW_W/2, y:gwCY-6, fill:'#e2e8f0', 'font-size':11.5, 'font-weight':600, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, 'Market Data'));
   svg.appendChild(el('text', { x:GW_X+GW_W/2, y:gwCY+9, fill:'#14b8a6', 'font-size':10, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, 'Gateway'));
 
-  // ── Arrow: gateway → right bus ────────────────────────────────────────────
+  // ── Arrow gateway → right bus ─────────────────────────────────────────────
   svg.appendChild(el('line', { x1:GW_X+GW_W, y1:gwCY, x2:R_BUS-2, y2:rMidY, stroke:'#14b8a6', 'stroke-width':2, 'marker-end':'url(#cf-teal)' }));
   svg.appendChild(el('text', { x:(GW_X+GW_W+R_BUS)/2, y:Math.min(gwCY,rMidY)-5, fill:'#4b5577', 'font-size':9, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, 'data'));
 
   // ── Right vertical bus ────────────────────────────────────────────────────
-  svg.appendChild(el('line', { x1:R_BUS, y1:rightCenters[0], x2:R_BUS, y2:rightCenters[nRight-1], stroke:'#14b8a6', 'stroke-width':1.5, opacity:0.55 }));
+  svg.appendChild(el('line', { x1:R_BUS, y1:rightCenters[0], x2:R_BUS, y2:rightCenters[nRight-1], stroke:'#14b8a6', 'stroke-width':1.5, opacity:0.5 }));
 
   // ── Provider boxes + stems ────────────────────────────────────────────────
   providers.forEach((p, i) => {
     const cy = rightCenters[i];
-    const stroke = pColor(p.info);
-    const dotFill = pColor(p.info);
-    svg.appendChild(el('line', { x1:R_BUS, y1:cy, x2:PRV_X, y2:cy, stroke:'#14b8a6', 'stroke-width':1.2, opacity:0.55 }));
-    svg.appendChild(el('rect', { x:PRV_X, y:cy-13, width:PRV_W, height:ITEM_H, rx:6, fill:'#1a1e2b', stroke, 'stroke-width':1.5 }));
-    svg.appendChild(el('text', { x:PRV_X+PRV_W/2, y:cy+4, fill:'#c8cde0', 'font-size':10.5, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, p.label));
-    svg.appendChild(el('circle', { cx:DOT_X, cy, r:5, fill:dotFill }));
-    // capabilities tooltip (render as SVG title)
-    if (p.info && p.info.capabilities && p.info.capabilities.length) {
-      const rect = svg.lastElementChild.previousElementSibling; // the rect
+    const borderCol = pBorderColor(p.info);
+    const dotCol    = pDotColor(p.info);
+    const caps      = p.info && p.info.capabilities ? p.info.capabilities : [];
+    svg.appendChild(el('line', { x1:R_BUS, y1:cy, x2:PRV_X, y2:cy, stroke:'#14b8a6', 'stroke-width':1.2, opacity:0.5 }));
+    // chip background
+    const rect = el('rect', { x:PRV_X, y:cy-13, width:PRV_W, height:ITEM_H, rx:6, fill:'#1a1e2b', stroke:borderCol, 'stroke-width':1.5 });
+    if (caps.length) {
       const t = document.createElementNS(NS, 'title');
-      t.textContent = p.info.capabilities.join(', ');
+      t.textContent = caps.join(', ');
       rect.appendChild(t);
     }
+    svg.appendChild(rect);
+    // status dot inside chip
+    svg.appendChild(el('circle', { cx:DOT_IN_X, cy, r:4, fill:dotCol }));
+    // label
+    svg.appendChild(el('text', { x:TXT_X, y:cy+4, fill:'#c8cde0', 'font-size':10.5, 'text-anchor':'start', 'font-family':'system-ui,sans-serif' }, p.label));
+    // data types count badge (if loaded)
+    if (caps.length) {
+      const bx = PRV_X + PRV_W - 22;
+      svg.appendChild(el('rect',  { x:bx, y:cy-8, width:20, height:14, rx:3, fill:'#1e293b' }));
+      svg.appendChild(el('text',  { x:bx+10, y:cy+4, fill:'#6b7394', 'font-size':9, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, caps.length));
+    }
+  });
+
+  // ── Legend ────────────────────────────────────────────────────────────────
+  const legendY = SVG_H - 6;
+  const items = [['#22c55e','healthy / ok'], ['#f59e0b','degraded'], ['#ef4444','dead / open'], ['#6b7394','not configured']];
+  let lx = PRV_X;
+  items.forEach(([color, label]) => {
+    svg.appendChild(el('circle', { cx:lx+5, cy:legendY, r:4, fill:color }));
+    svg.appendChild(el('text',   { x:lx+13, y:legendY+4, fill:'#4b5577', 'font-size':9, 'font-family':'system-ui,sans-serif' }, label));
+    lx += label.length * 5.2 + 18;
   });
 
   // ── Direct connections section ────────────────────────────────────────────
   const directEl = document.getElementById('conn-direct-flows');
   if (directEl) {
-    const chip = (label, color='var(--surface2)') =>
-      `<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:${color};font-size:10.5px;color:var(--text);border:1px solid var(--border)">${label}</span>`;
-    const arrow = (dir='→') => `<span style="color:var(--muted);font-size:13px;padding:0 2px">${dir}</span>`;
+    const chip = (label, bg='#1e293b') =>
+      `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:4px;background:${bg};font-size:10.5px;color:var(--text);border:1px solid var(--border)">${label}</span>`;
+    const arrow = (dir='→') => `<span style="color:var(--muted);font-size:13px">${dir}</span>`;
     directEl.innerHTML = `
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        ${chip('Chat Agent','#1a1e2b')}
-        ${arrow()}
-        ${chip('MCP Massive')} ${chip('MCP TradingView')} ${chip('MCP Unusual Whales')} ${chip('MCP Alpaca')}
-        <span style="font-size:10px;color:var(--muted)">(direct LLM tool calls)</span>
+        ${chip('Chat Agent')} ${arrow()} ${chip('MCP Massive')} ${chip('MCP TradingView')} ${chip('MCP Unusual Whales')} ${chip('MCP Alpaca')}
+        <span style="font-size:10px;color:var(--muted)">— direct LLM tool calls</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        ${chip('Broker Gateway','#1a1e2b')}
-        ${arrow('←')}
-        ${chip('MCP Alpaca')}
-        <span style="font-size:10px;color:var(--muted)">(trade execution)</span>
+        ${chip('MCP Alpaca')} ${arrow('→')} ${chip('Broker Gateway')}
+        <span style="font-size:10px;color:var(--muted)">— trade execution</span>
       </div>`;
   }
 
   // badge
   const badge = document.getElementById('conn-gw-badge');
-  if (badge && _connectorHealth) {
-    const vals = Object.values(_connectorHealth);
+  if (badge && healthLoaded) {
+    const vals = Object.values(rawHealth);
+    const cfgd = vals.filter(v => v.configured).length;
     const ok   = vals.filter(v => v.configured && v.state === 'ok').length;
-    badge.textContent = `${ok}/${vals.filter(v=>v.configured).length} connectors online`;
-    badge.style.color = ok < vals.filter(v=>v.configured).length ? 'var(--amber)' : 'var(--green)';
+    badge.textContent = `${ok}/${cfgd} connectors online`;
+    badge.style.color = ok < cfgd ? 'var(--amber)' : 'var(--green)';
   }
 }
 

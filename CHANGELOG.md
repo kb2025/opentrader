@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.18] - 2026-05-25
+
+### Fixed
+- **Service Connectors — grey providers and unexplained dots**: Redesigned provider chips to place the status dot *inside* the chip (left-aligned) instead of as a separate orphan circle; removed external circles entirely; provider border now uses subtle tinted backgrounds (dark green/amber/red) rather than bright strokes to avoid false alarm visuals; added a bottom legend explaining dot colours (healthy / degraded / dead / not configured); agent consumer chips now also show an internal dot matching their health colour; data-type count badge shows number of capabilities on each provider chip (hover for full list)
+
 ## [4.0.17] - 2026-05-25
 
 ### Added
