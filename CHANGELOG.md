@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.2] - 2026-05-25
+
+### Changed
+- **Navigation** — renamed "Sector Insight" to "Market Insights"; moved Macro Hub inside Market Insights; added "Sector Insights" sub-label with Market Groups and Sector Leaders underneath it
+- **Service Connectors** — FRED, EODHD, and Alpha Vantage now display their avatar images instead of letter placeholders
+
 ## [4.0.1] - 2026-05-25
 
 ### Fixed

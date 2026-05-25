@@ -359,10 +359,6 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#60a5fa"></span>
         Backtester
       </div>
-      <div class="nav-item" draggable="true" onclick="navigate('page-macro-hub')" data-page="page-macro-hub">
-        <span class="nav-dot" style="background:#f59e0b"></span>
-        Macro Hub
-      </div>
       <div class="nav-item" draggable="true" onclick="navigate('page-shadow-account')" data-page="page-shadow-account">
         <span class="nav-dot" style="background:#a78bfa"></span>
         Trading Hindsights
@@ -373,21 +369,25 @@ select option{background:var(--surface2)}
       </div>
       <div class="nav-parent" id="nav-parent-sectorinsight" onclick="_siNavToggle()">
         <span class="nav-dot" style="background:#a78bfa"></span>
-        Sector Insight
+        Market Insights
         <span id="nav-si-chevron" style="margin-left:auto;font-size:9px;transition:transform .2s">▸</span>
       </div>
       <div class="nav-children" id="nav-si-children">
-        <div class="nav-subitem" draggable="true" onclick="navigate('page-resources-groups')" data-page="page-resources-groups">
-          <span class="nav-dot" style="background:#34d399;width:6px;height:6px"></span>Market Groups
-        </div>
-        <div class="nav-subitem" draggable="true" onclick="navigate('page-equities-sector-leaders')" data-page="page-equities-sector-leaders">
-          <span class="nav-dot" style="background:#f59e0b;width:6px;height:6px"></span>Sector Leaders
+        <div class="nav-subitem" draggable="true" onclick="navigate('page-macro-hub')" data-page="page-macro-hub">
+          <span class="nav-dot" style="background:#f59e0b;width:6px;height:6px"></span>Macro Hub
         </div>
         <div class="nav-subitem" draggable="true" onclick="navigate('page-si-market-health')" data-page="page-si-market-health">
           <span class="nav-dot" style="background:#f43f5e;width:6px;height:6px"></span>Market Health
         </div>
         <div class="nav-subitem" draggable="true" onclick="navigate('page-si-fred')" data-page="page-si-fred">
           <span class="nav-dot" style="background:#60a5fa;width:6px;height:6px"></span>FRED Macro
+        </div>
+        <div style="padding:4px 10px 2px 28px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)">Sector Insights</div>
+        <div class="nav-subitem" draggable="true" onclick="navigate('page-resources-groups')" data-page="page-resources-groups">
+          <span class="nav-dot" style="background:#34d399;width:6px;height:6px"></span>Market Groups
+        </div>
+        <div class="nav-subitem" draggable="true" onclick="navigate('page-equities-sector-leaders')" data-page="page-equities-sector-leaders">
+          <span class="nav-dot" style="background:#f59e0b;width:6px;height:6px"></span>Sector Leaders
         </div>
         <div style="padding:4px 10px 2px 28px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--dim)">Sector Map</div>
         <div class="nav-subitem" id="nav-si-sectormap" data-sm-index="sp500" onclick="_smNavSelect('sp500')">
