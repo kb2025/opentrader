@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.16] - 2026-05-25
+
+### Fixed
+- **mcp-yahoo dead**: Added `mcp-yahoo` service to `compose.yml` using `mcp/yahoo-finance-mcp/Dockerfile.http`; container `ot-mcp-yahoo` now runs on the `trading-net` network at port 8000
+
 ## [4.0.15] - 2026-05-25
 
 ### Fixed

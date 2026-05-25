@@ -351,6 +351,17 @@ services:
       MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
     networks: [trading-net]
 
+  mcp-yahoo:
+    build:
+      context: ./mcp/yahoo-finance-mcp
+      dockerfile: Dockerfile.http
+    container_name: ot-mcp-yahoo
+    restart: unless-stopped
+    environment:
+      FASTMCP_HOST: "0.0.0.0"
+      FASTMCP_PORT: "8000"
+    networks: [trading-net]
+
   mcp-eodhd:
     build:
       context: ./mcp/eodhd-mcp
