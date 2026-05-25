@@ -473,3 +473,50 @@ async def job_update_trending_symbols(redis: aioredis.Redis):
                     log.info("scheduler.trending_symbols_ok", count=body.get("count", 0))
     except Exception as e:
         log.error("scheduler.trending_symbols_error", error=str(e))
+
+
+# ── Market Data Gateway jobs ──────────────────────────────────────────────────
+
+@tracked
+async def job_market_data_warmup(redis: aioredis.Redis):
+    """Warm market data cache for all active tickers — 9:00 AM ET pre-open."""
+    import os as _os, aiohttp as _aiohttp
+    from shared.assignments import load_active_assignments
+    url = _os.getenv("MARKET_DATA_URL", "http://ot-market-data:8090")
+    try:
+        assignments = load_active_assignments("equity") + load_active_assignments("etf")
+        tickers = list({a["ticker"] for a in assignments})
+        async with _aiohttp.ClientSession() as s:
+            await s.post(f"{url}/warm", json={"tickers": tickers},
+                         timeout=_aiohttp.ClientTimeout(total=10))
+        log.info("scheduler.market_data_warmup", count=len(tickers))
+    except Exception as e:
+        log.error("scheduler.market_data_warmup_error", error=str(e))
+
+
+@tracked
+async def job_market_data_eod_refresh(redis: aioredis.Redis):
+    """Refresh fundamentals/earnings/dividends cache after market close — 4:45 PM ET."""
+    import os as _os, aiohttp as _aiohttp
+    url = _os.getenv("MARKET_DATA_URL", "http://ot-market-data:8090")
+    try:
+        async with _aiohttp.ClientSession() as s:
+            await s.post(f"{url}/probe", timeout=_aiohttp.ClientTimeout(total=30))
+        log.info("scheduler.market_data_eod_refresh")
+    except Exception as e:
+        log.error("scheduler.market_data_eod_refresh_error", error=str(e))
+
+
+@tracked
+async def job_market_data_probe(redis: aioredis.Redis):
+    """Re-probe all connectors to refresh capability map — every 30m."""
+    import os as _os, aiohttp as _aiohttp
+    url = _os.getenv("MARKET_DATA_URL", "http://ot-market-data:8090")
+    try:
+        async with _aiohttp.ClientSession() as s:
+            resp = await s.post(f"{url}/probe", timeout=_aiohttp.ClientTimeout(total=60))
+            if resp.status == 200:
+                body = await resp.json(content_type=None)
+                log.info("scheduler.market_data_probe", changes=len(body.get("changes", {})))
+    except Exception as e:
+        log.error("scheduler.market_data_probe_error", error=str(e))

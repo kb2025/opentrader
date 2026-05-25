@@ -14,7 +14,7 @@ import structlog
 
 from shared.base_agent import BaseAgent
 from shared.redis_client import STREAMS, GROUPS, REDIS_URL, ensure_consumer_group
-from shared.mcp_client import get_uw_ticker_flow, get_uw_darkpool, get_analyst_consensus
+from shared.data_client import DataClient
 from .combiner import build_intelligence, fetch_massive_fundamentals
 
 log = structlog.get_logger("aggregator")
@@ -24,11 +24,8 @@ SCANNER_STREAM = STREAMS["scanner"]
 AGG_GROUP      = GROUPS["aggregator"]
 CONSUMER_NAME  = os.getenv("HOSTNAME", "aggregator-0")
 
-INTEL_TTL         = int(os.getenv("INTEL_TTL_SEC",         "7200"))  # 2 hours
-SENTIMENT_TTL     = int(os.getenv("SENTIMENT_TTL_SEC",     "7200"))
-MASSIVE_CACHE_TTL = int(os.getenv("MASSIVE_CACHE_TTL_SEC", "3600"))  # 1 hour
-UW_CACHE_TTL      = int(os.getenv("UW_CACHE_TTL_SEC",      "1800"))  # 30 min — flow is time-sensitive
-ANALYST_CACHE_TTL = int(os.getenv("ANALYST_CACHE_TTL_SEC", "14400")) # 4 hours — consensus moves slowly
+INTEL_TTL     = int(os.getenv("INTEL_TTL_SEC",     "7200"))  # 2 hours
+SENTIMENT_TTL = int(os.getenv("SENTIMENT_TTL_SEC", "7200"))
 
 
 class AggregatorAgent(BaseAgent):
@@ -207,64 +204,16 @@ class AggregatorAgent(BaseAgent):
                  summary=intel.summary)
 
     async def _get_massive_cached(self, ticker: str) -> dict:
-        """Return cached Massive fundamentals, or fetch fresh if expired."""
-        cache_key = f"aggregator:massive:{ticker}"
-        cached = await self.redis.get(cache_key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception:
-                pass
-
-        data = await fetch_massive_fundamentals(ticker)
-        if data:
-            await self.redis.set(cache_key, json.dumps(data), ex=MASSIVE_CACHE_TTL)
-        return data
+        return await fetch_massive_fundamentals(ticker)
 
     async def _get_uw_flow_cached(self, ticker: str) -> dict | None:
-        """Return cached Unusual Whales options flow, or fetch fresh if expired."""
-        cache_key = f"aggregator:uw:flow:{ticker}"
-        cached = await self.redis.get(cache_key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception:
-                pass
-
-        uw_data = await get_uw_ticker_flow(ticker)
-        if uw_data:
-            await self.redis.set(cache_key, json.dumps(uw_data), ex=UW_CACHE_TTL)
-        return uw_data
+        return await DataClient().options_flow(ticker)
 
     async def _get_uw_dp_cached(self, ticker: str) -> dict | None:
-        """Return cached Unusual Whales dark pool data, or fetch fresh if expired."""
-        cache_key = f"aggregator:uw:dp:{ticker}"
-        cached = await self.redis.get(cache_key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception:
-                pass
-
-        dp_data = await get_uw_darkpool(ticker)
-        if dp_data:
-            await self.redis.set(cache_key, json.dumps(dp_data), ex=UW_CACHE_TTL)
-        return dp_data
+        return await DataClient().dark_pool(ticker)
 
     async def _get_analyst_cached(self, ticker: str) -> dict | None:
-        """Return cached analyst consensus, or fetch fresh from Yahoo MCP if expired."""
-        cache_key = f"aggregator:analyst:{ticker}"
-        cached = await self.redis.get(cache_key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception:
-                pass
-
-        data = await get_analyst_consensus(ticker)
-        if data:
-            await self.redis.set(cache_key, json.dumps(data), ex=ANALYST_CACHE_TTL)
-        return data
+        return await DataClient().analyst(ticker)
 
     async def shutdown(self):
         self._running = False

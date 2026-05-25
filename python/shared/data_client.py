@@ -89,6 +89,12 @@ class DataClient:
     async def short_interest(self, ticker: str) -> dict | None:
         return await self._get(f"/data/short_interest/{ticker}")
 
+    async def avg_volume(self, ticker: str) -> float | None:
+        data = await self._get(f"/data/avg_volume/{ticker}")
+        if not data:
+            return None
+        return data.get("avg_volume") or data.get("volume")
+
     async def health(self) -> dict | None:
         return await self._get("/health")
 

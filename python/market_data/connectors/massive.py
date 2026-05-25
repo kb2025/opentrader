@@ -10,7 +10,7 @@ class MassiveConnector(MCPConnector):
         "get_quote":          "quote",
         "get_daily_bars":     "bars_daily",
         "get_intraday_bars":  "bars_intraday",
-        "get_avg_volume":     "quote",
+        "get_avg_volume":     "avg_volume",
         "get_ticker_details": "fundamentals",
         "get_financials":     "fundamentals",
         "get_earnings":       "earnings",

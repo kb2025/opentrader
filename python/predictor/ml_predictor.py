@@ -40,6 +40,7 @@ If sklearn is unavailable the module degrades gracefully to no-op.
 import asyncio
 import logging
 import math
+import os
 from datetime import date
 from typing import Optional
 
@@ -223,33 +224,41 @@ def _create_labels(close: "pd.Series", direction: str) -> "pd.Series":
 
 
 def _fetch_ohlcv(ticker: str) -> "Optional[pd.DataFrame]":
-    """Fetch 2yr daily OHLCV from Polygon.io. Returns None on failure."""
+    """Fetch 2yr daily OHLCV from the Market Data Gateway (sync call, runs in executor)."""
     try:
-        import os
-        from datetime import date, timedelta
-        from polygon import RESTClient
-
-        api_key = os.getenv("MASSIVE_API_KEY", "")
-        if not api_key:
-            log.warning("ml_predictor: MASSIVE_API_KEY not set, skipping %s", ticker)
-            return None
-        client   = RESTClient(api_key)
-        to_date  = date.today().isoformat()
-        frm_date = (date.today() - timedelta(days=HISTORY_DAYS)).isoformat()
-        bars = client.get_aggs(ticker.upper(), 1, "day", frm_date, to_date,
-                               limit=750, adjusted=True)
+        import json as _json
+        import urllib.request
+        gateway = os.getenv("MARKET_DATA_URL", "http://ot-market-data:8090")
+        url = f"{gateway}/data/bars/{ticker.upper()}?days={HISTORY_DAYS}&interval=daily"
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            body = _json.loads(resp.read())
+        data = body.get("data", body)
+        bars = data if isinstance(data, list) else (
+            data.get("bars") or data.get("candles") or data.get("results") or []
+        )
         if not bars or len(bars) < MIN_TRAIN_ROWS + FORWARD_DAYS + 50:
             return None
-        rows = [
-            {"Date": date.fromtimestamp(b.timestamp / 1000),
-             "Open": b.open, "High": b.high, "Low": b.low,
-             "Close": b.close, "Volume": b.volume}
-            for b in bars
-        ]
-        df = pd.DataFrame(rows).set_index("Date").sort_index()
+        rows = []
+        for b in bars:
+            try:
+                rows.append({
+                    "Date":   b.get("Date") or b.get("date") or b.get("t"),
+                    "Open":   float(b.get("Open") or b.get("open")   or b.get("o") or 0),
+                    "High":   float(b.get("High") or b.get("high")   or b.get("h") or 0),
+                    "Low":    float(b.get("Low")  or b.get("low")    or b.get("l") or 0),
+                    "Close":  float(b.get("Close") or b.get("close") or b.get("c") or 0),
+                    "Volume": float(b.get("Volume") or b.get("volume") or b.get("v") or 0),
+                })
+            except Exception:
+                continue
+        if not rows:
+            return None
+        df = pd.DataFrame(rows).dropna(subset=["Date"])
+        df["Date"] = pd.to_datetime(df["Date"], utc=True).dt.tz_localize(None)
+        df = df.set_index("Date").sort_index()
         return df
     except Exception as e:
-        log.warning("ml_predictor: polygon fetch failed for %s: %s", ticker, e)
+        log.warning("ml_predictor: gateway fetch failed for %s: %s", ticker, e)
         return None
 
 

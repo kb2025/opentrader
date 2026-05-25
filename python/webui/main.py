@@ -9085,14 +9085,10 @@ async def div_backfill(token: str = ""):
     cutoff_str = (_date.today() - _td(days=548)).isoformat()
 
     async def _fetch_history_polygon(ticker: str) -> list[tuple]:
-        """Return list of (pay_date_str, amount_per_share) for last 18 months via Polygon."""
+        """Return list of (pay_date_str, amount_per_share) for last 18 months."""
         try:
-            from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
-            raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends",
-                                      {"ticker": ticker, "limit": 30})
-            if not raw:
-                return []
-            divs = json.loads(raw)
+            from shared.data_client import DataClient
+            divs = await DataClient().dividends(ticker)
             results = []
             for d in (divs or []):
                 pay = d.get("pay_date") or d.get("ex_date")
@@ -10630,7 +10626,7 @@ async def get_option_positions(status: str = "active"):
     missing_sig = [t for t in tickers if t not in live_signals]
     if missing_sig:
         try:
-            from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
+            from shared.data_client import DataClient
             _redis3 = await get_redis()
             still_missing_sig = []
             for sym in missing_sig:
@@ -10647,8 +10643,7 @@ async def get_option_positions(status: str = "active"):
                 async def _fetch_one_consensus(sym):
                     async with _sem:
                         try:
-                            raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_analyst_consensus", {"ticker": sym})
-                            d = json.loads(raw) if raw else {}
+                            d = await DataClient().analyst(sym) or {}
                             rating = (d.get("consensus_rating") or "").lower()
                             mapped = _REC_MAP.get(rating)
                             if mapped:
@@ -10797,13 +10792,11 @@ async def _get_sgov_alert() -> dict | None:
         if not ira_labels:
             ira_labels = ["webull-live-2", "webull-live-3", "webull-live-4"]
 
-        from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
+        from shared.data_client import DataClient
         from datetime import date as _date, timedelta as _td
-        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends",
-                                  {"ticker": "SGOV", "limit": 4})
-        if not raw:
+        divs = await DataClient().dividends("SGOV")
+        if not divs:
             return None
-        divs = json.loads(raw)
         today_et = now_et().date()
         today_str = today_et.isoformat()
         upcoming = [d for d in (divs or []) if d.get("ex_date") and d["ex_date"] >= today_str]
@@ -12808,17 +12801,13 @@ async def get_macro_news(limit: int = 15):
     if cached:
         return {"articles": json.loads(cached)[:limit], "source": "cache"}
 
-    from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
+    from shared.data_client import DataClient
     seen_urls: set = set()
     articles: list = []
 
     for sym in ("SPY", "QQQ"):
         try:
-            raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_ticker_news",
-                                      {"ticker": sym, "limit": 15})
-            if not raw:
-                continue
-            news = json.loads(raw)
+            news = await DataClient().news(sym, limit=15)
             for item in (news or []):
                 url   = item.get("article_url", "")
                 title = item.get("title", "")
@@ -13386,8 +13375,9 @@ async def _fetch_technical_indicators(ticker: str) -> dict:
 
 
 async def _fetch_fundamentals(ticker: str) -> dict:
-    """Fetch fundamental data + short interest via Massive MCP (Polygon/Benzinga)."""
-    from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
+    """Fetch fundamental data + short interest via the Market Data Gateway."""
+    from shared.data_client import DataClient
+    dc  = DataClient()
     sym = ticker.upper()
     result: dict = {
         "market_cap":         None,
@@ -13397,34 +13387,26 @@ async def _fetch_fundamentals(ticker: str) -> dict:
         "days_to_cover":      None,
     }
 
-    # Ticker details — market cap
     try:
-        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_ticker_details", {"ticker": sym})
-        if raw:
-            d = json.loads(raw)
-            result["market_cap"] = d.get("market_cap")
+        d = await dc.fundamentals(sym) or {}
+        result["market_cap"] = d.get("market_cap")
     except Exception:
         pass
 
-    # Analyst consensus — target price + rating
     try:
-        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_analyst_consensus", {"ticker": sym})
-        if raw:
-            d = json.loads(raw)
-            if not d.get("error"):
-                result["analyst_target"]  = d.get("consensus_price_target")
-                result["recommendation"]  = d.get("consensus_rating")
+        d = await dc.analyst(sym) or {}
+        if not d.get("error"):
+            result["analyst_target"] = d.get("consensus_price_target")
+            result["recommendation"] = d.get("consensus_rating")
     except Exception:
         pass
 
-    # Short interest — replaces yfinance insider_transactions
     try:
-        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_short_interest", {"ticker": sym, "limit": 1})
-        if raw:
-            rows = json.loads(raw)
-            if isinstance(rows, list) and rows:
-                result["short_interest"] = rows[0].get("short_interest")
-                result["days_to_cover"]  = rows[0].get("days_to_cover")
+        d = await dc.short_interest(sym) or {}
+        rows = d if isinstance(d, list) else d.get("results") or []
+        if rows:
+            result["short_interest"] = rows[0].get("short_interest")
+            result["days_to_cover"]  = rows[0].get("days_to_cover")
     except Exception:
         pass
 
@@ -15196,54 +15178,43 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
 async def get_trader_ticker_meta(ticker: str, token: str = ""):
     """Earnings date, ex-dividend date and current price for chart markers."""
     check_token(token)
-    from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
+    from shared.data_client import DataClient
+    dc  = DataClient()
     sym = ticker.upper()
     result = {"ticker": sym, "price": None, "ex_dividend_date": None,
               "earnings_date": None, "company_name": ""}
 
-    # Price via Massive get_quote
     try:
-        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_quote", {"ticker": sym})
-        if raw:
-            q = json.loads(raw)
-            price = q.get("last") or q.get("close") or q.get("prev_close")
-            if price:
-                result["price"] = round(float(price), 2)
+        q = await dc.quote(sym) or {}
+        price = q.get("last") or q.get("close") or q.get("prev_close")
+        if price:
+            result["price"] = round(float(price), 2)
     except Exception:
         pass
 
-    # Ticker name via get_ticker_details
     try:
-        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_ticker_details", {"ticker": sym})
-        if raw:
-            d = json.loads(raw)
-            result["company_name"] = d.get("name", "")
+        d = await dc.fundamentals(sym) or {}
+        result["company_name"] = d.get("name", "")
     except Exception:
         pass
 
-    # Upcoming ex-dividend date via get_dividends
     try:
-        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends", {"ticker": sym, "limit": 4})
-        if raw:
-            divs = json.loads(raw)
-            if isinstance(divs, list):
-                today_str = date.today().isoformat()
-                upcoming = [d for d in divs if d.get("ex_date") and d["ex_date"] >= today_str]
-                if upcoming:
-                    result["ex_dividend_date"] = upcoming[-1]["ex_date"]
+        divs = await dc.dividends(sym) or []
+        divs = divs if isinstance(divs, list) else divs.get("results") or []
+        today_str = date.today().isoformat()
+        upcoming = [d for d in divs if d.get("ex_date") and d["ex_date"] >= today_str]
+        if upcoming:
+            result["ex_dividend_date"] = upcoming[-1]["ex_date"]
     except Exception:
         pass
 
-    # Upcoming earnings date via get_earnings
     try:
-        raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_earnings", {"ticker": sym, "limit": 4})
-        if raw:
-            records = json.loads(raw)
-            if isinstance(records, list):
-                today_str = date.today().isoformat()
-                upcoming = [e for e in records if e.get("date") and e["date"] >= today_str]
-                if upcoming:
-                    result["earnings_date"] = upcoming[-1]["date"]
+        records = await dc.earnings(sym) or []
+        records = records if isinstance(records, list) else records.get("results") or []
+        today_str = date.today().isoformat()
+        upcoming = [e for e in records if e.get("date") and e["date"] >= today_str]
+        if upcoming:
+            result["earnings_date"] = upcoming[-1]["date"]
     except Exception:
         pass
 
@@ -15353,25 +15324,23 @@ async def get_trader_fundamentals(ticker: str, token: str = ""):
         except Exception as ex:
             log.warning("fundamentals.massive_div_error", ticker=sym, error=str(ex))
 
-    # ── 5. Earnings date via Massive MCP (fills gaps: earnings_date, eps if missing) ──
+    # ── 5. Earnings date via Market Data Gateway ──────────────────────────────────
     try:
-        from shared.mcp_client import call_mcp_tool as _call_mcp, MASSIVE_MCP_URL as _MASSIVE_URL
-        raw_earn = await _call_mcp(_MASSIVE_URL, "get_earnings", {"ticker": sym, "limit": 8})
-        if raw_earn:
-            records = json.loads(raw_earn)
-            if isinstance(records, list) and records:
-                today_str = date.today().isoformat()
-                upcoming = [e for e in records if e.get("date") and e["date"] >= today_str]
-                past = [e for e in records if e.get("date") and e["date"] < today_str]
-                if upcoming:
-                    nxt = upcoming[-1]
-                    earnings["earnings_date"] = nxt["date"]
-                if past:
-                    last = past[0]
-                    if last.get("eps_actual") is not None:
-                        earnings["eps"]          = last.get("eps_actual")
-                    if last.get("eps_estimate") is not None:
-                        earnings["eps_estimate"] = last.get("eps_estimate")
+        from shared.data_client import DataClient as _DC
+        records = await _DC().earnings(sym) or []
+        records = records if isinstance(records, list) else records.get("results") or []
+        if records:
+            today_str = date.today().isoformat()
+            upcoming = [e for e in records if e.get("date") and e["date"] >= today_str]
+            past = [e for e in records if e.get("date") and e["date"] < today_str]
+            if upcoming:
+                earnings["earnings_date"] = upcoming[-1]["date"]
+            if past:
+                last = past[0]
+                if last.get("eps_actual") is not None:
+                    earnings["eps"]          = last.get("eps_actual")
+                if last.get("eps_estimate") is not None:
+                    earnings["eps_estimate"] = last.get("eps_estimate")
     except Exception as e:
         log.warning("fundamentals.massive_earnings_error", ticker=sym, error=str(e))
 

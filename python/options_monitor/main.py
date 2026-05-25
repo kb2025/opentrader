@@ -31,14 +31,12 @@ import structlog
 
 from shared.base_agent import BaseAgent
 from shared.redis_client import STREAMS, get_redis
-from shared.mcp_client import call_mcp_tool
+from shared.data_client import DataClient
 
 log = structlog.get_logger("options-monitor")
 
 DB_URL               = os.getenv("DB_URL", "")
 POLYGON_API_KEY      = os.getenv("MASSIVE_API_KEY", "")
-TRADINGVIEW_MCP_URL  = os.getenv("TRADINGVIEW_MCP_URL", "http://ot-mcp-tradingview:8000/mcp")
-MASSIVE_MCP_URL      = os.getenv("MASSIVE_MCP_URL", "http://ot-mcp-massive:8000/mcp")
 BROKER_GATEWAY_TIMEOUT = int(os.getenv("BROKER_GATEWAY_TIMEOUT_SEC", "20"))
 SCAN_INTERVAL_MIN    = int(os.getenv("OPTIONS_SCAN_INTERVAL_MIN", "5"))
 # How many consecutive scans a position must be absent before it is marked closed.
@@ -140,35 +138,24 @@ def _compute_atr(candles: list[dict], period: int = ATR_PERIOD) -> Optional[floa
 
 async def _fetch_atr_and_price(ticker: str) -> tuple[Optional[float], Optional[float]]:
     """
-    Fetch 30 daily candles from TradingView MCP.
+    Fetch 30 daily candles via the Market Data Gateway.
     Returns (atr_14, last_close_price).  Both may be None if unavailable.
-    Tries NASDAQ then NYSE exchange labels.
     """
-    candles = None
-    for exchange in ("NASDAQ", "NYSE", "AMEX"):
-        raw = await call_mcp_tool(
-            TRADINGVIEW_MCP_URL,
-            "get_historical_data",
-            {"symbol": ticker, "exchange": exchange, "timeframe": "1d", "max_records": 30},
+    try:
+        data = await DataClient().bars(ticker, days=30)
+        if not data:
+            return None, None
+        candles = data if isinstance(data, list) else (
+            data.get("candles") or data.get("bars") or data.get("results") or []
         )
-        if not raw:
-            continue
-        try:
-            data = json.loads(raw)
-            c = data.get("candles") or data.get("data") or (data if isinstance(data, list) else [])
-            if c:
-                candles = c
-                break
-        except Exception as e:
-            log.warning("options_monitor.atr_parse_failed", ticker=ticker,
-                        exchange=exchange, error=str(e))
-
-    if not candles:
+        if not candles:
+            return None, None
+        atr        = _compute_atr(candles)
+        last_close = float(candles[-1]["close"]) if candles else None
+        return atr, last_close
+    except Exception as e:
+        log.warning("options_monitor.atr_fetch_failed", ticker=ticker, error=str(e))
         return None, None
-
-    atr        = _compute_atr(candles)
-    last_close = float(candles[-1]["close"]) if candles else None
-    return atr, last_close
 
 
 # Keep backward-compat alias used in _refresh_chart
@@ -199,16 +186,12 @@ async def _fetch_underlying_price(ticker: str) -> Optional[float]:
     """
     sym = ticker.upper()
 
-    # ── Tier 1: standard quote ─────────────────────────────────────────────
-    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_quote", {"ticker": sym})
-    if raw:
-        try:
-            data  = json.loads(raw)
-            price = data.get("last") or data.get("close") or data.get("prev_close")
-            if price:
-                return float(price)
-        except Exception:
-            pass
+    # ── Tier 1: standard quote via gateway ────────────────────────────────
+    data = await DataClient().quote(sym)
+    if data:
+        price = data.get("last") or data.get("close") or data.get("prev_close")
+        if price:
+            return float(price)
 
     # ── Tier 2: prev-close agg (index fallback) ────────────────────────────
     api_key  = os.getenv("MASSIVE_API_KEY", "")
@@ -242,34 +225,34 @@ async def _fetch_underlying_price(ticker: str) -> Optional[float]:
 
 
 async def _fetch_earnings_date(ticker: str) -> Optional[date]:
-    """Fetch next earnings date via Massive MCP (Polygon.io Benzinga)."""
-    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_earnings", {"ticker": ticker, "limit": 4})
-    if not raw:
-        return None
+    """Fetch next earnings date via the Market Data Gateway."""
     try:
-        records = json.loads(raw)
-        if not isinstance(records, list):
+        data = await DataClient().earnings(ticker)
+        if not data:
             return None
+        records = data if isinstance(data, list) else (
+            data.get("earnings") or data.get("results") or []
+        )
         today_str = date.today().isoformat()
         upcoming = [e for e in records if e.get("date") and e["date"] >= today_str]
         if upcoming:
             return date.fromisoformat(upcoming[-1]["date"])
-        return None
     except Exception:
-        return None
+        pass
+    return None
 
 
 async def _fetch_ex_dividend_date(ticker: str) -> Optional[date]:
-    """Fetch next ex-dividend date for ticker via Massive MCP. Returns None if unavailable."""
-    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends", {"ticker": ticker, "limit": 4})
-    if not raw:
-        return None
+    """Fetch next ex-dividend date via the Market Data Gateway."""
     try:
-        records = json.loads(raw)
-        if not isinstance(records, list):
+        data = await DataClient().dividends(ticker)
+        if not data:
             return None
+        records = data if isinstance(data, list) else (
+            data.get("dividends") or data.get("results") or []
+        )
         today_str = date.today().isoformat()
-        upcoming  = [r for r in records if r.get("ex_dividend_date", "") >= today_str]
+        upcoming = [r for r in records if r.get("ex_dividend_date", "") >= today_str]
         if upcoming:
             return date.fromisoformat(upcoming[0]["ex_dividend_date"])
     except Exception:
@@ -2080,25 +2063,14 @@ class OptionsMonitor(BaseAgent):
     ):
         """Generate chart and store as base64 PNG in DB raw column."""
         try:
-            # Fetch OHLCV for chart
-            raw = await call_mcp_tool(
-                TRADINGVIEW_MCP_URL,
-                "get_historical_data",
-                {"symbol": underlying, "exchange": "NASDAQ",
-                 "timeframe": "1d", "max_records": 60},
-            )
-            if not raw:
-                raw = await call_mcp_tool(
-                    TRADINGVIEW_MCP_URL,
-                    "get_historical_data",
-                    {"symbol": underlying, "exchange": "NYSE",
-                     "timeframe": "1d", "max_records": 60},
-                )
-            if not raw:
+            # Fetch OHLCV for chart via gateway
+            bars_data = await DataClient().bars(underlying, days=60)
+            if not bars_data:
                 return
-
-            data    = json.loads(raw)
-            candles = data.get("candles") or data.get("data") or (data if isinstance(data, list) else [])
+            candles = bars_data if isinstance(bars_data, list) else (
+                bars_data.get("candles") or bars_data.get("bars") or
+                bars_data.get("results") or []
+            )
             if not candles:
                 return
 

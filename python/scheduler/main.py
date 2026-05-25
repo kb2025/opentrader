@@ -40,6 +40,9 @@ from .jobs import (
     job_scrape_eodhd_news,
     job_scrape_finnhub_insider,
     job_update_trending_symbols,
+    job_market_data_warmup,
+    job_market_data_eod_refresh,
+    job_market_data_probe,
 )
 from .calendar import TZ
 
@@ -289,6 +292,29 @@ class Scheduler(BaseAgent):
             IntervalTrigger(minutes=5, timezone=TZ),
             args=[r], id="update_trending_symbols",
             name="Trending symbols refresh every 5m",
+            replace_existing=True,
+        )
+
+        # ── Market Data Gateway ────────────────────────────────────────────
+        self.apscheduler.add_job(
+            job_market_data_warmup,
+            CronTrigger(hour=9, minute=0, day_of_week="mon-fri", timezone=TZ),
+            args=[r], id="market_data_warmup",
+            name="Market data cache warmup at 9:00 AM ET",
+            replace_existing=True,
+        )
+        self.apscheduler.add_job(
+            job_market_data_eod_refresh,
+            CronTrigger(hour=16, minute=45, day_of_week="mon-fri", timezone=TZ),
+            args=[r], id="market_data_eod_refresh",
+            name="Market data EOD refresh at 4:45 PM ET",
+            replace_existing=True,
+        )
+        self.apscheduler.add_job(
+            job_market_data_probe,
+            IntervalTrigger(minutes=30, timezone=TZ),
+            args=[r], id="market_data_probe",
+            name="Market data connector probe every 30m",
             replace_existing=True,
         )
 

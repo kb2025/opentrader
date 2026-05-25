@@ -220,48 +220,44 @@ def _build_summary(intel: TickerIntelligence) -> str:
 
 
 async def fetch_massive_fundamentals(ticker: str) -> dict:
-    """
-    Fetch dividend and earnings data via Massive MCP (Polygon.io).
-    Returns dict with dividend and earnings sub-dicts.
-    """
-    from shared.mcp_client import call_mcp_tool, MASSIVE_MCP_URL
-
+    """Fetch dividend and earnings data via the Market Data Gateway."""
+    from shared.data_client import DataClient
+    dc = DataClient()
     result: dict = {"dividend": {}, "earnings": {}}
 
     # ── Dividends ─────────────────────────────────────────────────────────────
     try:
-        raw_div = await call_mcp_tool(MASSIVE_MCP_URL, "get_dividends", {"ticker": ticker, "limit": 4})
-        if raw_div:
-            divs = json.loads(raw_div)
-            if isinstance(divs, list) and divs:
+        divs = await dc.dividends(ticker)
+        if divs:
+            records = divs if isinstance(divs, list) else divs.get("dividends") or divs.get("results") or []
+            if records:
                 today = date.today()
-                upcoming = [d for d in divs if d.get("ex_date") and d["ex_date"] >= today.isoformat()]
-                ref = upcoming[0] if upcoming else divs[0]
-                cash = float(ref.get("cash_amount") or 0)
-                freq = int(ref.get("frequency") or 0)
-                annual = cash * freq if freq else cash
+                upcoming = [d for d in records if d.get("ex_date") and d["ex_date"] >= today.isoformat()]
+                ref  = upcoming[0] if upcoming else records[0]
+                cash = float(ref.get("cash_amount") or ref.get("amount") or 0)
+                freq = int(ref.get("frequency") or 4)
                 result["dividend"] = {
-                    "yield":   0.0,  # yield requires current price — caller can compute
-                    "annual":  round(annual, 4),
+                    "yield":   0.0,
+                    "annual":  round(cash * freq, 4),
                     "ex_date": ref.get("ex_date"),
                 }
     except Exception as e:
-        log.warning("combiner.massive_div_error", ticker=ticker, error=str(e))
+        log.warning("combiner.div_error", ticker=ticker, error=str(e))
 
     # ── Earnings ──────────────────────────────────────────────────────────────
     try:
-        raw_earn = await call_mcp_tool(MASSIVE_MCP_URL, "get_earnings", {"ticker": ticker, "limit": 4})
-        if raw_earn:
-            records = json.loads(raw_earn)
-            if isinstance(records, list) and records:
+        earn = await dc.earnings(ticker)
+        if earn:
+            records = earn if isinstance(earn, list) else earn.get("earnings") or earn.get("results") or []
+            if records:
                 today = date.today()
                 upcoming = [e for e in records if e.get("date") and e["date"] >= today.isoformat()]
                 if upcoming:
-                    nxt = upcoming[-1]  # earliest upcoming (list is desc, so last)
+                    nxt          = upcoming[-1]
                     earnings_date = nxt["date"]
-                    days_away     = (date.fromisoformat(earnings_date) - today).days
+                    days_away    = (date.fromisoformat(earnings_date) - today).days
                     result["earnings"] = {"date": earnings_date, "days_away": days_away}
     except Exception as e:
-        log.warning("combiner.massive_earnings_error", ticker=ticker, error=str(e))
+        log.warning("combiner.earnings_error", ticker=ticker, error=str(e))
 
     return result

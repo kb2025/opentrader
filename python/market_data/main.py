@@ -218,6 +218,11 @@ async def get_short_interest(ticker: str):
     return await _fetch("short_interest", {"ticker": ticker.upper()})
 
 
+@app.get("/data/avg_volume/{ticker}")
+async def get_avg_volume(ticker: str):
+    return await _fetch("avg_volume", {"ticker": ticker.upper()})
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

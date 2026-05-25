@@ -3,6 +3,21 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.12] - 2026-05-25
+
+### Changed
+- **Market Data Gateway — Phase 2–5 complete**: All backend agents now route market data through `ot-market-data:8090` instead of calling MCP servers or Polygon directly
+  - `aggregator/main.py` — UW flow/darkpool/analyst calls delegated to DataClient; local Redis cache wrappers removed (gateway handles TTLs)
+  - `shared/mcp_client.py` — `get_tv_indicators()` and `get_avg_volume()` rewritten to call DataClient; all traders/webui callers unchanged
+  - `options_monitor/main.py` — ATR bars, underlying price, earnings, dividends, and chart bars all via DataClient; removed direct Massive MCP + TradingView MCP calls
+  - `predictor/ml_predictor.py` — `_fetch_ohlcv()` replaced: Polygon SDK removed, synchronous `urllib.request` call to gateway (safe in `run_in_executor` thread)
+  - `webui/main.py` — 7 direct Massive MCP callsites migrated (dividends, analyst consensus, fundamentals, news, short interest, quote, earnings)
+  - `scrapers/macro_regime/scraper.py` — SPY/QQQ/TLT bars via DataClient; FRED via DataClient.macro() parallel calls; `api_key` param now optional
+  - `scrapers/etf_flows/scraper.py` — full rewrite: all 26 ETF bars via DataClient with semaphore-limited concurrency; `api_key` param removed
+  - Yahoo connector tool_map corrected (`get_historical_stock_prices`); `call()` override translates `days` → yfinance `period` string
+  - Massive connector duplicate `get_avg_volume` key removed
+  - 3 scheduler jobs added: `market_data_warmup` (9am ET), `market_data_eod_refresh` (4:45pm ET), `market_data_probe` (every 30m)
+
 ## [4.0.11] - 2026-05-25
 
 ### Added

@@ -68,19 +68,14 @@ async def call_mcp_tool(url: str, tool_name: str, arguments: dict) -> str | None
 
 async def get_tv_indicators(ticker: str, interval: str = "1d") -> dict | None:
     """
-    Fetch TradingView summary indicators for a ticker.
+    Fetch TradingView summary indicators for a ticker via the Market Data Gateway.
     Returns parsed dict with keys: recommendation, buy, sell, neutral.
     """
-    raw = await call_mcp_tool(
-        TRADINGVIEW_MCP_URL,
-        "get_indicators",
-        {"symbol": ticker, "timeframe": interval},
-    )
-    if not raw:
+    from shared.data_client import DataClient
+    data = await DataClient().technicals(ticker, interval=interval)
+    if not data:
         return None
     try:
-        data = json.loads(raw)
-        # Normalise — server returns {summary: {RECOMMENDATION, BUY, SELL, NEUTRAL}}
         summary = data.get("summary") or data
         return {
             "recommendation": summary.get("RECOMMENDATION", "NEUTRAL"),
@@ -89,7 +84,7 @@ async def get_tv_indicators(ticker: str, interval: str = "1d") -> dict | None:
             "neutral":        int(summary.get("NEUTRAL", 0)),
         }
     except Exception as e:
-        log.warning("mcp_client.parse_failed", ticker=ticker, error=str(e), raw=raw[:200])
+        log.warning("mcp_client.tv_parse_failed", ticker=ticker, error=str(e))
         return None
 
 
@@ -178,19 +173,11 @@ async def get_massive_daily_bars(
 
 async def get_avg_volume(ticker: str) -> float | None:
     """
-    Fetch the average daily volume for a ticker via Massive MCP (Polygon.io).
+    Fetch the average daily volume for a ticker via the Market Data Gateway.
     Returns volume as a float (e.g. 5_000_000) or None on failure.
     """
-    raw = await call_mcp_tool(MASSIVE_MCP_URL, "get_avg_volume", {"ticker": ticker})
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-        vol = data.get("avg_volume") or data.get("avgVolume") or data.get("volume")
-        return float(vol) if vol else None
-    except Exception as e:
-        log.warning("mcp_client.avg_volume_parse_failed", ticker=ticker, error=str(e))
-        return None
+    from shared.data_client import DataClient
+    return await DataClient().avg_volume(ticker)
 
 
 async def get_uw_ticker_flow(ticker: str) -> dict | None:

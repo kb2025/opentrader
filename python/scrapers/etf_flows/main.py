@@ -73,11 +73,8 @@ class ETFFlowsAgent(BaseAgent):
                 await asyncio.sleep(10)
 
     async def _scrape(self):
-        if not API_KEY:
-            log.warning("etf_flows.no_api_key")
-            return
         try:
-            rows = await fetch_etf_flows(API_KEY)
+            rows = await fetch_etf_flows()
             if self._db:
                 await self._persist(rows)
             await self._cache(rows)

@@ -6,15 +6,11 @@ and FRED credit spreads + financial stress index.
 Returns regime: risk_on | risk_off | neutral
 """
 import logging
-from datetime import date, timedelta
 
-import aiohttp
-
+from shared.data_client import DataClient
 from shared.fred_client import FREDClient
 
 log = logging.getLogger("scraper.macro_regime")
-
-MASSIVE_BASE = "https://api.massive.com"
 
 MACRO_TICKERS = {
     "SPY":  "equity",
@@ -27,19 +23,30 @@ MACRO_TICKERS = {
 }
 
 
-async def _fetch_bars(session: aiohttp.ClientSession, api_key: str, ticker: str, days: int = 210) -> list:
-    today    = date.today()
-    from_dt  = (today - timedelta(days=days)).isoformat()
-    to_dt    = today.isoformat()
-    url      = f"{MASSIVE_BASE}/v2/aggs/ticker/{ticker}/range/1/day/{from_dt}/{to_dt}"
-    headers  = {"Authorization": f"Bearer {api_key}"}
+def _normalise_bars(data) -> list:
+    """Normalise gateway bar response to [{c, h, l, o, v}] Polygon-style dicts."""
+    items = data if isinstance(data, list) else (
+        data.get("bars") or data.get("candles") or data.get("results") or []
+    )
+    out = []
+    for b in items:
+        close = b.get("c") or b.get("Close") or b.get("close")
+        if close is None:
+            continue
+        out.append({
+            "c": float(close),
+            "h": float(b.get("h") or b.get("High") or b.get("high") or close),
+            "l": float(b.get("l") or b.get("Low")  or b.get("low")  or close),
+            "o": float(b.get("o") or b.get("Open")  or b.get("open") or close),
+            "v": float(b.get("v") or b.get("Volume") or b.get("volume") or 0),
+        })
+    return out
+
+
+async def _fetch_bars(ticker: str, days: int = 210) -> list:
     try:
-        async with session.get(url, params={"adjusted": "true", "sort": "asc", "limit": days + 10},
-                               headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json()
-            return data.get("results", [])
+        data = await DataClient().bars(ticker, days=days)
+        return _normalise_bars(data) if data else []
     except Exception as e:
         log.warning("macro_regime.fetch_error", ticker=ticker, error=str(e))
         return []
@@ -76,35 +83,37 @@ def _momentum(bars: list, period: int = 20) -> float:
 
 
 async def compute_macro_regime(
-    api_key: str,
+    api_key: str = "",
     breadth_pct: float | None = None,
     fred_api_key: str = "",
 ) -> dict:
     """Fetch macro data and return a regime snapshot dict."""
+    import asyncio
     bars = {}
     fred_data: dict[str, float | None] = {"hy_oas": None, "ig_oas": None, "fsi": None, "usrec": None}
 
-    async with aiohttp.ClientSession() as session:
-        for ticker in MACRO_TICKERS:
-            bars[ticker] = await _fetch_bars(session, api_key, ticker)
+    bar_results = await asyncio.gather(
+        *[_fetch_bars(ticker) for ticker in MACRO_TICKERS],
+        return_exceptions=True,
+    )
+    for ticker, result in zip(MACRO_TICKERS, bar_results):
+        bars[ticker] = result if isinstance(result, list) else []
 
-    if fred_api_key:
-        try:
-            fred = FREDClient(fred_api_key)
-            snapshot = await fred.bulk_latest(
-                FREDClient.SERIES["hy_oas"],
-                FREDClient.SERIES["ig_oas"],
-                FREDClient.SERIES["fsi"],
-                FREDClient.SERIES["usrec"],
-            )
-            fred_data = {
-                "hy_oas": snapshot.get(FREDClient.SERIES["hy_oas"]),
-                "ig_oas": snapshot.get(FREDClient.SERIES["ig_oas"]),
-                "fsi":    snapshot.get(FREDClient.SERIES["fsi"]),
-                "usrec":  snapshot.get(FREDClient.SERIES["usrec"]),
-            }
-        except Exception as e:
-            log.warning("macro_regime.fred_error", error=str(e))
+    try:
+        dc = DataClient()
+        macro_results = await asyncio.gather(
+            dc.macro(FREDClient.SERIES["hy_oas"]),
+            dc.macro(FREDClient.SERIES["ig_oas"]),
+            dc.macro(FREDClient.SERIES["fsi"]),
+            dc.macro(FREDClient.SERIES["usrec"]),
+            return_exceptions=True,
+        )
+        keys = ["hy_oas", "ig_oas", "fsi", "usrec"]
+        for k, r in zip(keys, macro_results):
+            if isinstance(r, dict):
+                fred_data[k] = r.get("value") or r.get("v")
+    except Exception as e:
+        log.warning("macro_regime.fred_error", error=str(e))
 
     # Bull/bear signals
     bull = 0

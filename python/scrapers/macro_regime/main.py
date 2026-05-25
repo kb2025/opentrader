@@ -15,7 +15,6 @@ log = structlog.get_logger("scraper-macro-regime")
 
 DB_URL       = os.getenv("DB_URL", "")
 API_KEY      = os.getenv("MASSIVE_API_KEY", "")
-FRED_API_KEY = os.getenv("FRED_API_KEY", "")
 
 
 class MacroRegimeAgent(BaseAgent):
@@ -80,9 +79,6 @@ class MacroRegimeAgent(BaseAgent):
                 await asyncio.sleep(10)
 
     async def _scrape(self):
-        if not API_KEY:
-            log.warning("macro_regime.no_api_key")
-            return
         try:
             breadth_raw = await self.redis.get("ovtlyr:market_breadth")
             breadth_pct = None
@@ -90,7 +86,8 @@ class MacroRegimeAgent(BaseAgent):
                 b = json.loads(breadth_raw)
                 breadth_pct = float(b.get("breadth_pct", 0))
 
-            snapshot = await compute_macro_regime(API_KEY, breadth_pct, fred_api_key=FRED_API_KEY)
+            fred_key = os.getenv("FRED_API_KEY", "")
+            snapshot = await compute_macro_regime(breadth_pct=breadth_pct, fred_api_key=fred_key)
 
             if self._db:
                 await self._db.execute(
