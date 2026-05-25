@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.15] - 2026-05-25
+
+### Fixed
+- **Market Data Gateway crash on startup**: `fastapi` and `uvicorn` were missing from `requirements.txt` (the base agent Dockerfile); added both so `ot-market-data` can start
+
 ## [4.0.14] - 2026-05-25
 
 ### Fixed
