@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.10] - 2026-05-25
+
+### Changed
+- **All Agents count label** — updated from "14 total" to "Total Active Agents: 14"
+
 ## [4.0.9] - 2026-05-25
 
 ### Changed

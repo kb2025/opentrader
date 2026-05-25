@@ -658,7 +658,8 @@ select option{background:var(--surface2)}
     <div class="page" id="page-platform-agents">
       <div class="card">
         <div class="card-header">
-          <span class="card-title">All Agents <span id="agents-count" style="font-size:11px;font-weight:400;color:var(--muted)"></span></span>
+          <span class="card-title">All Agents</span>
+          <span id="agents-count" style="font-size:11px;font-weight:500;color:var(--muted)"></span>
           <div style="display:flex;align-items:center;gap:6px">
             <button class="btn btn-ghost btn-sm view-btn active" onclick="setAgentsSort('az')"  id="sort-az-btn"  title="Sort A→Z">A→Z</button>
             <button class="btn btn-ghost btn-sm view-btn"        onclick="setAgentsSort('za')"  id="sort-za-btn"  title="Sort Z→A">Z→A</button>
@@ -6472,7 +6473,7 @@ function renderAgentsGrid(agents) {
   _agentsLast = agents || [];
   const grid = document.getElementById('agents-grid');
   const countEl = document.getElementById('agents-count');
-  if (countEl) countEl.textContent = agents && agents.length ? `${agents.length} total` : '';
+  if (countEl) countEl.textContent = agents && agents.length ? `Total Active Agents: ${agents.length}` : '';
   if (!agents || agents.length === 0) {
     grid.innerHTML = '<div class="empty-state">No agents found</div>';
     return;
