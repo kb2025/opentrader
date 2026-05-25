@@ -2611,6 +2611,8 @@ select option{background:var(--surface2)}
                 <option value="short_strangle">Short Strangle</option>
                 <option value="bull_call">Bull Call Spread</option>
                 <option value="bear_put">Bear Put Spread</option>
+                <option value="bull_put">Bull Put Spread</option>
+                <option value="bear_call">Bear Call Spread</option>
                 <option value="long_butterfly">Long Butterfly</option>
                 <option value="iron_condor">Iron Condor</option>
               </select>
@@ -24644,6 +24646,9 @@ function _mhCloseFullscreen() {
 // Strategy Payoff Builder
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Euclidean GCD on positive integers (used for non-equidistant butterfly lot sizing)
+function _spbGcd(a, b) { a = Math.round(Math.abs(a)); b = Math.round(Math.abs(b)); while (b) { const t=b; b=a%b; a=t; } return a||1; }
+
 const _SPB_STRATS = {
   long_call: {
     n: 1,
@@ -24739,14 +24744,22 @@ const _SPB_STRATS = {
   long_butterfly: {
     n: 3,
     lbl: [
-      { title: 'Long Call (low)',        k: 'Low Strike',  p: 'Premium Paid ($)' },
-      { title: 'Short Calls ×2 (mid)',   k: 'Mid Strike',  p: 'Premium Received per leg ($)' },
-      { title: 'Long Call (high)',        k: 'High Strike', p: 'Premium Paid ($)' },
+      { title: 'Long Call (low)',   k: 'Low Strike',  p: 'Premium Paid ($)' },
+      { title: 'Short Calls (mid)', k: 'Mid Strike',  p: 'Premium Received per leg ($)' },
+      { title: 'Long Call (high)',  k: 'High Strike', p: 'Premium Paid ($)' },
     ],
-    payoff: (S, k, p) => 100 * (Math.max(S-k[0],0) - p[0] - 2*Math.max(S-k[1],0) + 2*p[1] + Math.max(S-k[2],0) - p[2]),
+    payoff: (S, k, p) => {
+      const d1=k[1]-k[0], d2=k[2]-k[1]; if (d1<=0||d2<=0) return 0;
+      const g=_spbGcd(Math.round(d1*100),Math.round(d2*100));
+      const n1=Math.round(d2*100)/g, n3=Math.round(d1*100)/g, n2=n1+n3;
+      return 100*(n1*Math.max(S-k[0],0)-n2*Math.max(S-k[1],0)+n3*Math.max(S-k[2],0)-(n1*p[0]-n2*p[1]+n3*p[2]));
+    },
     metrics: (k, p) => {
-      const net = -p[0] + 2*p[1] - p[2];
-      return { maxP: (k[1]-k[0]+net)*100, maxL: -net*100, BEs: [k[0]-net, k[2]+net], net: net*100, credit: net>0 };
+      const d1=k[1]-k[0], d2=k[2]-k[1];
+      const g=_spbGcd(Math.round(d1*100),Math.round(d2*100));
+      const n1=Math.round(d2*100)/g, n3=Math.round(d1*100)/g, n2=n1+n3;
+      const net=n2*p[1]-n1*p[0]-n3*p[2];
+      return { maxP:(n1*(k[1]-k[0])+net)*100, maxL:-net*100, BEs:[k[0]-net/n1,k[2]+net/n3], net:net*100, credit:net>0, _n:[n1,n2,n3] };
     },
     spotRange: (k) => [k[0]*0.85, k[2]*1.20],
   },
@@ -24769,11 +24782,39 @@ const _SPB_STRATS = {
     },
     spotRange: (k) => [k[0]*0.87, k[3]*1.13],
   },
+  bull_put: {
+    n: 2,
+    lbl: [
+      { title: 'Long Put (lower)',   k: 'Buy Strike (lower)',   p: 'Premium Paid ($)' },
+      { title: 'Short Put (higher)', k: 'Sell Strike (higher)', p: 'Premium Received ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (p[1] - p[0] - Math.max(k[1]-S,0) + Math.max(k[0]-S,0)),
+    metrics: (k, p) => {
+      const nc = p[1] - p[0];
+      return { maxP: nc*100, maxL: (k[1]-k[0]-nc)*100, BEs: [k[1]-nc], net: nc*100, credit: true };
+    },
+    spotRange: (k) => [k[0]*0.80, k[1]*1.25],
+  },
+  bear_call: {
+    n: 2,
+    lbl: [
+      { title: 'Short Call (lower)', k: 'Sell Strike (lower)', p: 'Premium Received ($)' },
+      { title: 'Long Call (higher)', k: 'Buy Strike (higher)',  p: 'Premium Paid ($)' },
+    ],
+    payoff: (S, k, p) => 100 * (p[0] - p[1] - Math.max(S-k[0],0) + Math.max(S-k[1],0)),
+    metrics: (k, p) => {
+      const nc = p[0] - p[1];
+      return { maxP: nc*100, maxL: (k[1]-k[0]-nc)*100, BEs: [k[0]+nc], net: nc*100, credit: true };
+    },
+    spotRange: (k) => [k[0]*0.80, k[1]*1.25],
+  },
 };
 
 const _SPB_VALIDATE = {
   bull_call:      (k) => k[0] >= k[1] ? 'Buy Strike must be < Sell Strike' : null,
   bear_put:       (k) => k[0] <= k[1] ? 'Buy Strike (higher) must be > Sell Strike (lower)' : null,
+  bull_put:       (k) => k[0] >= k[1] ? 'Buy Strike (lower) must be < Sell Strike (higher)' : null,
+  bear_call:      (k) => k[0] >= k[1] ? 'Sell Strike must be < Buy Strike' : null,
   long_strangle:  (k) => k[0] >= k[1] ? 'Put Strike must be < Call Strike' : null,
   short_strangle: (k) => k[0] >= k[1] ? 'Put Strike must be < Call Strike' : null,
   long_butterfly: (k) => !(k[0]<k[1] && k[1]<k[2]) ? 'Strikes must be ordered: Low < Mid < High' : null,
@@ -24802,11 +24843,21 @@ const _SPB_LEGS = {
   bear_put:       [{type:'put',   sign:+1, mult:1}, {type:'put',   sign:-1, mult:1}],
   long_butterfly: [{type:'call',  sign:+1, mult:1}, {type:'call',  sign:-1, mult:2}, {type:'call', sign:+1, mult:1}],
   iron_condor:    [{type:'put',   sign:+1, mult:1}, {type:'put',   sign:-1, mult:1}, {type:'call', sign:-1, mult:1}, {type:'call', sign:+1, mult:1}],
+  bull_put:       [{type:'put',   sign:+1, mult:1}, {type:'put',   sign:-1, mult:1}],
+  bear_call:      [{type:'call',  sign:-1, mult:1}, {type:'call',  sign:+1, mult:1}],
 };
+
+// Returns GCD-based legDefs for long_butterfly (dynamic mults); falls back to _SPB_LEGS otherwise
+function _spbBflyLegs(k) {
+  const d1=k[1]-k[0], d2=k[2]-k[1]; if (d1<=0||d2<=0) return _SPB_LEGS.long_butterfly;
+  const g=_spbGcd(Math.round(d1*100),Math.round(d2*100));
+  const n1=Math.round(d2*100)/g, n3=Math.round(d1*100)/g;
+  return [{type:'call',sign:+1,mult:n1},{type:'call',sign:-1,mult:n1+n3},{type:'call',sign:+1,mult:n3}];
+}
 
 // B-S theoretical P&L (per contract, ×100) for a strategy at a given time-to-expiry
 function _spbBsValue(stratKey, S, k, p, T_rem, sigma, r) {
-  const legDefs = _SPB_LEGS[stratKey];
+  const legDefs = stratKey === 'long_butterfly' ? _spbBflyLegs(k) : _SPB_LEGS[stratKey];
   if (!legDefs || sigma <= 0) return null;
   const ncdf = x => (1 + _spbErf(x / Math.SQRT2)) / 2;
   function bsP(s, K, T, sig, type) {
@@ -24860,7 +24911,7 @@ function _spbLegGreeks(S, K, T, sigma, r, type) {
 
 // Aggregate portfolio Greeks at spot S (per-share, raw — not multiplied by 100)
 function _spbPortfolioGreeks(stratKey, S, k, T, sigma, r) {
-  const legDefs = _SPB_LEGS[stratKey];
+  const legDefs = stratKey === 'long_butterfly' ? _spbBflyLegs(k) : _SPB_LEGS[stratKey];
   if (!legDefs) return {delta:0, gamma:0, vega:0, theta:0};
   let delta=0, gamma=0, vega=0, theta=0;
   legDefs.forEach(({type, sign, mult}, i) => {
@@ -24938,7 +24989,7 @@ function _spbGreeksPanel(stratKey, k, T, sigma, r, S_min, S_max, spot) {
 
 // Build the per-leg price + Greeks breakdown table
 function _spbLegTable(stratKey, cfg, k, p, T, sigma, r, spot) {
-  const legDefs = _SPB_LEGS[stratKey];
+  const legDefs = stratKey === 'long_butterfly' ? _spbBflyLegs(k) : _SPB_LEGS[stratKey];
   if (!legDefs) return '';
   const hasMarket = spot > 0 && sigma > 0 && T > 0;
   const fG = (v, dp=3) => v != null ? v.toFixed(dp) : '—';
@@ -25154,6 +25205,7 @@ function _spbBuild() {
       :`<div><span style="color:var(--muted)">Max Loss:</span> <strong style="color:#f87171">Unlimited</strong></div>`}
     <div><span style="color:var(--muted)">Net ${m.credit?'Credit':'Debit'}:</span> <strong style="color:${m.net>=0?'#34d399':'#f87171'}">${m.net>=0?'+':''}\$${Math.abs(m.net).toFixed(0)}</strong></div>
     <div><span style="color:var(--muted)">Break-Even${m.BEs.length>1?'s':''}:</span> <strong>${beStr}</strong></div>
+    ${m._n ? `<div><span style="color:var(--muted)">Lots:</span> <strong>×${m._n[0]} / ×${m._n[1]} / ×${m._n[2]}</strong></div>` : ''}
     ${pop!=null?`<div><span style="color:var(--muted)">PoP (risk-neutral):</span> <strong style="color:#22d3ee">${(pop*100).toFixed(1)}%</strong></div>`:''}
   </div>`;
   const legend = curves.length ? `<div style="display:flex;gap:12px;font-size:9px;color:var(--muted);margin-top:3px">

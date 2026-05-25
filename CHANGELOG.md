@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [3.9.1] - 2026-05-25
+
+### Added
+- **Non-equidistant butterfly lot sizing**: Long Butterfly strategy now uses GCD-based lot sizing for uneven wings — when Low–Mid and Mid–High widths differ, `_spbGcd()` computes the minimum integer lot ratio (n1 = upperWidth/GCD, n3 = lowerWidth/GCD, n2 = n1+n3); payoff, metrics (maxP, maxL, BEs), time-slice B-S curves, Greeks sparklines, and per-leg table all reflect the correct asymmetric lot structure; stats bar shows "Lots: ×n1 / ×n2 / ×n3"; equidistant wings (e.g., 490/500/510) degenerate to the standard ×1/×2/×1
+- **Bull Put Spread strategy**: new credit spread — sell higher put, buy lower put; max profit = net credit × 100, max loss = (width − net credit) × 100, single break-even at sell-strike − net credit; payoff, B-S time-slice curves, Greeks sensitivity charts, and per-leg table all supported; added to strategy dropdown
+- **Bear Call Spread strategy**: new credit spread — sell lower call, buy higher call; max profit = net credit × 100, max loss = (width − net credit) × 100, single break-even at sell-strike + net credit; payoff, B-S time-slice curves, Greeks sensitivity charts, and per-leg table all supported; added to strategy dropdown
+
 ## [3.9.0] - 2026-05-25
 
 ### Added
