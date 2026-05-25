@@ -9063,6 +9063,7 @@ const CFG_META = {
       { key: 'LLM_EOD_MODEL',          label: 'EOD Report',   type: 'text', hint: 'Default: anthropic/claude-sonnet-4-5' },
       { key: 'LLM_ORCHESTRATOR_MODEL', label: 'Orchestrator', type: 'text', hint: 'Default: anthropic/claude-haiku-4-5' },
       { key: 'LLM_FALLBACK_MODEL',     label: 'Fallback',     type: 'text', hint: 'Default: openai/gpt-4o' },
+      { key: 'LLM_PERSONAS_MODEL',     label: 'Personas',     type: 'text', hint: 'Default: anthropic/claude-haiku-4-5 — used for all 6 investor persona votes' },
     ],
   },
   alpha_vantage: {
@@ -10011,6 +10012,67 @@ async function openCfgModal(svc) {
   // Show Provision Inboxes button only for agentmail
   const provisionBtn = document.getElementById('cfg-provision-btn');
   if (provisionBtn) provisionBtn.style.display = svc === 'agentmail' ? '' : 'none';
+
+  // Predictor Schedule section appended to OpenRouter modal
+  if (svc === 'openrouter') {
+    await _appendPredictorScheduleSection(body, token);
+  }
+}
+
+async function _appendPredictorScheduleSection(body, token) {
+  const sep = `<div style="margin:18px 0 10px;display:flex;align-items:center;gap:8px">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);white-space:nowrap">Predictor Schedule</span>
+    <div style="flex:1;height:1px;background:var(--border)"></div>
+  </div>`;
+  const placeholder = `<div id="predictor-sched-section">${sep}<div style="font-size:11px;color:var(--muted)">Loading…</div></div>`;
+  body.insertAdjacentHTML('beforeend', placeholder);
+  try {
+    const d = await apiFetch(`/api/predictor/schedule?token=${encodeURIComponent(token)}`);
+    document.getElementById('predictor-sched-section').innerHTML = sep + `
+      <div class="bk-field-row" style="align-items:center">
+        <label class="bk-field-label">Daily run limit</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="pred_daily_limit" type="number" min="1" max="20" value="${d.daily_limit}"
+            style="background:var(--card-header);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:13px;width:70px">
+          <span style="font-size:11px;color:var(--muted)">runs/day max &nbsp;·&nbsp; today: <strong style="color:var(--text)">${d.runs_today}</strong></span>
+        </div>
+      </div>
+      <div class="bk-field-row" style="align-items:center">
+        <label class="bk-field-label">10:00 AM ET run</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input id="pred_sched_10am" type="checkbox" ${d.schedule_10am ? 'checked' : ''}
+            style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer">
+          <span style="font-size:12px;color:var(--muted)">Enable scheduled predictor run at market open + 30 min</span>
+        </label>
+      </div>
+      <div class="bk-field-row" style="align-items:center">
+        <label class="bk-field-label">2:00 PM ET run</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input id="pred_sched_2pm" type="checkbox" ${d.schedule_2pm ? 'checked' : ''}
+            style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer">
+          <span style="font-size:12px;color:var(--muted)">Enable scheduled predictor run at mid-afternoon</span>
+        </label>
+      </div>`;
+  } catch(e) {
+    document.getElementById('predictor-sched-section').innerHTML = sep +
+      `<div style="font-size:11px;color:var(--red)">Failed to load schedule: ${e.message}</div>`;
+  }
+}
+
+async function _savePredictorSchedule(token) {
+  const limitEl = document.getElementById('pred_daily_limit');
+  const am10El  = document.getElementById('pred_sched_10am');
+  const pm2El   = document.getElementById('pred_sched_2pm');
+  if (!limitEl) return;
+  await apiFetch('/api/predictor/schedule', {
+    method: 'POST',
+    body: JSON.stringify({
+      token,
+      daily_limit:   parseInt(limitEl.value) || 2,
+      schedule_10am: am10El ? am10El.checked : true,
+      schedule_2pm:  pm2El  ? pm2El.checked  : true,
+    }),
+  });
 }
 
 function closeCfgModal() {
@@ -10027,15 +10089,21 @@ async function saveCfgConnector() {
     const el = document.getElementById(`cfg_${f.key}`);
     if (el && el.value.trim() !== '') vars[f.key] = el.value.trim();
   });
-  if (!Object.keys(vars).length) {
+  const token = getToken();
+  if (!Object.keys(vars).length && _cfgCurrentService !== 'openrouter') {
     toast('info', 'No Changes', 'No values entered — nothing saved');
     return;
   }
   try {
-    await apiFetch('/api/user/secrets/batch', {
-      method: 'POST',
-      body: JSON.stringify({ vars }),
-    });
+    if (Object.keys(vars).length) {
+      await apiFetch('/api/user/secrets/batch', {
+        method: 'POST',
+        body: JSON.stringify({ vars }),
+      });
+    }
+    if (_cfgCurrentService === 'openrouter') {
+      await _savePredictorSchedule(token);
+    }
     toast('success', `${m.label} Saved`, 'Credentials stored in your profile');
     closeCfgModal();
     loadConfigPage();
@@ -21702,9 +21770,12 @@ async function _otLoadPendingOrders() {
 
   try {
     const data = await apiFetch('/api/broker/orders?status=open');
+    const _optAssetClasses = new Set(['option', 'options', 'us_option']);
     const orders = (data.orders || []).filter(o => {
-      const st = (o.status || '').toLowerCase();
-      return ['pending_new','new','accepted','partially_filled','pending'].some(s => st.includes(s));
+      const st  = (o.status || '').toLowerCase();
+      const cls = (o.class || o.asset_class || '').toLowerCase();
+      const isOption = _optAssetClasses.has(cls) || !!o.option_symbol;
+      return isOption && ['pending_new','new','accepted','partially_filled','pending'].some(s => st.includes(s));
     });
     if (count) count.textContent = orders.length ? `${orders.length} open` : 'none';
     if (!orders.length) {

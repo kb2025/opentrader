@@ -135,6 +135,32 @@ async def job_predict(redis: aioredis.Redis):
 
 
 @tracked
+async def job_predict_10am(redis: aioredis.Redis):
+    """Scheduled predictor run at 10:00 ET. Obeys daily limit and enabled flag."""
+    enabled = await redis.get("config:predictor:schedule_10am")
+    if enabled is not None and enabled.lower() in ("false", "0", "no"):
+        log.debug("scheduler.skip", job="predict_10am", reason="disabled")
+        return
+    if not is_market_open():
+        log.debug("scheduler.skip", job="predict_10am", reason="market_closed")
+        return
+    await trigger(redis, "run_predictor", {})
+
+
+@tracked
+async def job_predict_2pm(redis: aioredis.Redis):
+    """Scheduled predictor run at 14:00 ET. Obeys daily limit and enabled flag."""
+    enabled = await redis.get("config:predictor:schedule_2pm")
+    if enabled is not None and enabled.lower() in ("false", "0", "no"):
+        log.debug("scheduler.skip", job="predict_2pm", reason="disabled")
+        return
+    if not is_market_open():
+        log.debug("scheduler.skip", job="predict_2pm", reason="market_closed")
+        return
+    await trigger(redis, "run_predictor", {})
+
+
+@tracked
 async def job_heartbeat_check(redis: aioredis.Redis):
     """Trigger orchestrator to log a watchdog status summary."""
     await trigger(redis, "watchdog_status", {})

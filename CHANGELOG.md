@@ -3,6 +3,18 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.6] - 2026-05-25
+
+### Added
+- **Predictor daily run limit** (`predictor/main.py`) — configurable cap on how many times the predictor fires per calendar day; reads `config:predictor:daily_limit` Redis key (default 2); counter stored in `predictor:runs:{YYYY-MM-DD}` with 28h TTL; excess trigger commands are silently dropped with a log line
+- **Scheduled predictor runs** (`scheduler/jobs.py`, `scheduler/main.py`) — two new APScheduler jobs: `predict_10am` (10:00 ET) and `predict_2pm` (14:00 ET), each gated by Redis toggle keys `config:predictor:schedule_10am` / `config:predictor:schedule_2pm`; market-hours check preserved
+- **Predictor Schedule API** (`webui/main.py`) — `GET /api/predictor/schedule` and `POST /api/predictor/schedule` expose daily limit, 10am/2pm toggles, and today's run count; hot-reload — no container restart needed
+- **Predictor Schedule UI** (`index.html`) — OpenRouter connector modal gains a "Predictor Schedule" section: daily run limit input, 10 AM and 2 PM toggle checkboxes; saved alongside API key on connector save
+- **Personas model field** in OpenRouter connector — `LLM_PERSONAS_MODEL` now shown in Settings → OpenRouter modal
+
+### Fixed
+- **Options Trader / Pending Orders** — panel now filters to options-only orders (by `class === 'option'` or `option_symbol` present); previously showed equity orders such as stock GTC orders
+
 ## [4.0.5] - 2026-05-25
 
 ### Added

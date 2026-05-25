@@ -192,10 +192,38 @@ class PredictorAgent(BaseAgent):
                     from shared.redis_client import get_redis
                     self.redis = await get_redis()
 
+    async def _check_daily_limit(self) -> bool:
+        """Return True if another run is allowed today, False if the daily limit is reached."""
+        try:
+            limit_raw = await self.redis.get("config:predictor:daily_limit")
+            limit = int(limit_raw) if limit_raw else 2
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            count_raw = await self.redis.get(f"predictor:runs:{today}")
+            count = int(count_raw) if count_raw else 0
+            if count >= limit:
+                log.info("predictor.daily_limit_reached", count=count, limit=limit)
+                return False
+        except Exception as e:
+            log.warning("predictor.daily_limit_check_error", error=str(e))
+        return True
+
+    async def _increment_run_count(self):
+        """Increment today's run counter (expires after 28 hours)."""
+        try:
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            key = f"predictor:runs:{today}"
+            await self.redis.incr(key)
+            await self.redis.expire(key, 28 * 3600)
+        except Exception as e:
+            log.warning("predictor.run_count_error", error=str(e))
+
     async def _handle_command(self, msg_id: str, data: dict):
         job = data.get("job", "")
         try:
             if data.get("command") == "trigger" and job == "run_predictor":
+                if not await self._check_daily_limit():
+                    return
+                await self._increment_run_count()
                 await self._run()
         except Exception as e:
             log.error("predictor.handle_error", job=job, error=str(e))

@@ -21,6 +21,8 @@ from .jobs import (
     job_scrape_sentiment,
     job_score_ticker_sentiment,
     job_predict,
+    job_predict_10am,
+    job_predict_2pm,
     job_heartbeat_check,
     job_market_open,
     job_market_close,
@@ -195,6 +197,22 @@ class Scheduler(BaseAgent):
             IntervalTrigger(minutes=5, timezone=TZ),
             args=[r], id="predict",
             name="Predictor signal run every 5m",
+            replace_existing=True,
+        )
+
+        self.apscheduler.add_job(
+            job_predict_10am,
+            CronTrigger(hour=10, minute=0, day_of_week="mon-fri", timezone=TZ),
+            args=[r], id="predict_10am",
+            name="Predictor scheduled run 10:00 ET",
+            replace_existing=True,
+        )
+
+        self.apscheduler.add_job(
+            job_predict_2pm,
+            CronTrigger(hour=14, minute=0, day_of_week="mon-fri", timezone=TZ),
+            args=[r], id="predict_2pm",
+            name="Predictor scheduled run 14:00 ET",
             replace_existing=True,
         )
 

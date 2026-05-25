@@ -18313,6 +18313,53 @@ async def stock_persona_analysis(ticker: str, request: Request):
     return {**result, "source": "fresh"}
 
 
+@app.get("/api/predictor/schedule")
+async def get_predictor_schedule(token: str = ""):
+    """Return predictor daily limit and scheduled-run config from Redis."""
+    check_token(token)
+    import redis.asyncio as _aioredis
+    _r = await _aioredis.from_url(
+        os.getenv("REDIS_URL", "redis://ot-redis:6379/0"),
+        encoding="utf-8", decode_responses=True,
+    )
+    try:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        limit_raw    = await _r.get("config:predictor:daily_limit")
+        enabled_10am = await _r.get("config:predictor:schedule_10am")
+        enabled_2pm  = await _r.get("config:predictor:schedule_2pm")
+        run_count    = await _r.get(f"predictor:runs:{today}")
+        return {
+            "daily_limit":    int(limit_raw) if limit_raw else 2,
+            "schedule_10am":  (enabled_10am or "true").lower() not in ("false", "0", "no"),
+            "schedule_2pm":   (enabled_2pm  or "true").lower() not in ("false", "0", "no"),
+            "runs_today":     int(run_count) if run_count else 0,
+        }
+    finally:
+        await _r.aclose()
+
+
+@app.post("/api/predictor/schedule")
+async def set_predictor_schedule(body: dict):
+    """Persist predictor daily limit and scheduled-run toggles to Redis."""
+    check_token(body.get("token", ""))
+    import redis.asyncio as _aioredis
+    _r = await _aioredis.from_url(
+        os.getenv("REDIS_URL", "redis://ot-redis:6379/0"),
+        encoding="utf-8", decode_responses=True,
+    )
+    try:
+        if "daily_limit" in body:
+            limit = max(1, min(20, int(body["daily_limit"])))
+            await _r.set("config:predictor:daily_limit", str(limit))
+        if "schedule_10am" in body:
+            await _r.set("config:predictor:schedule_10am", "true" if body["schedule_10am"] else "false")
+        if "schedule_2pm" in body:
+            await _r.set("config:predictor:schedule_2pm", "true" if body["schedule_2pm"] else "false")
+        return {"ok": True}
+    finally:
+        await _r.aclose()
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     with open("/app/webui/static/index.html") as f:
