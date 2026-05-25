@@ -3,6 +3,21 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.5] - 2026-05-25
+
+### Added
+- **Investor Persona Voting** (`predictor/personas.py`) — six legendary investor personas (Druckenmiller, Buffett, Lynch, Wood, Burry, Greenblatt) each independently evaluate all momentum candidates in a single batch LLM call (haiku); weighted consensus adjusts confidence ±0.15 and gates weak signals; results cached to `predictor:persona_votes:latest` Redis key and persisted to signals DB; controlled by `PERSONA_VOTING` env var (default on)
+- **Earnings Gap feature** (`ml_predictor.py`) — Post-Earnings Announcement Drift (PEAD) proxy: signed max overnight gap > 2% in last 63 trading days added to ML feature set as a momentum direction indicator; requires no additional API calls
+- **Sector relative momentum features** (`ml_predictor.py`) — `spy_rel_21` and `spy_rel_63`: ticker return minus SPY return over 21 and 63 days; fetched via existing Polygon API key; SPY data cached 1h via new `SyncTTLCache` to avoid redundant fetches across concurrent ticker predictions
+- **TTL data cache** (`shared/data_cache.py`) — `TTLCache` (async) and `SyncTTLCache` (thread-safe sync) for reducing redundant API calls; used by ML predictor for benchmark data; available for all agents
+- **Market impact simulation** (`broker_gateway/fill_sim.py`) — Almgren-Chriss `estimate_impact()` computes slippage_bps, slippage_usd, fill_prob, participation rate, and recommended lot count; called automatically by broker gateway when `avg_volume` is present in the order command; logged at WARNING when slippage > 50bps
+- **Fill impact metadata in broker results** — gateway attaches `fill_impact` dict to each `place_order` result; equity trader passes `avg_volume` to the command when liquidity checks are active
+- **`personas` LLM role** (`llm/connector.py`) — new model slot mapped to `LLM_PERSONAS_MODEL` env var (default: haiku); used by persona voting system
+
+### Changed
+- **Predictor LLM enhancement** — single-LLM enhance replaced by multi-persona consensus when `PERSONA_VOTING=true` (default); single-LLM path retained as fallback when personas disabled
+- **ML feature count** — expanded from 26 to 29 features (earnings_gap, spy_rel_21, spy_rel_63)
+
 ## [4.0.4] - 2026-05-25
 
 ### Added

@@ -80,6 +80,9 @@ ML_ENABLED     = os.getenv("ML_ENABLED", "true").lower() not in ("false", "0", "
 ML_WEIGHT      = float(os.getenv("ML_WEIGHT",      "0.35"))   # ML contribution
 ML_MIN_VAL_ACC = float(os.getenv("ML_MIN_VAL_ACC", "0.52"))  # discard model if val accuracy below this
 
+# Investor persona voting (replaces single-LLM enhance; uses haiku for speed)
+PERSONA_ENABLED = os.getenv("PERSONA_VOTING", "true").lower() not in ("false", "0", "no")
+
 
 class PredictorAgent(BaseAgent):
 
@@ -267,8 +270,10 @@ class PredictorAgent(BaseAgent):
             self._ml.clear_old_cache()
             candidates = await self._ml_enhance(candidates)
 
-        # ── 3b. Optional LLM enhancement ─────────────────────────────────────
-        if self._use_llm and candidates:
+        # ── 3b. Investor persona voting (6 parallel LLM calls, one per persona) ──
+        if self._use_llm and PERSONA_ENABLED and candidates:
+            candidates = await self._persona_enhance(candidates[:15])
+        elif self._use_llm and candidates:
             candidates = await self._llm_enhance(candidates[:15])
 
         # ── 4. Apply strategy filters and compute stops ───────────────────────
@@ -346,6 +351,24 @@ class PredictorAgent(BaseAgent):
 
         log.info("predictor.published", count=len(signals))
 
+        # Publish persona vote summary to Redis for WebUI display
+        if any(s.metadata.get("persona_summary") for s in signals):
+            persona_data = {
+                s.ticker: {
+                    "delta":   s.metadata.get("persona_delta", 0.0),
+                    "bullish": s.metadata.get("persona_bullish", 0.0),
+                    "bearish": s.metadata.get("persona_bearish", 0.0),
+                    "summary": s.metadata.get("persona_summary", ""),
+                }
+                for s in signals
+                if s.metadata.get("persona_summary")
+            }
+            await self.redis.set(
+                "predictor:persona_votes:latest",
+                json.dumps(persona_data),
+                ex=3600,
+            )
+
         # ── 6. Persist to TimescaleDB ─────────────────────────────────────────
         await self._save_signals(signals)
 
@@ -399,6 +422,47 @@ class PredictorAgent(BaseAgent):
         enhanced.sort(key=lambda x: x.confidence, reverse=True)
         log.info("predictor.ml_enhance", total=len(candidates), ml_applied=applied,
                  ml_weight=ML_WEIGHT)
+        return enhanced
+
+    async def _persona_enhance(self, candidates: list[ScoredTicker]) -> list[ScoredTicker]:
+        """
+        Run 6 investor persona votes concurrently (one LLM call per persona, all
+        candidates batched into each call). Aggregate weighted consensus per ticker:
+          - confident bearish majority → discard
+          - bullish majority → positive delta
+          - neutral/mixed → small delta, keep
+        """
+        from predictor.personas import run_persona_consensus
+        from llm.connector import LLMConnector
+
+        llm = LLMConnector("personas")
+        try:
+            consensus_list = await run_persona_consensus(candidates, llm)
+        except Exception as e:
+            log.warning("predictor.persona_failed", error=str(e))
+            return candidates
+
+        enhanced = []
+        for t, consensus in zip(candidates, consensus_list):
+            if not consensus.keep:
+                log.info("predictor.persona_rejected",
+                         ticker=t.ticker,
+                         bearish=consensus.weighted_bearish,
+                         bullish=consensus.weighted_bullish)
+                continue
+            delta = consensus.confidence_delta
+            t.confidence = round(max(0.0, min(1.0, t.confidence + delta)), 4)
+            t.metadata.update({
+                "persona_delta":   round(delta, 4),
+                "persona_bullish": consensus.weighted_bullish,
+                "persona_bearish": consensus.weighted_bearish,
+                "persona_summary": consensus.summary,
+            })
+            enhanced.append(t)
+
+        enhanced.sort(key=lambda x: x.confidence, reverse=True)
+        log.info("predictor.persona_enhanced",
+                 before=len(candidates), after=len(enhanced))
         return enhanced
 
     async def _llm_enhance(self, candidates: list[ScoredTicker]) -> list[ScoredTicker]:
@@ -484,17 +548,21 @@ class PredictorAgent(BaseAgent):
                         s.direction,
                         s.confidence,
                         json.dumps({
-                            "asset_class":   s.asset_class,
+                            "asset_class":        s.asset_class,
                             "ovtlyr_score":       s.ovtlyr_score,
                             "sources":            s.sources,
                             "analyst_consensus":  s.metadata.get("analyst_consensus", "none"),
                             "sentiment_label":    s.metadata.get("sentiment_label", "neutral"),
                             "earnings_date":      s.metadata.get("earnings_date"),
                             "intel_summary":      s.metadata.get("summary", ""),
-                            "entry":         s.entry,
-                            "stop":          s.stop,
-                            "target":        s.target,
-                            "llm_reason":    s.metadata.get("llm_reason"),
+                            "entry":              s.entry,
+                            "stop":               s.stop,
+                            "target":             s.target,
+                            "llm_reason":         s.metadata.get("llm_reason"),
+                            "persona_delta":      s.metadata.get("persona_delta"),
+                            "persona_bullish":    s.metadata.get("persona_bullish"),
+                            "persona_bearish":    s.metadata.get("persona_bearish"),
+                            "persona_summary":    s.metadata.get("persona_summary"),
                         }),
                     )
                     for s in signals

@@ -20,6 +20,7 @@ MODELS = {
     "review":       os.getenv("LLM_REVIEW_MODEL",       "anthropic/claude-opus-4-5"),
     "eod":          os.getenv("LLM_EOD_MODEL",          "anthropic/claude-sonnet-4-5"),
     "orchestrator": os.getenv("LLM_ORCHESTRATOR_MODEL", "anthropic/claude-haiku-4-5"),
+    "personas":     os.getenv("LLM_PERSONAS_MODEL",     "anthropic/claude-haiku-4-5"),
     "fallback":     os.getenv("LLM_FALLBACK_MODEL",     "openai/gpt-4o"),
 }
 

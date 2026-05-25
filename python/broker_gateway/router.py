@@ -30,6 +30,7 @@ import logging
 from typing import Optional
 
 from .registry import BrokerRegistry, AccountRecord
+from .fill_sim import estimate_impact
 
 log = logging.getLogger(__name__)
 
@@ -146,6 +147,20 @@ class BrokerRouter:
         tag         = cmd.get("tag", "") or None
         opt_sym     = cmd.get("option_symbol", "")
 
+        # Optional market impact estimate — computed when caller provides avg_volume
+        avg_vol = _int(cmd.get("avg_volume", ""))
+        fill_impact: dict = {}
+        if avg_vol > 0 and price and quantity > 0:
+            atr_pct = _flt(cmd.get("atr_pct", "")) or 0.02
+            fill_impact = estimate_impact(quantity, avg_vol, price, atr_pct)
+            if fill_impact.get("slippage_bps", 0) > 50:
+                log.warning(
+                    "[router] high fill impact",
+                    symbol=symbol, qty=quantity, adv=avg_vol,
+                    slippage_bps=fill_impact["slippage_bps"],
+                    lots=fill_impact["recommended_lots"],
+                )
+
         tasks = []
         for rec in accounts:
             if asset_class == "option" and opt_sym:
@@ -162,7 +177,15 @@ class BrokerRouter:
                     duration=duration, tag=tag,
                 )))
 
-        return await self._gather(cmd, tasks)
+        results = await self._gather(cmd, tasks)
+
+        # Attach fill impact to each result for observability
+        if fill_impact:
+            for r in results:
+                if isinstance(r.get("data"), dict):
+                    r["data"]["fill_impact"] = fill_impact
+
+        return results
 
     async def _cancel_order(self, cmd: dict) -> list[dict]:
         accounts = self._resolve_accounts(cmd)

@@ -384,6 +384,14 @@ class EquityTrader(BaseAgent):
             "tag":           f"ot-{ticker}-{direction[:1]}",
             "issued_by":     "trader-equity",
         }
+        # Pass avg_volume for fill impact simulation in the gateway (if already fetched)
+        if controls.get("min_volume_k", 0) > 0:
+            # avg_vol was fetched in the liquidity check above; reuse it
+            try:
+                if avg_vol and avg_vol > 0:
+                    cmd["avg_volume"] = str(int(avg_vol))
+            except Exception:
+                pass
         await self.redis.xadd(STREAMS["broker_commands"], cmd, maxlen=10_000)
 
         # ── 4. Wait for gateway reply ─────────────────────────────────────────

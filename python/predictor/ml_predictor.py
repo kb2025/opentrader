@@ -4,7 +4,7 @@ Walk-forward trained RandomForest + GradientBoosting + Ridge models that
 produce a directional confidence score from OHLCV features. Blended with
 the rule-based scorer output as a weighted composite before LLM refinement.
 
-Feature set (26):
+Feature set (29):
   ret_5, ret_10, ret_20          — price momentum at 3 short lookbacks
   ret_21, ret_63, ret_126,
   ret_252                        — 1-month, 1-quarter, 6-month, 1-year returns
@@ -25,6 +25,9 @@ Feature set (26):
   bid_ask_proxy                  — (close-low)/(high-low) buying pressure proxy
   open_gap                       — (open - prev_close)/prev_close: overnight gap (retail/emotional move)
   intraday_ret                   — (close - open)/open: intraday return (smart money proxy, SMFI-inspired)
+  earnings_gap                   — signed max overnight gap > 2% in last 63 days (PEAD proxy)
+  spy_rel_21                     — ticker 21-day return minus SPY 21-day return (short-term alpha)
+  spy_rel_63                     — ticker 63-day return minus SPY 63-day return (medium-term alpha)
 
 Walk-forward:
   Fetch 2 years daily OHLCV → engineer features → create binary labels
@@ -61,6 +64,13 @@ TRAIN_RATIO    = 0.80    # fraction of history used for training
 MIN_TRAIN_ROWS = 120     # minimum rows needed to train (≈ 6 months)
 HISTORY_DAYS   = 730     # 2 years of daily OHLCV
 
+# Benchmark cache: stores SPY OHLCV DataFrame keyed by calendar date
+# Populated once per day by _fetch_benchmark(); avoids repeated API calls
+# across multiple concurrent ticker predictions running in thread executors.
+from shared.data_cache import SyncTTLCache as _SyncTTLCache
+_BENCHMARK_CACHE: _SyncTTLCache = _SyncTTLCache(default_ttl=3600)  # 1-hour TTL
+BENCHMARK_TICKER = "SPY"  # broad market benchmark for relative momentum features
+
 
 def _compute_rsi(close: "pd.Series", period: int = 14) -> "pd.Series":
     delta    = close.diff()
@@ -82,7 +92,10 @@ def _compute_mfi(close: "pd.Series", high: "pd.Series", low: "pd.Series",
     return (pos_sum / total) * 100
 
 
-def _engineer_features(df: "pd.DataFrame") -> "pd.DataFrame":
+def _engineer_features(
+    df: "pd.DataFrame",
+    benchmark_df: "Optional[pd.DataFrame]" = None,
+) -> "pd.DataFrame":
     """Return a DataFrame of ML features aligned to the input index."""
     close  = df["Close"].squeeze()
     high   = df["High"].squeeze()
@@ -161,6 +174,39 @@ def _engineer_features(df: "pd.DataFrame") -> "pd.DataFrame":
     f["open_gap"]     = (open_ - prev_close) / prev_close.replace(0, float("nan"))
     f["intraday_ret"] = (close - open_) / open_.replace(0, float("nan"))
 
+    # Post-Earnings Announcement Drift (PEAD) proxy:
+    # The signed maximum overnight gap > 2% in the trailing 63 days approximates
+    # the market's most recent earnings reaction (direction + magnitude of surprise).
+    gaps = f["open_gap"].copy()
+    gaps_63 = gaps.iloc[-63:] if len(gaps) >= 63 else gaps
+    large_gaps = gaps_63[gaps_63.abs() > 0.02]
+    if len(large_gaps) > 0:
+        peak_idx = large_gaps.abs().idxmax()
+        earnings_gap_val = float(large_gaps.loc[peak_idx])
+    else:
+        earnings_gap_val = 0.0
+    f["earnings_gap"] = earnings_gap_val  # scalar broadcast — same value for all rows
+
+    # Sector relative momentum: ticker return minus broad market (SPY) return.
+    # Measures whether the stock is generating alpha vs the market.
+    if benchmark_df is not None and len(benchmark_df) >= 63:
+        spy_close = benchmark_df["Close"].squeeze()
+        # Align index: inner join on dates present in both series
+        aligned = close.to_frame("tk").join(spy_close.to_frame("spy"), how="inner")
+        if len(aligned) >= 63:
+            f["spy_rel_21"] = (
+                aligned["tk"].pct_change(21) - aligned["spy"].pct_change(21)
+            ).reindex(f.index)
+            f["spy_rel_63"] = (
+                aligned["tk"].pct_change(63) - aligned["spy"].pct_change(63)
+            ).reindex(f.index)
+        else:
+            f["spy_rel_21"] = 0.0
+            f["spy_rel_63"] = 0.0
+    else:
+        f["spy_rel_21"] = 0.0
+        f["spy_rel_63"] = 0.0
+
     return f
 
 
@@ -207,6 +253,22 @@ def _fetch_ohlcv(ticker: str) -> "Optional[pd.DataFrame]":
         return None
 
 
+def _fetch_benchmark() -> "Optional[pd.DataFrame]":
+    """
+    Fetch SPY OHLCV for relative momentum features. Results cached 1h in
+    _BENCHMARK_CACHE to avoid repeated API calls across ticker predictions.
+    Returns None on failure; callers fall back to 0.0 for relative features.
+    """
+    cache_key = f"benchmark:{BENCHMARK_TICKER}"
+    cached = _BENCHMARK_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    result = _fetch_ohlcv(BENCHMARK_TICKER)
+    if result is not None:
+        _BENCHMARK_CACHE.set(cache_key, result)
+    return result
+
+
 def _train_and_predict(ticker: str, direction: str) -> dict:
     """
     Synchronous: fetch data, engineer features, walk-forward train ensemble,
@@ -222,7 +284,8 @@ def _train_and_predict(ticker: str, direction: str) -> dict:
     if df is None:
         return {}
 
-    feats  = _engineer_features(df)
+    benchmark_df = _fetch_benchmark()
+    feats  = _engineer_features(df, benchmark_df)
     labels = _create_labels(df["Close"].squeeze(), direction)
 
     # Align, drop NaN rows (need full feature window + forward label)
