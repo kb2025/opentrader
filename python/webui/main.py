@@ -18327,11 +18327,15 @@ async def get_predictor_schedule(token: str = ""):
         limit_raw    = await _r.get("config:predictor:daily_limit")
         enabled_10am = await _r.get("config:predictor:schedule_10am")
         enabled_2pm  = await _r.get("config:predictor:schedule_2pm")
+        time_10am    = await _r.get("config:predictor:time_10am")
+        time_2pm     = await _r.get("config:predictor:time_2pm")
         run_count    = await _r.get(f"predictor:runs:{today}")
         return {
             "daily_limit":    int(limit_raw) if limit_raw else 2,
             "schedule_10am":  (enabled_10am or "true").lower() not in ("false", "0", "no"),
             "schedule_2pm":   (enabled_2pm  or "true").lower() not in ("false", "0", "no"),
+            "time_10am":      time_10am or "10:00",
+            "time_2pm":       time_2pm  or "14:00",
             "runs_today":     int(run_count) if run_count else 0,
         }
     finally:
@@ -18340,9 +18344,12 @@ async def get_predictor_schedule(token: str = ""):
 
 @app.post("/api/predictor/schedule")
 async def set_predictor_schedule(body: dict):
-    """Persist predictor daily limit and scheduled-run toggles to Redis."""
+    """Persist predictor daily limit, scheduled-run toggles, and run times to Redis.
+    Time changes are hot-reloaded into APScheduler via the scheduler:reload pub/sub channel."""
     check_token(body.get("token", ""))
     import redis.asyncio as _aioredis
+    import json as _json
+    import re as _re
     _r = await _aioredis.from_url(
         os.getenv("REDIS_URL", "redis://ot-redis:6379/0"),
         encoding="utf-8", decode_responses=True,
@@ -18355,6 +18362,30 @@ async def set_predictor_schedule(body: dict):
             await _r.set("config:predictor:schedule_10am", "true" if body["schedule_10am"] else "false")
         if "schedule_2pm" in body:
             await _r.set("config:predictor:schedule_2pm", "true" if body["schedule_2pm"] else "false")
+
+        for time_key, job_id, default_t in [
+            ("time_10am", "predict_10am", "10:00"),
+            ("time_2pm",  "predict_2pm",  "14:00"),
+        ]:
+            if time_key not in body:
+                continue
+            raw_t = str(body[time_key]).strip()
+            if not _re.match(r"^\d{1,2}:\d{2}$", raw_t):
+                raise HTTPException(status_code=400, detail=f"Invalid time format for {time_key}: use HH:MM")
+            h, m = map(int, raw_t.split(":"))
+            if not (0 <= h <= 23 and 0 <= m <= 59):
+                raise HTTPException(status_code=400, detail=f"Time out of range for {time_key}")
+            t_str = f"{h:02d}:{m:02d}"
+            await _r.set(f"config:predictor:{time_key}", t_str)
+            # Update job record so scheduler can reschedule via reload pub/sub
+            raw_rec = await _r.get(f"scheduler:job:{job_id}")
+            rec = _json.loads(raw_rec) if raw_rec else {}
+            rec["cron_hour"]   = h
+            rec["cron_minute"] = m
+            rec["cron_days"]   = "mon-fri"
+            await _r.set(f"scheduler:job:{job_id}", _json.dumps(rec))
+            await _r.publish("scheduler:reload", job_id)
+
         return {"ok": True}
     finally:
         await _r.aclose()

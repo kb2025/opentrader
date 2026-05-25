@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.11] - 2026-05-25
+
+### Added
+- **Predictor Schedule time pickers** — each scheduled run (morning / afternoon) now has a native `<input type="time">` clock selector; defaults to 10:00 and 14:00 ET; saving hot-reloads the APScheduler CronTrigger via `scheduler:reload` pub/sub — no container restart needed; times persisted to `config:predictor:time_10am` / `config:predictor:time_2pm` Redis keys
+
 ## [4.0.10] - 2026-05-25
 
 ### Changed

@@ -9601,16 +9601,18 @@ async function _loadPredictorScheduleCard(token) {
         </div>
         <div>
           <label style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:8px">Scheduled Runs</label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
-            <input id="pred_sched_10am" type="checkbox" ${d.schedule_10am ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--blue);cursor:pointer">
-            <span style="font-size:12px;color:var(--fg)">10:00 AM ET</span>
-            <span style="font-size:11px;color:var(--muted)">morning run</span>
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input id="pred_sched_2pm" type="checkbox" ${d.schedule_2pm ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--blue);cursor:pointer">
-            <span style="font-size:12px;color:var(--fg)">2:00 PM ET</span>
-            <span style="font-size:11px;color:var(--muted)">afternoon run</span>
-          </label>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <input id="pred_sched_10am" type="checkbox" ${d.schedule_10am ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--blue);cursor:pointer" title="Enable morning run">
+            <input id="pred_time_10am" type="time" value="${d.time_10am}"
+              style="background:var(--card-header);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;font-family:inherit;cursor:pointer;width:110px">
+            <span style="font-size:11px;color:var(--muted)">ET &nbsp;·&nbsp; morning run</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input id="pred_sched_2pm" type="checkbox" ${d.schedule_2pm ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--blue);cursor:pointer" title="Enable afternoon run">
+            <input id="pred_time_2pm" type="time" value="${d.time_2pm}"
+              style="background:var(--card-header);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;font-family:inherit;cursor:pointer;width:110px">
+            <span style="font-size:11px;color:var(--muted)">ET &nbsp;·&nbsp; afternoon run</span>
+          </div>
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:14px">
@@ -9622,9 +9624,11 @@ async function _loadPredictorScheduleCard(token) {
 }
 
 async function savePredictorSchedule() {
-  const limitEl = document.getElementById('pred_daily_limit');
-  const am10El  = document.getElementById('pred_sched_10am');
-  const pm2El   = document.getElementById('pred_sched_2pm');
+  const limitEl   = document.getElementById('pred_daily_limit');
+  const am10El    = document.getElementById('pred_sched_10am');
+  const pm2El     = document.getElementById('pred_sched_2pm');
+  const time10El  = document.getElementById('pred_time_10am');
+  const time2El   = document.getElementById('pred_time_2pm');
   if (!limitEl) return;
   try {
     await apiFetch('/api/predictor/schedule', {
@@ -9632,8 +9636,10 @@ async function savePredictorSchedule() {
       body: JSON.stringify({
         token:         getToken(),
         daily_limit:   parseInt(limitEl.value) || 2,
-        schedule_10am: am10El ? am10El.checked : true,
-        schedule_2pm:  pm2El  ? pm2El.checked  : true,
+        schedule_10am: am10El  ? am10El.checked  : true,
+        schedule_2pm:  pm2El   ? pm2El.checked   : true,
+        time_10am:     time10El ? time10El.value  : '10:00',
+        time_2pm:      time2El  ? time2El.value   : '14:00',
       }),
     });
     toast('success', 'Predictor Schedule', 'Schedule saved');
