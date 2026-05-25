@@ -582,6 +582,10 @@ select option{background:var(--surface2)}
             <div id="stat-loss-limit-bar" style="height:100%;width:0%;background:var(--green);border-radius:2px;transition:width .4s"></div>
           </div>
         </div>
+        <div class="stat-card" id="stat-data-gw-card" title="Market Data Gateway — configured connectors">
+          <div class="stat-label">Data Gateway</div>
+          <div class="stat-value" id="stat-data-gw" style="color:var(--muted)">—</div>
+        </div>
       </div>
 
       <!-- Topology -->
@@ -706,11 +710,12 @@ select option{background:var(--surface2)}
               <option value="directive-agent">directive-agent</option>
               <option value="review-agent">review-agent</option>
               <option value="broker-gateway">broker-gateway</option>
+              <option value="market-data">market-data</option>
               <option value="mcp-alpaca">mcp-alpaca</option>
               <option value="mcp-tradingview">mcp-tradingview</option>
               <option value="mcp-massive">mcp-massive</option>
               <option value="mcp-unusualwhales">mcp-unusualwhales</option>
-              <option value="mcp-eodhd">mcp-eodhd</option>
+              <option value="mcp-yahoo">mcp-yahoo</option>
               <option value="chat-agent">chat-agent</option>
             </select>
             <select class="select-input" id="logs-lines-select">
@@ -5430,7 +5435,7 @@ function navigate(pageId) {
 
   // Lazy-load page data on first visit
   switch(pageId) {
-    case 'page-platform-dashboard': loadPlatformDailyPnl(); loadSignalTimeline(); break;
+    case 'page-platform-dashboard': loadPlatformDailyPnl(); loadSignalTimeline(); loadDataGatewayHealth(); break;
     case 'page-platform-agents':    loadAgentsPage();    break;
     case 'page-platform-scheduler': _initSchedThead(); loadSchedulerPage(); break;
     case 'page-platform-reports':   loadReportsPage(); break;
@@ -5681,6 +5686,26 @@ async function loadPlatformDailyPnl() {
   }
 }
 
+async function loadDataGatewayHealth() {
+  const el   = document.getElementById('stat-data-gw');
+  const card = document.getElementById('stat-data-gw-card');
+  if (!el) return;
+  try {
+    const d = await apiFetch('/api/market-data/health');
+    if (d.error) { el.textContent = 'Offline'; el.style.color = 'var(--red)'; if (card) card.style.borderColor = 'var(--red)'; return; }
+    const names      = Object.keys(d);
+    const configured = names.filter(n => d[n].configured).length;
+    const ok         = names.filter(n => d[n].configured && d[n].state === 'ok').length;
+    el.textContent = `${ok}/${configured} online`;
+    const color = ok < configured ? 'var(--amber)' : ok === 0 ? 'var(--red)' : 'var(--green)';
+    el.style.color = color;
+    if (card) card.style.borderColor = ok < configured ? 'var(--amber)' : 'var(--border)';
+    card.title = names.map(n => `${n}: ${d[n].state}`).join(' · ');
+  } catch(_) {
+    el.textContent = '—';
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Signal Timeline (Item 5)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -5911,6 +5936,7 @@ const TOPO_NODES = [
   // ── Core pipeline ─────────────────────────────────────────────────────────
   { id: 'aggregator',              label: 'Aggregator',       x: 200, y: 125, group: 'core'     },
   { id: 'predictor',               label: 'Predictor',        x: 375, y: 80,  group: 'core'     },
+  { id: 'market-data',             label: 'Market Data GW',   x: 375, y: 310, group: 'core'     },
   // ── Traders ───────────────────────────────────────────────────────────────
   { id: 'trader-equity',           label: 'Equity Trader',    x: 555, y: 40,  group: 'traders'  },
   { id: 'trader-options',          label: 'Options Trader',   x: 555, y: 130, group: 'traders'  },
@@ -5927,7 +5953,7 @@ const TOPO_NODES = [
   { id: 'mcp-tradingview',         label: 'MCP TradingView',    x: 555, y: 230, group: 'mcp'      },
   { id: 'mcp-massive',             label: 'MCP Massive',        x: 280, y: 450, group: 'mcp'      },
   { id: 'mcp-unusualwhales',       label: 'MCP Unusual Whales', x: 90,  y: 515, group: 'mcp'      },
-  { id: 'mcp-eodhd',               label: 'MCP EODHD',          x: 460, y: 520, group: 'mcp'      },
+  { id: 'mcp-yahoo',               label: 'MCP Yahoo',          x: 460, y: 520, group: 'mcp'      },
   // ── Interface ─────────────────────────────────────────────────────────────
   { id: 'chat-agent',              label: 'Chat Agent',         x: 930, y: 140, group: 'interface'},
 ];
@@ -5936,64 +5962,72 @@ const NODE_W = 130, NODE_H = 38;
 
 const TOPO_EDGES = [
   // ── Scheduler triggers ────────────────────────────────────────────────────
-  { from: 'scheduler',              to: 'scraper-ovtlyr',          label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'scraper-wsb',             label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'scraper-seekalpha',       label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'scraper-news',            label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'scraper-etf-flows',       label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'scraper-macro-regime',    label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scheduler',              to: 'predictor',               label: '',  color: '#6b7394', markerId: 'arrow-gray',   dashed: true  },
-  // ── Scrapers publish market data ──────────────────────────────────────────
-  { from: 'scraper-ovtlyr',         to: 'predictor',               label: 'scanner.signals',  color: '#3b82f6', markerId: 'arrow-blue',   dashed: false },
-  { from: 'scraper-wsb',            to: 'aggregator',              label: 'market.ticks',     color: '#8b5cf6', markerId: 'arrow-purple', dashed: false },
-  { from: 'scraper-seekalpha',      to: 'aggregator',              label: 'market.ticks',     color: '#8b5cf6', markerId: 'arrow-purple', dashed: false },
+  { from: 'scheduler', to: 'scraper-ovtlyr',        label: '', color: '#6b7394', markerId: 'arrow-gray',   dashed: true },
+  { from: 'scheduler', to: 'scraper-wsb',           label: '', color: '#6b7394', markerId: 'arrow-gray',   dashed: true },
+  { from: 'scheduler', to: 'scraper-seekalpha',     label: '', color: '#6b7394', markerId: 'arrow-gray',   dashed: true },
+  { from: 'scheduler', to: 'scraper-news',          label: '', color: '#6b7394', markerId: 'arrow-gray',   dashed: true },
+  { from: 'scheduler', to: 'scraper-etf-flows',     label: '', color: '#6b7394', markerId: 'arrow-gray',   dashed: true },
+  { from: 'scheduler', to: 'scraper-macro-regime',  label: '', color: '#6b7394', markerId: 'arrow-gray',   dashed: true },
+  { from: 'scheduler', to: 'predictor',             label: '', color: '#6b7394', markerId: 'arrow-gray',   dashed: true },
+  { from: 'scheduler', to: 'market-data',           label: '', color: '#6b7394', markerId: 'arrow-gray',   dashed: true },
+  // ── Scrapers → pipeline / Market Data Gateway ────────────────────────────
+  { from: 'scraper-ovtlyr',    to: 'predictor',   label: 'scanner.signals', color: '#3b82f6', markerId: 'arrow-blue',   dashed: false },
+  { from: 'scraper-wsb',       to: 'aggregator',  label: 'market.ticks',    color: '#8b5cf6', markerId: 'arrow-purple', dashed: false },
+  { from: 'scraper-seekalpha', to: 'aggregator',  label: 'market.ticks',    color: '#8b5cf6', markerId: 'arrow-purple', dashed: false },
+  { from: 'scraper-etf-flows',    to: 'market-data', label: 'market data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  { from: 'scraper-macro-regime', to: 'market-data', label: 'market data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
   // ── Aggregator → Predictor ────────────────────────────────────────────────
-  { from: 'aggregator',             to: 'predictor',               label: 'intel',            color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
+  { from: 'aggregator', to: 'predictor', label: 'intel', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  // ── Core agents → Market Data Gateway ────────────────────────────────────
+  { from: 'aggregator',     to: 'market-data', label: 'market data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  { from: 'predictor',      to: 'market-data', label: 'market data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  { from: 'trader-equity',  to: 'market-data', label: 'market data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  { from: 'trader-options', to: 'market-data', label: 'market data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  { from: 'options-monitor',to: 'market-data', label: 'market data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  // ── Market Data Gateway → MCP providers ──────────────────────────────────
+  { from: 'market-data', to: 'mcp-massive',       label: 'data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  { from: 'market-data', to: 'mcp-tradingview',   label: 'data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  { from: 'market-data', to: 'mcp-unusualwhales', label: 'data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  { from: 'market-data', to: 'mcp-yahoo',         label: 'data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
+  { from: 'market-data', to: 'mcp-alpaca',        label: 'data', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
   // ── Predictor → Traders ───────────────────────────────────────────────────
-  { from: 'predictor',              to: 'trader-equity',           label: 'signals',          color: '#22c55e', markerId: 'arrow-green',  dashed: false },
-  { from: 'predictor',              to: 'trader-options',          label: 'signals',          color: '#22c55e', markerId: 'arrow-green',  dashed: false },
+  { from: 'predictor', to: 'trader-equity',  label: 'signals', color: '#22c55e', markerId: 'arrow-green', dashed: false },
+  { from: 'predictor', to: 'trader-options', label: 'signals', color: '#22c55e', markerId: 'arrow-green', dashed: false },
   // ── Traders → Review ─────────────────────────────────────────────────────
-  { from: 'trader-equity',          to: 'review-agent',            label: 'orders',           color: '#f59e0b', markerId: 'arrow-amber',  dashed: false },
-  { from: 'trader-options',         to: 'review-agent',            label: 'orders',           color: '#f59e0b', markerId: 'arrow-amber',  dashed: false },
+  { from: 'trader-equity',  to: 'review-agent', label: 'orders', color: '#f59e0b', markerId: 'arrow-amber', dashed: false },
+  { from: 'trader-options', to: 'review-agent', label: 'orders', color: '#f59e0b', markerId: 'arrow-amber', dashed: false },
   // ── Traders / Directive → Broker Gateway ─────────────────────────────────
-  { from: 'trader-equity',          to: 'broker-gateway',          label: 'broker.commands',  color: '#f97316', markerId: 'arrow-orange', dashed: false },
-  { from: 'trader-options',         to: 'broker-gateway',          label: 'broker.commands',  color: '#f97316', markerId: 'arrow-orange', dashed: false },
-  { from: 'directive-agent',        to: 'broker-gateway',          label: 'broker.commands',  color: '#f97316', markerId: 'arrow-orange', dashed: false },
+  { from: 'trader-equity',   to: 'broker-gateway', label: 'broker.commands', color: '#f97316', markerId: 'arrow-orange', dashed: false },
+  { from: 'trader-options',  to: 'broker-gateway', label: 'broker.commands', color: '#f97316', markerId: 'arrow-orange', dashed: false },
+  { from: 'directive-agent', to: 'broker-gateway', label: 'broker.commands', color: '#f97316', markerId: 'arrow-orange', dashed: false },
   // ── Options Monitor → Broker Gateway (reads positions) ───────────────────
-  { from: 'options-monitor',        to: 'broker-gateway',          label: 'positions',        color: '#f97316', markerId: 'arrow-orange', dashed: false },
+  { from: 'options-monitor', to: 'broker-gateway', label: 'positions', color: '#f97316', markerId: 'arrow-orange', dashed: false },
+  // ── MCP Alpaca → Broker Gateway (trade execution) ────────────────────────
+  { from: 'mcp-alpaca', to: 'broker-gateway', label: 'mcp/tools', color: '#14b8a6', markerId: 'arrow-teal', dashed: false },
   // ── Heartbeats → Orchestrator ─────────────────────────────────────────────
-  { from: 'scraper-ovtlyr',         to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scraper-wsb',            to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scraper-seekalpha',      to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scraper-news',           to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scraper-etf-flows',      to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'scraper-macro-regime',   to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'aggregator',             to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'predictor',              to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'trader-equity',          to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'trader-options',         to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'directive-agent',        to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'options-monitor',        to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'review-agent',           to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'broker-gateway',         to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'mcp-massive',            to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'mcp-unusualwhales',      to: 'orchestrator',            label: 'heartbeat',        color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  { from: 'orchestrator',           to: 'scheduler',               label: 'system.commands',  color: '#334155', markerId: 'arrow-gray',   dashed: true  },
-  // ── MCP tool connections ──────────────────────────────────────────────────
-  { from: 'mcp-alpaca',             to: 'broker-gateway',          label: 'mcp/tools',        color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
-  { from: 'mcp-tradingview',        to: 'trader-equity',           label: 'tv confirm',       color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
-  { from: 'mcp-tradingview',        to: 'trader-options',          label: 'tv confirm',       color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
-  { from: 'mcp-massive',            to: 'predictor',               label: 'market data',      color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
-  { from: 'mcp-massive',            to: 'aggregator',              label: 'market data',      color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
-  { from: 'mcp-unusualwhales',      to: 'predictor',               label: 'options flow',     color: '#f97316', markerId: 'arrow-orange', dashed: false },
-  { from: 'mcp-eodhd',              to: 'aggregator',              label: 'fundamentals',     color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
-  { from: 'mcp-eodhd',              to: 'predictor',               label: 'earnings/ratings', color: '#14b8a6', markerId: 'arrow-teal',   dashed: false },
+  { from: 'scraper-ovtlyr',      to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'scraper-wsb',         to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'scraper-seekalpha',   to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'scraper-news',        to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'scraper-etf-flows',   to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'scraper-macro-regime',to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'aggregator',          to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'predictor',           to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'market-data',         to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'trader-equity',       to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'trader-options',      to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'directive-agent',     to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'options-monitor',     to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'review-agent',        to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'broker-gateway',      to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'mcp-massive',         to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'mcp-unusualwhales',   to: 'orchestrator', label: 'heartbeat', color: '#334155', markerId: 'arrow-gray', dashed: true },
+  { from: 'orchestrator',        to: 'scheduler',    label: 'system.commands', color: '#334155', markerId: 'arrow-gray', dashed: true },
   // ── Chat Agent queries ────────────────────────────────────────────────────
-  { from: 'chat-agent',             to: 'mcp-alpaca',              label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
-  { from: 'chat-agent',             to: 'mcp-tradingview',         label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
-  { from: 'chat-agent',             to: 'mcp-massive',             label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
-  { from: 'chat-agent',             to: 'mcp-unusualwhales',       label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
-  { from: 'chat-agent',             to: 'mcp-eodhd',               label: 'queries',          color: '#8b5cf6', markerId: 'arrow-purple', dashed: true  },
+  { from: 'chat-agent', to: 'mcp-alpaca',       label: 'queries', color: '#8b5cf6', markerId: 'arrow-purple', dashed: true },
+  { from: 'chat-agent', to: 'mcp-tradingview',  label: 'queries', color: '#8b5cf6', markerId: 'arrow-purple', dashed: true },
+  { from: 'chat-agent', to: 'mcp-massive',      label: 'queries', color: '#8b5cf6', markerId: 'arrow-purple', dashed: true },
+  { from: 'chat-agent', to: 'mcp-unusualwhales',label: 'queries', color: '#8b5cf6', markerId: 'arrow-purple', dashed: true },
 ];
 
 function healthColor(health) {
@@ -6038,13 +6072,14 @@ function resetTopoLayout() {
     'scraper-news':15,'scraper-news_y':210, 'scraper-etf-flows':15,'scraper-etf-flows_y':275,
     'scraper-macro-regime':15,'scraper-macro-regime_y':340,
     'aggregator':200,'aggregator_y':125, 'predictor':375,'predictor_y':80,
+    'market-data':375,'market-data_y':310,
     'trader-equity':555,'trader-equity_y':40, 'trader-options':555,'trader-options_y':130,
     'review-agent':735,'review-agent_y':80, 'scheduler':185,'scheduler_y':420,
     'orchestrator':375,'orchestrator_y':420, 'broker-gateway':735,'broker-gateway_y':200,
     'mcp-alpaca':735,'mcp-alpaca_y':310,
     'mcp-massive':280,'mcp-massive_y':450,
     'mcp-unusualwhales':90,'mcp-unusualwhales_y':515,
-    'mcp-eodhd':460,'mcp-eodhd_y':520,
+    'mcp-yahoo':460,'mcp-yahoo_y':520,
     'chat-agent':930,'chat-agent_y':140,
   };
   TOPO_NODES.forEach(n => {

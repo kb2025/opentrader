@@ -12990,6 +12990,21 @@ async def get_av_ticker_sentiment(ticker: str = "", hours: int = 72, limit: int 
     return {"ticker": ticker or None, "articles": articles, "source": "db"}
 
 
+# ── Market Data Gateway ───────────────────────────────────────────────────────
+
+@app.get("/api/market-data/health")
+async def get_market_data_health():
+    """Proxy the market-data gateway /health endpoint."""
+    import aiohttp as _aiohttp
+    gw = os.getenv("MARKET_DATA_URL", "http://ot-market-data:8090")
+    try:
+        async with _aiohttp.ClientSession() as session:
+            async with session.get(f"{gw}/health", timeout=_aiohttp.ClientTimeout(total=5)) as r:
+                return await r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ── Finnhub insider transactions + sentiment ──────────────────────────────────
 
 @app.get("/api/market/insider/{ticker}")

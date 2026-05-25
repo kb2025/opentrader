@@ -3,6 +3,20 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.13] - 2026-05-25
+
+### Changed
+- **Platform Dashboard — Market Data Gateway integration**: Agent Topology and stat grid updated to reflect the new gateway architecture
+  - Added `Market Data GW` node (core group, centre of the topology)
+  - Removed `MCP EODHD` node (EODHD subscription eliminated); replaced with `MCP Yahoo` node
+  - Edges redrawn: all data consumers (aggregator, predictor, traders, options-monitor, ETF/macro scrapers) now point to `market-data`; `market-data` fans out to MCP providers (Massive, TradingView, Unusual Whales, Yahoo, Alpaca)
+  - Old direct MCP→agent data edges removed (mcp-massive→predictor, mcp-massive→aggregator, mcp-tradingview→traders, mcp-eodhd→*)
+  - Scheduler trigger edge `scheduler→market-data` added; `market-data→orchestrator` heartbeat added
+  - `resetTopoLayout` default positions updated; `mcp-eodhd` removed from log viewer dropdown
+  - New **Data Gateway** stat card on the Platform Dashboard — shows `N/M online` connector status via `/api/market-data/health`
+  - `GET /api/market-data/health` added to webui backend (proxies `ot-market-data:8090/health`)
+- **Finnhub connector logo**: `finnhub_avatar.png` added to webui static assets as `logo-finnhub.png`
+
 ## [4.0.12] - 2026-05-25
 
 ### Changed
