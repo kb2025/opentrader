@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.0] - 2026-05-25
+
+### Changed
+- **FRED Economic Dashboard** — extended all trend windows to 18 months (monthly series: 18 pts; weekly jobless claims: 78 wks; daily credit spreads: ~390 trading days)
+
 ## [3.9.9] - 2026-05-25
 
 ### Added

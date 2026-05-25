@@ -17639,7 +17639,7 @@ async def fred_dashboard(token: str = ""):
     Cached 1 hour.
     """
     check_token(token)
-    cache_key = "fred:dashboard:v1"
+    cache_key = "fred:dashboard:v2"
     try:
         _r = await get_redis()
         cached = await _r.get(cache_key)
@@ -17654,15 +17654,15 @@ async def fred_dashboard(token: str = ""):
     try:
         (cpi, core_cpi, core_pce, unrate, claims,
          fedfunds, m2, hy_oas, ig_oas) = await asyncio.gather(
-            _fred_history("CPIAUCSL",    24),   # monthly, 24 pts
-            _fred_history("CPILFESL",    24),
-            _fred_history("PCEPILFE",    24),
-            _fred_history("UNRATE",      24),
-            _fred_history("ICSA",        52),   # weekly, 52 pts
-            _fred_history("FEDFUNDS",    24),
-            _fred_history("M2SL",        24),
-            _fred_history("BAMLH0A0HYM2", 90),  # daily, 90 pts
-            _fred_history("BAMLC0A0CM",   90),
+            _fred_history("CPIAUCSL",    18),   # monthly, 18 months
+            _fred_history("CPILFESL",    18),
+            _fred_history("PCEPILFE",    18),
+            _fred_history("UNRATE",      18),
+            _fred_history("ICSA",        78),   # weekly, ~18 months
+            _fred_history("FEDFUNDS",    18),
+            _fred_history("M2SL",        18),
+            _fred_history("BAMLH0A0HYM2", 390), # daily, ~18 months
+            _fred_history("BAMLC0A0CM",   390),
         )
 
         result = {
