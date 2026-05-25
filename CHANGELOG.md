@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.1] - 2026-05-25
+
+### Fixed
+- **FRED Economic Dashboard** — refresh button now works: frontend always shows "Loading…" spinner and passes `?force=true` to API; backend skips Redis cache and re-fetches all series when `force=true`, then re-caches the fresh result
+
 ## [4.0.0] - 2026-05-25
 
 ### Changed

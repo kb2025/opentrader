@@ -17631,22 +17631,24 @@ async def analyze_telemetry(body: _TelemetryAnalyzeBody, token: str = ""):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/fred/dashboard")
-async def fred_dashboard(token: str = ""):
+async def fred_dashboard(token: str = "", force: bool = False):
     """
     FRED macro time series for the Economic Dashboard page.
-    Returns 24 months of inflation, employment, monetary policy, money supply, and
-    90 days of credit spreads. Uses public FRED CSV (no API key required).
-    Cached 1 hour.
+    Returns 18 months of inflation, employment, monetary policy, money supply, and
+    credit spreads. Uses public FRED CSV (no API key required).
+    Cached 1 hour. Pass force=true to bypass cache.
     """
     check_token(token)
     cache_key = "fred:dashboard:v2"
-    try:
-        _r = await get_redis()
-        cached = await _r.get(cache_key)
-        if cached:
-            return json.loads(cached)
-    except Exception:
-        _r = None
+    _r = None
+    if not force:
+        try:
+            _r = await get_redis()
+            cached = await _r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            _r = None
 
     def _fmt(pairs: list) -> list:
         return [{"date": d, "value": v} for d, v in pairs]
@@ -17688,6 +17690,8 @@ async def fred_dashboard(token: str = ""):
             "updated": datetime.now(timezone.utc).isoformat(),
         }
         try:
+            if _r is None:
+                _r = await get_redis()
             if _r:
                 await _r.setex(cache_key, 3600, json.dumps(result))
         except Exception:
