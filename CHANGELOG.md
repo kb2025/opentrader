@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.23] - 2026-05-25
+
+### Changed
+- **Service Connectors diagram**: reduced SVG width from 90% → 81% (another 10% reduction)
+
 ## [4.0.22] - 2026-05-25
 
 ### Added
