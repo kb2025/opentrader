@@ -5664,6 +5664,7 @@ function renderPlatformDashboard(data) {
     drawTopology(data.agents);
     const toggle = document.getElementById('topo-labels-toggle');
     if (toggle && !toggle.checked) toggleTopoLabels(false);
+    if (!_connectorHealth) loadDataGatewayHealth();
     renderConnectorFlow(data.agents);
     renderRecentEvents(data);
   }
@@ -5748,6 +5749,8 @@ function renderConnectorFlow(agentsArr) {
   const SVG_H  = PAD_T + nMax * ITEM_H + (nMax - 1) * GAP + PAD_B;
   const SVG_W  = 760;
   svg.setAttribute('viewBox', `0 0 ${SVG_W} ${SVG_H}`);
+  svg.style.width = '90%';
+  svg.style.margin = '0 auto';
 
   const leftCenters  = Array.from({length: nLeft},  (_, i) => PAD_T + 13 + i * (ITEM_H + GAP));
   const rightCenters = Array.from({length: nRight}, (_, i) => PAD_T + 13 + i * (ITEM_H + GAP));
@@ -5785,8 +5788,14 @@ function renderConnectorFlow(agentsArr) {
     return info.state === 'ok' ? '#22c55e' : info.state === 'half_open' ? '#f59e0b' : '#ef4444';
   }
   function pBorderColor(info) {
-    if (!info || !info.configured) return '#2a3050';
-    return info.state === 'ok' ? '#1e3a2a' : info.state === 'half_open' ? '#3a2e14' : '#3a1a1a';
+    if (!info) return '#3d4566';
+    if (!info.configured) return '#2a3050';
+    return info.state === 'ok' ? '#22c55e' : info.state === 'half_open' ? '#f59e0b' : '#ef4444';
+  }
+  function pStateText(info) {
+    if (!info) return '—';
+    if (!info.configured) return 'off';
+    return info.state === 'ok' ? 'ok' : info.state === 'half_open' ? 'warn' : 'down';
   }
   // smooth S-curve bezier between two horizontal points
   function bezierH(x1, y1, x2, y2) {
@@ -5845,6 +5854,10 @@ function renderConnectorFlow(agentsArr) {
     const borderCol = pBorderColor(p.info);
     const dotCol    = pDotColor(p.info);
     const caps      = p.info && p.info.capabilities ? p.info.capabilities : [];
+    const stLabel   = pStateText(p.info);
+    const stColor   = dotCol;
+    const stW       = stLabel.length * 6 + 10;
+    const stX       = PRV_X + PRV_W - stW - 4;
     const rect = el('rect', { x: PRV_X, y: cy-13, width: PRV_W, height: ITEM_H, rx: 6, fill: '#1a1e2b', stroke: borderCol, 'stroke-width': 1.5 });
     if (caps.length) {
       const t = document.createElementNS(NS, 'title');
@@ -5854,11 +5867,9 @@ function renderConnectorFlow(agentsArr) {
     svg.appendChild(rect);
     svg.appendChild(el('circle', { cx: PRV_X+10, cy, r: 4, fill: dotCol }));
     svg.appendChild(el('text', { x: PRV_X+20, y: cy+4, fill: '#c8cde0', 'font-size': 10.5, 'text-anchor': 'start', 'font-family': 'system-ui,sans-serif' }, p.label));
-    if (caps.length) {
-      const bx = PRV_X + PRV_W - 22;
-      svg.appendChild(el('rect',  { x: bx, y: cy-8, width: 20, height: 14, rx: 3, fill: '#1e293b' }));
-      svg.appendChild(el('text',  { x: bx+10, y: cy+4, fill: '#6b7394', 'font-size': 9, 'text-anchor': 'middle', 'font-family': 'system-ui,sans-serif' }, caps.length));
-    }
+    // state badge (right-aligned)
+    svg.appendChild(el('rect', { x: stX, y: cy-7, width: stW, height: 13, rx: 3, fill: '#0d1526' }));
+    svg.appendChild(el('text', { x: stX + stW/2, y: cy+4, fill: stColor, 'font-size': 9, 'font-weight': 700, 'text-anchor': 'middle', 'font-family': 'system-ui,sans-serif' }, stLabel));
   });
 
   // ── Legend ────────────────────────────────────────────────────────────────

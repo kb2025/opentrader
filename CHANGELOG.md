@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.21] - 2026-05-25
+
+### Fixed
+- **Service Connectors state display**: provider chips now show a right-aligned state badge ("ok" / "warn" / "down" / "off") with the border color matching the state (bright green/amber/red instead of near-invisible dark shades); `renderPlatformDashboard` retries health load on each WS tick until `_connectorHealth` is populated
+- **Service Connectors size**: diagram scaled to 90% width (centred) per user request
+
 ## [4.0.20] - 2026-05-25
 
 ### Changed
