@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.20] - 2026-05-25
+
+### Changed
+- **Service Connectors diagram**: replaced bus+stems layout with smooth cubic bezier curves; active lines teal, inactive lines muted dark-blue; chips render on top of curves; CONSUMERS / PROVIDERS column headers added; gateway box vertically centred on the full span
+
 ## [4.0.19] - 2026-05-25
 
 ### Fixed

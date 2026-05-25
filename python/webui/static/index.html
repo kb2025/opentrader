@@ -5730,11 +5730,9 @@ function renderConnectorFlow(agentsArr) {
   const NS = 'http://www.w3.org/2000/svg';
   svg.innerHTML = '';
 
-  // build agent lookup
   const agLookup = {};
   if (agentsArr) agentsArr.forEach(a => { agLookup[a.name] = a; });
 
-  // only show providers when health data is available
   const rawHealth = _connectorHealth || {};
   const healthLoaded = Object.keys(rawHealth).length > 0;
   const providerKeys = healthLoaded
@@ -5742,8 +5740,8 @@ function renderConnectorFlow(agentsArr) {
     : Object.keys(CONN_PROVIDER_LABELS);
   const providers = providerKeys.map(k => ({ id: k, label: CONN_PROVIDER_LABELS[k], info: rawHealth[k] || null }));
 
-  // ── Layout ────────────────────────────────────────────────────────────────
-  const ITEM_H = 26, GAP = 10, PAD_T = 18, PAD_B = 18;
+  // ── Layout ─────────────────────────────────────────────────────────────────
+  const ITEM_H = 26, GAP = 10, PAD_T = 28, PAD_B = 22;
   const nLeft  = CONN_CONSUMERS.length;
   const nRight = providers.length;
   const nMax   = Math.max(nLeft, nRight);
@@ -5753,30 +5751,23 @@ function renderConnectorFlow(agentsArr) {
 
   const leftCenters  = Array.from({length: nLeft},  (_, i) => PAD_T + 13 + i * (ITEM_H + GAP));
   const rightCenters = Array.from({length: nRight}, (_, i) => PAD_T + 13 + i * (ITEM_H + GAP));
-  const lMidY = leftCenters[Math.floor((nLeft  - 1) / 2)];
-  const rMidY = rightCenters[Math.floor((nRight - 1) / 2)];
-  const gwCY  = (lMidY + rMidY) / 2;
+  // gateway Y centred on the full vertical span
+  const gwCY = PAD_T + 13 + ((nMax - 1) / 2) * (ITEM_H + GAP);
 
-  // x positions — provider chip wider to fit dot+text
-  const AGT_X = 8,   AGT_W = 122;
-  const L_BUS = 148, GW_X  = 238, GW_W = 144, GW_H = 50;
-  const R_BUS = 492, PRV_X = 506, PRV_W = 140;
-  // dot is INSIDE the chip at left edge: cx = PRV_X + 11
-  const DOT_IN_X = PRV_X + 11;
-  const TXT_X    = PRV_X + 22;  // text starts after dot
+  // x positions
+  const AGT_X = 8, AGT_W = 128, AGT_RIGHT = AGT_X + AGT_W;
+  const GW_X = 300, GW_W = 150, GW_H = 52, GW_RIGHT = GW_X + GW_W;
+  const PRV_X = 558, PRV_W = 148;
 
-  // ── Defs ──────────────────────────────────────────────────────────────────
+  // ── Defs (arrowhead) ───────────────────────────────────────────────────────
   const defs = document.createElementNS(NS, 'defs');
-  ['teal:#14b8a6'].forEach(s => {
-    const [id, color] = s.split(':');
-    const m = document.createElementNS(NS, 'marker');
-    m.setAttribute('id', `cf-${id}`); m.setAttribute('markerWidth','8');
-    m.setAttribute('markerHeight','8'); m.setAttribute('refX','6');
-    m.setAttribute('refY','3'); m.setAttribute('orient','auto');
-    const p = document.createElementNS(NS, 'path');
-    p.setAttribute('d','M0,0 L0,6 L8,3 z'); p.setAttribute('fill', color);
-    m.appendChild(p); defs.appendChild(m);
-  });
+  const mkr = document.createElementNS(NS, 'marker');
+  mkr.setAttribute('id', 'cf-teal'); mkr.setAttribute('markerWidth', '7');
+  mkr.setAttribute('markerHeight', '7'); mkr.setAttribute('refX', '6');
+  mkr.setAttribute('refY', '3'); mkr.setAttribute('orient', 'auto');
+  const mkrP = document.createElementNS(NS, 'path');
+  mkrP.setAttribute('d', 'M0,0 L0,6 L7,3 z'); mkrP.setAttribute('fill', '#14b8a6');
+  mkr.appendChild(mkrP); defs.appendChild(mkr);
   svg.appendChild(defs);
 
   function el(tag, attrs, text) {
@@ -5785,80 +5776,88 @@ function renderConnectorFlow(agentsArr) {
     if (text !== undefined) e.textContent = text;
     return e;
   }
-  // agent health → border colour
   function hColor(h) {
     return h === 'healthy' ? '#22c55e' : h === 'degraded' ? '#f59e0b' : h === 'dead' ? '#ef4444' : '#3d4566';
   }
-  // connector health → status dot colour (inside chip)
   function pDotColor(info) {
-    if (!info) return '#3d4566';            // loading / unknown
-    if (!info.configured) return '#6b7394'; // not configured
+    if (!info) return '#3d4566';
+    if (!info.configured) return '#6b7394';
     return info.state === 'ok' ? '#22c55e' : info.state === 'half_open' ? '#f59e0b' : '#ef4444';
   }
-  // connector health → chip border colour
   function pBorderColor(info) {
     if (!info || !info.configured) return '#2a3050';
     return info.state === 'ok' ? '#1e3a2a' : info.state === 'half_open' ? '#3a2e14' : '#3a1a1a';
   }
+  // smooth S-curve bezier between two horizontal points
+  function bezierH(x1, y1, x2, y2) {
+    const t = Math.abs(x2 - x1) * 0.5;
+    return `M ${x1} ${y1} C ${x1 + t} ${y1} ${x2 - t} ${y2} ${x2} ${y2}`;
+  }
 
-  // ── Consumer boxes + stems ────────────────────────────────────────────────
+  // ── Column headers ─────────────────────────────────────────────────────────
+  svg.appendChild(el('text', { x: AGT_X + AGT_W / 2, y: 14, fill: '#4b5577', 'font-size': 9, 'text-anchor': 'middle', 'font-family': 'system-ui,sans-serif', 'font-weight': 600, 'letter-spacing': 1 }, 'CONSUMERS'));
+  svg.appendChild(el('text', { x: PRV_X + PRV_W / 2, y: 14, fill: '#4b5577', 'font-size': 9, 'text-anchor': 'middle', 'font-family': 'system-ui,sans-serif', 'font-weight': 600, 'letter-spacing': 1 }, 'PROVIDERS'));
+
+  // ── Bezier curves drawn first so chips render on top ───────────────────────
+  CONN_CONSUMERS.forEach((c, i) => {
+    const cy = leftCenters[i];
+    const ag = agLookup[c.id];
+    const active = ag && ag.health === 'healthy';
+    svg.appendChild(el('path', {
+      d: bezierH(AGT_RIGHT, cy, GW_X, gwCY),
+      fill: 'none', stroke: active ? '#14b8a6' : '#243050',
+      'stroke-width': active ? 1.4 : 1, opacity: active ? 0.65 : 0.35,
+      'marker-end': 'url(#cf-teal)',
+    }));
+  });
+
+  providers.forEach((p, i) => {
+    const cy = rightCenters[i];
+    const active = p.info && p.info.configured && p.info.state === 'ok';
+    svg.appendChild(el('path', {
+      d: bezierH(GW_RIGHT, gwCY, PRV_X, cy),
+      fill: 'none', stroke: active ? '#14b8a6' : '#243050',
+      'stroke-width': active ? 1.4 : 1, opacity: active ? 0.65 : 0.35,
+      'marker-end': 'url(#cf-teal)',
+    }));
+  });
+
+  // ── Consumer chips ─────────────────────────────────────────────────────────
   CONN_CONSUMERS.forEach((c, i) => {
     const cy = leftCenters[i];
     const ag = agLookup[c.id];
     const stroke = hColor(ag ? ag.health : 'unknown');
-    svg.appendChild(el('rect', { x:AGT_X, y:cy-13, width:AGT_W, height:ITEM_H, rx:6, fill:'#1a1e2b', stroke, 'stroke-width':1.5 }));
-    // health dot inside chip
-    const dotC = hColor(ag ? ag.health : 'unknown');
-    svg.appendChild(el('circle', { cx:AGT_X+10, cy, r:4, fill:dotC }));
-    svg.appendChild(el('text',   { x:AGT_X+20, y:cy+4, fill:'#c8cde0', 'font-size':10.5, 'text-anchor':'start', 'font-family':'system-ui,sans-serif' }, c.label));
-    svg.appendChild(el('line',   { x1:AGT_X+AGT_W, y1:cy, x2:L_BUS, y2:cy, stroke:'#14b8a6', 'stroke-width':1.2, opacity:0.5 }));
+    svg.appendChild(el('rect', { x: AGT_X, y: cy-13, width: AGT_W, height: ITEM_H, rx: 6, fill: '#1a1e2b', stroke, 'stroke-width': 1.5 }));
+    svg.appendChild(el('circle', { cx: AGT_X+10, cy, r: 4, fill: stroke }));
+    svg.appendChild(el('text', { x: AGT_X+20, y: cy+4, fill: '#c8cde0', 'font-size': 10.5, 'text-anchor': 'start', 'font-family': 'system-ui,sans-serif' }, c.label));
   });
-
-  // ── Left vertical bus ─────────────────────────────────────────────────────
-  svg.appendChild(el('line', { x1:L_BUS, y1:leftCenters[0], x2:L_BUS, y2:leftCenters[nLeft-1], stroke:'#14b8a6', 'stroke-width':1.5, opacity:0.5 }));
-
-  // ── Arrow bus → gateway ───────────────────────────────────────────────────
-  svg.appendChild(el('line', { x1:L_BUS, y1:lMidY, x2:GW_X-2, y2:gwCY, stroke:'#14b8a6', 'stroke-width':2, 'marker-end':'url(#cf-teal)' }));
-  svg.appendChild(el('text', { x:(L_BUS+GW_X)/2, y:Math.min(lMidY,gwCY)-5, fill:'#4b5577', 'font-size':9, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, 'request'));
 
   // ── Gateway box ───────────────────────────────────────────────────────────
   const gwAg = agLookup['market-data'];
   const gwStroke = hColor(gwAg ? gwAg.health : 'unknown');
-  svg.appendChild(el('rect', { x:GW_X, y:gwCY-GW_H/2, width:GW_W, height:GW_H, rx:8, fill:'#0d1526', stroke:gwStroke, 'stroke-width':2 }));
-  svg.appendChild(el('text', { x:GW_X+GW_W/2, y:gwCY-6, fill:'#e2e8f0', 'font-size':11.5, 'font-weight':600, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, 'Market Data'));
-  svg.appendChild(el('text', { x:GW_X+GW_W/2, y:gwCY+9, fill:'#14b8a6', 'font-size':10, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, 'Gateway'));
+  svg.appendChild(el('rect', { x: GW_X, y: gwCY-GW_H/2, width: GW_W, height: GW_H, rx: 8, fill: '#0d1526', stroke: gwStroke, 'stroke-width': 2 }));
+  svg.appendChild(el('text', { x: GW_X+GW_W/2, y: gwCY-6, fill: '#e2e8f0', 'font-size': 11.5, 'font-weight': 600, 'text-anchor': 'middle', 'font-family': 'system-ui,sans-serif' }, 'Market Data'));
+  svg.appendChild(el('text', { x: GW_X+GW_W/2, y: gwCY+9, fill: '#14b8a6', 'font-size': 10, 'text-anchor': 'middle', 'font-family': 'system-ui,sans-serif' }, 'Gateway'));
 
-  // ── Arrow gateway → right bus ─────────────────────────────────────────────
-  svg.appendChild(el('line', { x1:GW_X+GW_W, y1:gwCY, x2:R_BUS-2, y2:rMidY, stroke:'#14b8a6', 'stroke-width':2, 'marker-end':'url(#cf-teal)' }));
-  svg.appendChild(el('text', { x:(GW_X+GW_W+R_BUS)/2, y:Math.min(gwCY,rMidY)-5, fill:'#4b5577', 'font-size':9, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, 'data'));
-
-  // ── Right vertical bus ────────────────────────────────────────────────────
-  svg.appendChild(el('line', { x1:R_BUS, y1:rightCenters[0], x2:R_BUS, y2:rightCenters[nRight-1], stroke:'#14b8a6', 'stroke-width':1.5, opacity:0.5 }));
-
-  // ── Provider boxes + stems ────────────────────────────────────────────────
+  // ── Provider chips ─────────────────────────────────────────────────────────
   providers.forEach((p, i) => {
     const cy = rightCenters[i];
     const borderCol = pBorderColor(p.info);
     const dotCol    = pDotColor(p.info);
     const caps      = p.info && p.info.capabilities ? p.info.capabilities : [];
-    svg.appendChild(el('line', { x1:R_BUS, y1:cy, x2:PRV_X, y2:cy, stroke:'#14b8a6', 'stroke-width':1.2, opacity:0.5 }));
-    // chip background
-    const rect = el('rect', { x:PRV_X, y:cy-13, width:PRV_W, height:ITEM_H, rx:6, fill:'#1a1e2b', stroke:borderCol, 'stroke-width':1.5 });
+    const rect = el('rect', { x: PRV_X, y: cy-13, width: PRV_W, height: ITEM_H, rx: 6, fill: '#1a1e2b', stroke: borderCol, 'stroke-width': 1.5 });
     if (caps.length) {
       const t = document.createElementNS(NS, 'title');
       t.textContent = caps.join(', ');
       rect.appendChild(t);
     }
     svg.appendChild(rect);
-    // status dot inside chip
-    svg.appendChild(el('circle', { cx:DOT_IN_X, cy, r:4, fill:dotCol }));
-    // label
-    svg.appendChild(el('text', { x:TXT_X, y:cy+4, fill:'#c8cde0', 'font-size':10.5, 'text-anchor':'start', 'font-family':'system-ui,sans-serif' }, p.label));
-    // data types count badge (if loaded)
+    svg.appendChild(el('circle', { cx: PRV_X+10, cy, r: 4, fill: dotCol }));
+    svg.appendChild(el('text', { x: PRV_X+20, y: cy+4, fill: '#c8cde0', 'font-size': 10.5, 'text-anchor': 'start', 'font-family': 'system-ui,sans-serif' }, p.label));
     if (caps.length) {
       const bx = PRV_X + PRV_W - 22;
-      svg.appendChild(el('rect',  { x:bx, y:cy-8, width:20, height:14, rx:3, fill:'#1e293b' }));
-      svg.appendChild(el('text',  { x:bx+10, y:cy+4, fill:'#6b7394', 'font-size':9, 'text-anchor':'middle', 'font-family':'system-ui,sans-serif' }, caps.length));
+      svg.appendChild(el('rect',  { x: bx, y: cy-8, width: 20, height: 14, rx: 3, fill: '#1e293b' }));
+      svg.appendChild(el('text',  { x: bx+10, y: cy+4, fill: '#6b7394', 'font-size': 9, 'text-anchor': 'middle', 'font-family': 'system-ui,sans-serif' }, caps.length));
     }
   });
 
@@ -5867,8 +5866,8 @@ function renderConnectorFlow(agentsArr) {
   const items = [['#22c55e','healthy / ok'], ['#f59e0b','degraded'], ['#ef4444','dead / open'], ['#6b7394','not configured']];
   let lx = PRV_X;
   items.forEach(([color, label]) => {
-    svg.appendChild(el('circle', { cx:lx+5, cy:legendY, r:4, fill:color }));
-    svg.appendChild(el('text',   { x:lx+13, y:legendY+4, fill:'#4b5577', 'font-size':9, 'font-family':'system-ui,sans-serif' }, label));
+    svg.appendChild(el('circle', { cx: lx+5, cy: legendY, r: 4, fill: color }));
+    svg.appendChild(el('text',   { x: lx+13, y: legendY+4, fill: '#4b5577', 'font-size': 9, 'font-family': 'system-ui,sans-serif' }, label));
     lx += label.length * 5.2 + 18;
   });
 
