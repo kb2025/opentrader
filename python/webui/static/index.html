@@ -1481,6 +1481,19 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- Predictor Schedule -->
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:10px;width:100%">
+            <span class="card-title" style="white-space:nowrap">Predictor Schedule</span>
+            <div style="flex:1;height:1px;background:var(--border)"></div>
+          </div>
+        </div>
+        <div class="card-body" id="predictor-sched-card">
+          <div class="empty-state">Loading…</div>
+        </div>
+      </div>
+
       <!-- Service Connectors -->
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);white-space:nowrap">Service Connectors</span>
@@ -9538,6 +9551,65 @@ async function loadConfigPage() {
       }).join('')}
     </tbody>
   </table>`;
+
+  // Load predictor schedule into its card
+  _loadPredictorScheduleCard(token);
+}
+
+async function _loadPredictorScheduleCard(token) {
+  const card = document.getElementById('predictor-sched-card');
+  if (!card) return;
+  try {
+    const d = await apiFetch(`/api/predictor/schedule?token=${encodeURIComponent(token)}`);
+    card.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;align-items:end">
+        <div>
+          <label style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:5px">Daily Run Limit</label>
+          <input id="pred_daily_limit" type="number" min="1" max="20" value="${d.daily_limit}" class="bk-field-input" style="max-width:100px">
+          <div style="font-size:9px;color:var(--dim);margin-top:3px">Max predictor runs per calendar day &nbsp;&middot;&nbsp; Today: <strong style="color:var(--text)">${d.runs_today}</strong> run${d.runs_today !== 1 ? 's' : ''}</div>
+        </div>
+        <div>
+          <label style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:8px">Scheduled Runs</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+            <input id="pred_sched_10am" type="checkbox" ${d.schedule_10am ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--blue);cursor:pointer">
+            <span style="font-size:12px;color:var(--fg)">10:00 AM ET</span>
+            <span style="font-size:11px;color:var(--muted)">morning run</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input id="pred_sched_2pm" type="checkbox" ${d.schedule_2pm ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--blue);cursor:pointer">
+            <span style="font-size:12px;color:var(--fg)">2:00 PM ET</span>
+            <span style="font-size:11px;color:var(--muted)">afternoon run</span>
+          </label>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button class="btn btn-primary btn-sm" onclick="savePredictorSchedule()">Save Schedule</button>
+      </div>`;
+  } catch(e) {
+    card.innerHTML = `<div style="font-size:12px;color:var(--red)">Failed to load schedule: ${e.message}</div>`;
+  }
+}
+
+async function savePredictorSchedule() {
+  const limitEl = document.getElementById('pred_daily_limit');
+  const am10El  = document.getElementById('pred_sched_10am');
+  const pm2El   = document.getElementById('pred_sched_2pm');
+  if (!limitEl) return;
+  try {
+    await apiFetch('/api/predictor/schedule', {
+      method: 'POST',
+      body: JSON.stringify({
+        token:         getToken(),
+        daily_limit:   parseInt(limitEl.value) || 2,
+        schedule_10am: am10El ? am10El.checked : true,
+        schedule_2pm:  pm2El  ? pm2El.checked  : true,
+      }),
+    });
+    toast('success', 'Predictor Schedule', 'Schedule saved');
+    _loadPredictorScheduleCard(getToken());
+  } catch(e) {
+    toast('error', 'Save Failed', e.message);
+  }
 }
 
 // ── User Exclusions ────────────────────────────────────────────────────────────
@@ -10012,68 +10084,8 @@ async function openCfgModal(svc) {
   // Show Provision Inboxes button only for agentmail
   const provisionBtn = document.getElementById('cfg-provision-btn');
   if (provisionBtn) provisionBtn.style.display = svc === 'agentmail' ? '' : 'none';
-
-  // Predictor Schedule section appended to OpenRouter modal
-  if (svc === 'openrouter') {
-    await _appendPredictorScheduleSection(body, token);
-  }
 }
 
-async function _appendPredictorScheduleSection(body, token) {
-  const sep = `<div style="margin:18px 0 10px;display:flex;align-items:center;gap:8px">
-    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);white-space:nowrap">Predictor Schedule</span>
-    <div style="flex:1;height:1px;background:var(--border)"></div>
-  </div>`;
-  const placeholder = `<div id="predictor-sched-section">${sep}<div style="font-size:11px;color:var(--muted)">Loading…</div></div>`;
-  body.insertAdjacentHTML('beforeend', placeholder);
-  try {
-    const d = await apiFetch(`/api/predictor/schedule?token=${encodeURIComponent(token)}`);
-    document.getElementById('predictor-sched-section').innerHTML = sep + `
-      <div class="bk-field-row" style="align-items:center">
-        <label class="bk-field-label">Daily run limit</label>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input id="pred_daily_limit" type="number" min="1" max="20" value="${d.daily_limit}"
-            style="background:var(--card-header);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:13px;width:70px">
-          <span style="font-size:11px;color:var(--muted)">runs/day max &nbsp;·&nbsp; today: <strong style="color:var(--text)">${d.runs_today}</strong></span>
-        </div>
-      </div>
-      <div class="bk-field-row" style="align-items:center">
-        <label class="bk-field-label">10:00 AM ET run</label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input id="pred_sched_10am" type="checkbox" ${d.schedule_10am ? 'checked' : ''}
-            style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer">
-          <span style="font-size:12px;color:var(--muted)">Enable scheduled predictor run at market open + 30 min</span>
-        </label>
-      </div>
-      <div class="bk-field-row" style="align-items:center">
-        <label class="bk-field-label">2:00 PM ET run</label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input id="pred_sched_2pm" type="checkbox" ${d.schedule_2pm ? 'checked' : ''}
-            style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer">
-          <span style="font-size:12px;color:var(--muted)">Enable scheduled predictor run at mid-afternoon</span>
-        </label>
-      </div>`;
-  } catch(e) {
-    document.getElementById('predictor-sched-section').innerHTML = sep +
-      `<div style="font-size:11px;color:var(--red)">Failed to load schedule: ${e.message}</div>`;
-  }
-}
-
-async function _savePredictorSchedule(token) {
-  const limitEl = document.getElementById('pred_daily_limit');
-  const am10El  = document.getElementById('pred_sched_10am');
-  const pm2El   = document.getElementById('pred_sched_2pm');
-  if (!limitEl) return;
-  await apiFetch('/api/predictor/schedule', {
-    method: 'POST',
-    body: JSON.stringify({
-      token,
-      daily_limit:   parseInt(limitEl.value) || 2,
-      schedule_10am: am10El ? am10El.checked : true,
-      schedule_2pm:  pm2El  ? pm2El.checked  : true,
-    }),
-  });
-}
 
 function closeCfgModal() {
   document.getElementById('cfg-modal-overlay').style.display = 'none';
@@ -10089,21 +10101,15 @@ async function saveCfgConnector() {
     const el = document.getElementById(`cfg_${f.key}`);
     if (el && el.value.trim() !== '') vars[f.key] = el.value.trim();
   });
-  const token = getToken();
-  if (!Object.keys(vars).length && _cfgCurrentService !== 'openrouter') {
+  if (!Object.keys(vars).length) {
     toast('info', 'No Changes', 'No values entered — nothing saved');
     return;
   }
   try {
-    if (Object.keys(vars).length) {
-      await apiFetch('/api/user/secrets/batch', {
-        method: 'POST',
-        body: JSON.stringify({ vars }),
-      });
-    }
-    if (_cfgCurrentService === 'openrouter') {
-      await _savePredictorSchedule(token);
-    }
+    await apiFetch('/api/user/secrets/batch', {
+      method: 'POST',
+      body: JSON.stringify({ vars }),
+    });
     toast('success', `${m.label} Saved`, 'Credentials stored in your profile');
     closeCfgModal();
     loadConfigPage();

@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.7] - 2026-05-25
+
+### Changed
+- **Predictor Schedule** moved from OpenRouter connector modal to its own card on the API Configuration (User Configuration) page — daily limit, 10 AM, and 2 PM toggles now visible alongside System Settings and Service Connectors
+
 ## [4.0.6] - 2026-05-25
 
 ### Added
