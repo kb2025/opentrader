@@ -588,7 +588,11 @@ select option{background:var(--surface2)}
       <div class="card">
         <div class="card-header">
           <span class="card-title">Agent Topology</span>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn btn-sm" onclick="topoZoomOut()" title="Zoom out" style="font-size:16px;line-height:1;padding:2px 10px">&#8722;</button>
+            <span id="topo-zoom-label" style="font-size:11px;color:var(--muted);min-width:36px;text-align:center;font-variant-numeric:tabular-nums">100%</span>
+            <button class="btn btn-sm" onclick="topoZoomIn()" title="Zoom in" style="font-size:16px;line-height:1;padding:2px 10px">&#43;</button>
+            <div style="width:1px;height:16px;background:var(--border);margin:0 2px"></div>
             <button class="btn btn-sm" onclick="autoArrangeTopology()" title="Arrange nodes by data flow — scrapers → pipeline → execution, MCP below consumers">&#9645; Auto Arrange</button>
             <button class="btn btn-sm" onclick="resetTopoLayout()" title="Reset node positions to default">&#8635; Reset Layout</button>
             <button class="btn btn-sm" id="topo-download-btn" onclick="downloadTopology()" title="Download as SVG">&#8595; SVG</button>
@@ -6045,8 +6049,11 @@ function resetTopoLayout() {
   TOPO_NODES.forEach(n => {
     if (defaults[n.id] !== undefined) { n.x = defaults[n.id]; n.y = defaults[n.id + '_y']; }
   });
+  _topoZoom = 1.0;
   const svg = document.getElementById('topology-svg');
   if (svg) svg.setAttribute('viewBox', '0 0 1100 590');
+  const lbl = document.getElementById('topo-zoom-label');
+  if (lbl) lbl.textContent = '100%';
   drawTopology(wsData);
 }
 
@@ -6288,6 +6295,29 @@ function _drawBrokerFork(g, node, svg) {
 }
 
 let _topoLayoutLoaded = false;
+// ── Topology zoom ─────────────────────────────────────────────────────────────
+let _topoZoom = 1.0;
+const _TOPO_VB_W    = 1100;
+const _TOPO_VB_H    = 590;
+const _TOPO_ZOOM_STEP = 0.15;
+const _TOPO_ZOOM_MIN  = 0.3;
+const _TOPO_ZOOM_MAX  = 3.0;
+
+function _topoApplyZoom(scale) {
+  _topoZoom = Math.max(_TOPO_ZOOM_MIN, Math.min(_TOPO_ZOOM_MAX, scale));
+  const w = _TOPO_VB_W / _topoZoom;
+  const h = _TOPO_VB_H / _topoZoom;
+  const x = (_TOPO_VB_W - w) / 2;
+  const y = (_TOPO_VB_H - h) / 2;
+  const svg = document.getElementById('topology-svg');
+  if (svg) svg.setAttribute('viewBox', `${Math.round(x)} ${Math.round(y)} ${Math.round(w)} ${Math.round(h)}`);
+  const lbl = document.getElementById('topo-zoom-label');
+  if (lbl) lbl.textContent = Math.round(_topoZoom * 100) + '%';
+}
+
+function topoZoomIn()  { _topoApplyZoom(_topoZoom + _TOPO_ZOOM_STEP); }
+function topoZoomOut() { _topoApplyZoom(_topoZoom - _TOPO_ZOOM_STEP); }
+
 function drawTopology(agentsArr) {
   if (!_topoLayoutLoaded) { _loadTopoLayout(); _topoLayoutLoaded = true; }
   const svg    = document.getElementById('topology-svg');

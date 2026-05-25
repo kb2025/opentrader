@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.8] - 2026-05-25
+
+### Added
+- **Topology zoom controls** — `−` / `+` buttons and a live `100%` label in the Agent Topology card header; zooms from 30% to 300% in 15% increments by adjusting the SVG viewBox (center-anchored); Reset Layout also resets zoom to 100%
+
 ## [4.0.7] - 2026-05-25
 
 ### Changed
