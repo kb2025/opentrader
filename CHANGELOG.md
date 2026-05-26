@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.32] - 2026-05-26
+
+### Fixed
+- **Trading Dashboard**: Live banner auto-hide now works correctly — added `_liveBannerStarted` flag to block WS re-renders from resetting `opacity:1` while the 5-second countdown is active
+- **Landing page**: browser refresh now opens the Trading Dashboard instead of the Platform Dashboard
+
 ## [4.0.31] - 2026-05-26
 
 ### Fixed

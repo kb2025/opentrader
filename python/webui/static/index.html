@@ -10667,9 +10667,11 @@ const BROKER_META = {
 
 let _bkCfgBroker = '';
 
-// Tracks whether the live banner has already auto-hidden this session.
-// Reset whenever the mode actually changes so the banner re-appears on toggle.
+// _liveBannerDismissed — timer has fired and banner is hidden
+// _liveBannerStarted   — timer is currently counting down (don't reset element)
+// Both reset when mode actually changes (live↔sandbox toggle)
 let _liveBannerDismissed = false;
+let _liveBannerStarted   = false;
 let _liveBannerLastMode  = null;
 
 function _applyTradeModeBanner(mode) {
@@ -10681,10 +10683,10 @@ function _applyTradeModeBanner(mode) {
   const chip    = document.getElementById('trade-mode-chip');
   const isLive  = mode === 'live';
 
-  // If mode changed, reset the dismissed flag so the banner shows again
   if (mode !== _liveBannerLastMode) {
-    _liveBannerLastMode = mode;
+    _liveBannerLastMode  = mode;
     _liveBannerDismissed = false;
+    _liveBannerStarted   = false;
     clearTimeout(window._liveBannerTimer);
   }
 
@@ -10703,9 +10705,9 @@ function _applyTradeModeBanner(mode) {
   if (track)  track.style.background  = isLive ? 'var(--green)' : 'var(--amber)';
   if (thumb)  thumb.style.left        = isLive ? '25px' : '3px';
   if (dash) {
-    if (isLive && _liveBannerDismissed) {
-      // Already auto-hidden this session — keep it hidden on WS re-renders
-      dash.style.display = 'none';
+    // Banner already dismissed or timer already running — don't touch the element
+    if (isLive && (_liveBannerDismissed || _liveBannerStarted)) {
+      if (_liveBannerDismissed) dash.style.display = 'none';
       return;
     }
     dash.style.display = '';
@@ -10714,13 +10716,14 @@ function _applyTradeModeBanner(mode) {
     dash.innerHTML = isLive
       ? '&#128994; LIVE TRADING MODE — Real money at risk'
       : '&#9888; SANDBOX / PAPER MODE — No real trades';
-    if (isLive && !_liveBannerDismissed) {
-      clearTimeout(window._liveBannerTimer);
+    if (isLive) {
+      _liveBannerStarted = true;
       window._liveBannerTimer = setTimeout(() => {
         dash.style.opacity = '0';
         setTimeout(() => {
           dash.style.display = 'none';
           _liveBannerDismissed = true;
+          _liveBannerStarted   = false;
         }, 400);
       }, 5000);
     }
@@ -14286,6 +14289,7 @@ async function loadOvtlyrListSignals(listType) {
 // ══════════════════════════════════════════════════════════════════════════════
 connectWS();
 _initUserDisplay();
+navigate('page-trading-dashboard');
 loadOvtlyrMarketSignals();
 setInterval(loadOvtlyrMarketSignals, 5 * 60 * 1000); // refresh every 5 min
 
