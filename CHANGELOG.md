@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.35] - 2026-05-26
+
+### Changed
+- **Trading Dashboard**: refresh buttons brightened (color:var(--fg) instead of muted); Macro Regime ↺ moved to far right after "Full View →"
+
 ## [4.0.34] - 2026-05-26
 
 ### Changed
