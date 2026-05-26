@@ -183,7 +183,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .topo-controls input{accent-color:var(--blue);cursor:pointer}
 
 /* ── Trade mode banner ── */
-.mode-banner{padding:10px 16px;border-radius:10px;margin-bottom:16px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.mode-banner{padding:10px 16px;border-radius:10px;margin-bottom:16px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;transition:opacity .4s ease}
 .mode-banner.sandbox{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);color:var(--amber)}
 .mode-banner.live{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);color:var(--green)}
 
@@ -10690,11 +10690,19 @@ function _applyTradeModeBanner(mode) {
   if (track)  track.style.background  = isLive ? 'var(--green)' : 'var(--amber)';
   if (thumb)  thumb.style.left        = isLive ? '25px' : '3px';
   if (dash) {
+    clearTimeout(window._liveBannerTimer);
     dash.style.display = '';
+    dash.style.opacity = '1';
     dash.className = isLive ? 'mode-banner live' : 'mode-banner sandbox';
     dash.innerHTML = isLive
       ? '&#128994; LIVE TRADING MODE — Real money at risk'
       : '&#9888; SANDBOX / PAPER MODE — No real trades';
+    if (isLive) {
+      window._liveBannerTimer = setTimeout(() => {
+        dash.style.opacity = '0';
+        setTimeout(() => { dash.style.display = 'none'; }, 400);
+      }, 5000);
+    }
   }
 }
 

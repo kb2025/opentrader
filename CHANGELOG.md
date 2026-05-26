@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.30] - 2026-05-26
+
+### Changed
+- **Trading Dashboard**: Live Trading banner ("Real money at risk") auto-fades out after 5 seconds with a 0.4s opacity transition; sandbox banner remains permanently visible
+
 ## [4.0.29] - 2026-05-26
 
 ### Fixed
