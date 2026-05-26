@@ -2712,6 +2712,7 @@ select option{background:var(--surface2)}
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
         <button class="btn" onclick="loadOptionsPositions()" style="background:var(--blue);color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">↻ Refresh</button>
         <button class="btn" onclick="triggerOptionsScan()" style="background:var(--card-header);color:var(--fg);border:1px solid var(--border);padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">⟳ Trigger Scan</button>
+        <button class="btn" onclick="_openSpreadModal()" style="background:#7c3aed;color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ New Spread</button>
         <select id="opt-filter-status" onchange="loadOptionsPositions()" style="background:var(--card-header);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px">
           <option value="active">Active</option>
           <option value="closed">Closed</option>
@@ -2762,6 +2763,109 @@ select option{background:var(--surface2)}
 
       <!-- Watchlist groups (by broker: account) -->
       <div id="opt-watchlists" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
+
+      <!-- Spread Screener panel -->
+      <div class="card" id="spread-screener-card" style="margin-bottom:14px">
+        <div class="card-header" style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="_toggleSpreadScreener()">
+          <span class="card-title">Spread Screener</span>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:11px;color:var(--muted)">Bull Call · PMCC</span>
+            <span id="spread-screener-chevron" style="font-size:12px;color:var(--muted)">▼</span>
+          </div>
+        </div>
+        <div id="spread-screener-body" style="display:none;padding:14px 16px">
+          <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Ticker</div>
+              <input id="ss-ticker" type="text" placeholder="AAPL" style="width:80px;background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"/>
+            </div>
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Strategy</div>
+              <select id="ss-strategy" style="background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:12px">
+                <option value="bull_call_spread">Bull Call Spread</option>
+                <option value="pmcc">PMCC</option>
+              </select>
+            </div>
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Account</div>
+              <select id="ss-account" style="background:var(--surface);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:12px;min-width:140px">
+                <option value="">— select —</option>
+              </select>
+            </div>
+            <button onclick="_runSpreadScreener()" style="background:var(--blue);color:#fff;border:none;padding:7px 18px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Screen</button>
+          </div>
+          <div id="ss-results" style="font-size:12px;color:var(--muted)">Enter a ticker and click Screen.</div>
+        </div>
+      </div>
+
+      <!-- Spread Order Modal -->
+      <div id="spread-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;width:min(96vw,560px);max-height:90vh;overflow-y:auto">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <span style="font-weight:700;font-size:15px">New Spread Order</span>
+            <button onclick="_closeSpreadModal()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Strategy</div>
+              <select id="sm-strategy" onchange="_smStrategyChange()" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px">
+                <option value="bull_call_spread">Bull Call Spread</option>
+                <option value="bear_put_spread">Bear Put Spread</option>
+                <option value="bull_put_spread">Bull Put Spread</option>
+                <option value="bear_call_spread">Bear Call Spread</option>
+                <option value="pmcc">PMCC</option>
+                <option value="iron_condor">Iron Condor</option>
+              </select>
+            </div>
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Underlying</div>
+              <input id="sm-ticker" type="text" placeholder="AAPL" style="width:100%;box-sizing:border-box;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"/>
+            </div>
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Account</div>
+              <select id="sm-account" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px">
+                <option value="">— select account —</option>
+              </select>
+            </div>
+            <div>
+              <div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em">Duration</div>
+              <select id="sm-duration" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px">
+                <option value="day">Day</option>
+                <option value="gtc">GTC</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Leg inputs (filled by screener or manually) -->
+          <div id="sm-legs-container" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+            <!-- Leg rows inserted by JS -->
+          </div>
+
+          <button onclick="_smLoadScreener()" style="width:100%;background:var(--surface2,var(--card-header));color:var(--fg);border:1px solid var(--border);padding:8px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:10px">Load Best Spread from Screener</button>
+
+          <!-- Net debit summary -->
+          <div id="sm-summary" style="background:var(--surface2,var(--card-header));border-radius:6px;padding:10px 14px;font-size:12px;margin-bottom:14px;display:none">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+              <span style="color:var(--muted)">Net Debit/Credit</span>
+              <span id="sm-net-debit" style="font-weight:700"></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+              <span style="color:var(--muted)">Max Loss</span>
+              <span id="sm-max-loss" style="color:#f87171;font-weight:600"></span>
+            </div>
+            <div style="display:flex;justify-content:space-between">
+              <span style="color:var(--muted)">Max Gain</span>
+              <span id="sm-max-gain" style="color:#34d399;font-weight:600"></span>
+            </div>
+          </div>
+
+          <div id="sm-error" style="color:#f87171;font-size:12px;margin-bottom:10px;display:none"></div>
+          <button onclick="_smSubmit()" id="sm-submit-btn"
+            style="width:100%;background:#7c3aed;color:#fff;border:none;padding:10px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">
+            Place Spread Order
+          </button>
+        </div>
+      </div>
 
       <!-- Main positions table -->
       <div class="card" style="overflow-x:auto">
@@ -20600,6 +20704,251 @@ function _renderChainAnalytics(el, d) {
       })()}
 
     </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Multi-Leg Spread Modal + Screener (Options Dashboard)
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _smLegs = [];  // current legs in the spread modal
+let _ssLastResult = null;  // last screener result
+
+function _openSpreadModal() {
+  const modal = document.getElementById('spread-modal');
+  if (!modal) return;
+  _smLegs = [];
+  _smRenderLegs();
+  document.getElementById('sm-summary').style.display = 'none';
+  document.getElementById('sm-error').style.display   = 'none';
+  // Populate account dropdowns
+  const accounts = _getAccountOptions();
+  ['sm-account', 'ss-account'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— select account —</option>';
+    accounts.forEach(a => { const o = document.createElement('option'); o.value = a; o.textContent = a; sel.appendChild(o); });
+  });
+  modal.style.display = 'flex';
+}
+
+function _closeSpreadModal() {
+  const modal = document.getElementById('spread-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function _getAccountOptions() {
+  // Pull from the account filter select if populated, else return empty
+  const sel = document.getElementById('opt-filter-account');
+  if (!sel) return [];
+  return Array.from(sel.options).map(o => o.value).filter(v => v);
+}
+
+function _smStrategyChange() {
+  _smLegs = [];
+  _smRenderLegs();
+  document.getElementById('sm-summary').style.display = 'none';
+}
+
+function _smRenderLegs() {
+  const container = document.getElementById('sm-legs-container');
+  if (!container) return;
+  if (_smLegs.length === 0) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px">No legs — load from screener or add manually.</div>';
+    return;
+  }
+  container.innerHTML = _smLegs.map((leg, i) => `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr;gap:6px;align-items:center;font-size:11px">
+      <span style="color:var(--muted)">Leg ${i+1}</span>
+      <span style="font-weight:600;color:${leg.action.startsWith('buy')?'#34d399':'#f87171'}">${leg.action}</span>
+      <span style="color:var(--muted)">Symbol</span>
+      <span style="font-family:monospace;font-size:10px">${leg.symbol}</span>
+      <span style="color:var(--muted)">Qty</span>
+      <span>${leg.qty}</span>
+      <span style="color:var(--muted)">Strike</span>
+      <span>$${leg.strike}</span>
+      <span style="color:var(--muted)">Expiry</span>
+      <span>${leg.expiry}</span>
+      <span style="color:var(--muted)">Limit</span>
+      <span>$${(leg.limit_price||0).toFixed(2)}</span>
+    </div>`).join('');
+  _smUpdateSummary();
+}
+
+function _smUpdateSummary() {
+  if (_smLegs.length < 2) return;
+  let net = 0;
+  let width = 0;
+  _smLegs.forEach(leg => {
+    const price = leg.limit_price || 0;
+    net += leg.action.startsWith('buy') ? price : -price;
+  });
+  net = Math.round(net * 100) / 100;
+  // Width = |short_strike - long_strike| for debit spreads
+  if (_smLegs.length === 2) {
+    width = Math.abs((_smLegs[0].strike||0) - (_smLegs[1].strike||0));
+  }
+  const maxLoss = net > 0 ? net * 100 : (width - Math.abs(net)) * 100;
+  const maxGain = net > 0 ? (width - net) * 100 : Math.abs(net) * 100;
+  document.getElementById('sm-net-debit').textContent = (net >= 0 ? 'Debit $' : 'Credit $') + Math.abs(net).toFixed(2);
+  document.getElementById('sm-max-loss').textContent  = '$' + maxLoss.toFixed(2);
+  document.getElementById('sm-max-gain').textContent  = '$' + maxGain.toFixed(2);
+  document.getElementById('sm-summary').style.display = '';
+}
+
+async function _smLoadScreener() {
+  const ticker   = document.getElementById('sm-ticker')?.value?.trim()?.toUpperCase();
+  const strategy = document.getElementById('sm-strategy')?.value;
+  if (!ticker) { alert('Enter an underlying ticker first.'); return; }
+
+  const endpoint = strategy === 'pmcc'
+    ? `/api/options/screener/pmcc?ticker=${ticker}&token=${_getToken()}`
+    : `/api/options/screener/bull-call-spread?ticker=${ticker}&token=${_getToken()}`;
+
+  try {
+    const r = await fetch(endpoint);
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    const best = data.candidates?.[0];
+    if (!best) { alert('No spread candidates found for ' + ticker); return; }
+    _smLegs = best.legs || [];
+    _smRenderLegs();
+    _ssLastResult = data;
+  } catch(e) {
+    const errEl = document.getElementById('sm-error');
+    if (errEl) { errEl.textContent = e.message; errEl.style.display = ''; }
+  }
+}
+
+async function _smSubmit() {
+  const btn = document.getElementById('sm-submit-btn');
+  if (!btn) return;
+  const ticker   = document.getElementById('sm-ticker')?.value?.trim()?.toUpperCase();
+  const account  = document.getElementById('sm-account')?.value;
+  const strategy = document.getElementById('sm-strategy')?.value;
+  const duration = document.getElementById('sm-duration')?.value || 'day';
+  const errEl    = document.getElementById('sm-error');
+
+  if (!ticker || !account || _smLegs.length < 2) {
+    if (errEl) { errEl.textContent = 'Ticker, account, and at least 2 legs are required.'; errEl.style.display = ''; }
+    return;
+  }
+
+  let net = 0;
+  _smLegs.forEach(leg => { net += leg.action.startsWith('buy') ? (leg.limit_price||0) : -(leg.limit_price||0); });
+
+  btn.disabled = true;
+  btn.textContent = 'Placing…';
+  if (errEl) errEl.style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/options/spreads/place', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token:         _getToken(),
+        account_label: account,
+        underlying:    ticker,
+        strategy_type: strategy,
+        legs:          _smLegs,
+        net_debit:     Math.round(net * 100) / 100,
+        duration,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || JSON.stringify(data));
+    _closeSpreadModal();
+    showToast('Spread order placed — group ' + (data.data?.spread_group_id || '').slice(0,8), 'success');
+    loadOptionsPositions();
+  } catch(e) {
+    if (errEl) { errEl.textContent = e.message; errEl.style.display = ''; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Place Spread Order';
+  }
+}
+
+function _toggleSpreadScreener() {
+  const body    = document.getElementById('spread-screener-body');
+  const chevron = document.getElementById('spread-screener-chevron');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display    = open ? 'none' : '';
+  if (chevron) chevron.textContent = open ? '▼' : '▲';
+}
+
+async function _runSpreadScreener() {
+  const ticker   = document.getElementById('ss-ticker')?.value?.trim()?.toUpperCase();
+  const strategy = document.getElementById('ss-strategy')?.value;
+  const account  = document.getElementById('ss-account')?.value;
+  const resultsEl = document.getElementById('ss-results');
+  if (!ticker) { if (resultsEl) resultsEl.textContent = 'Enter a ticker.'; return; }
+  if (resultsEl) resultsEl.innerHTML = '<span style="color:var(--muted)">Screening…</span>';
+
+  const endpoint = strategy === 'pmcc'
+    ? `/api/options/screener/pmcc?ticker=${ticker}&token=${_getToken()}`
+    : `/api/options/screener/bull-call-spread?ticker=${ticker}&token=${_getToken()}`;
+
+  try {
+    const r = await fetch(endpoint);
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    _ssLastResult = data;
+    const candidates = data.candidates || [];
+    if (!candidates.length) { resultsEl.textContent = 'No candidates found.'; return; }
+
+    resultsEl.innerHTML = `
+      <div style="margin-bottom:8px;font-size:11px;color:var(--muted)">${ticker} @ $${(data.spot||0).toFixed(2)} — ${candidates.length} candidates</div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border)">
+            <th style="padding:5px 8px;text-align:left;color:var(--muted)">Expiry</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--muted)">Long K</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--muted)">Short K</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--muted)">Net Debit</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--muted)">Max Loss</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--muted)">Max Gain</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--muted)">Ann ROO</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--muted)">Score</th>
+            <th style="padding:5px 8px;text-align:center;color:var(--muted)"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${candidates.slice(0,15).map((c,i) => {
+            const isLong = strategy !== 'pmcc';
+            return `<tr style="border-bottom:1px solid var(--border);${i%2?'background:var(--surface2,var(--card-header))':''}">
+              <td style="padding:5px 8px">${c.expiry||c.short_expiry||''}</td>
+              <td style="padding:5px 8px;text-align:right">$${(c.long_strike||0).toFixed(2)}</td>
+              <td style="padding:5px 8px;text-align:right">$${(c.short_strike||0).toFixed(2)}</td>
+              <td style="padding:5px 8px;text-align:right;color:#f97316">$${(c.net_debit||c.out_of_pocket||0).toFixed(2)}</td>
+              <td style="padding:5px 8px;text-align:right;color:#f87171">$${(c.max_loss||0).toFixed(2)}</td>
+              <td style="padding:5px 8px;text-align:right;color:#34d399">$${(c.max_gain||0).toFixed(2)}</td>
+              <td style="padding:5px 8px;text-align:right">${((c.ann_roo||c.ann_gain||0)*100).toFixed(1)}%</td>
+              <td style="padding:5px 8px;text-align:right;font-weight:600">${(c.score||0).toFixed(2)}</td>
+              <td style="padding:5px 8px;text-align:center">
+                <button onclick="_ssOpenInModal(${i},'${ticker}','${strategy}','${account}')"
+                  style="background:#7c3aed;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer">Open</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      </div>`;
+  } catch(e) {
+    if (resultsEl) resultsEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+function _ssOpenInModal(idx, ticker, strategy, account) {
+  if (!_ssLastResult) return;
+  const candidate = _ssLastResult.candidates?.[idx];
+  if (!candidate) return;
+  _smLegs = candidate.legs || [];
+  document.getElementById('sm-ticker').value   = ticker;
+  document.getElementById('sm-strategy').value  = strategy;
+  document.getElementById('sm-account').value   = account;
+  _smRenderLegs();
+  _openSpreadModal();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

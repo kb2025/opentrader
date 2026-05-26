@@ -1370,6 +1370,24 @@ async def on_startup():
             """)
         except Exception:
             pass
+    # Phase 2: spread columns on option_positions
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute("""
+                ALTER TABLE option_positions
+                    ADD COLUMN IF NOT EXISTS spread_group_id  UUID,
+                    ADD COLUMN IF NOT EXISTS spread_role      TEXT,
+                    ADD COLUMN IF NOT EXISTS spread_type      TEXT,
+                    ADD COLUMN IF NOT EXISTS spread_meta      JSONB
+            """)
+            await pool.execute("""
+                CREATE INDEX IF NOT EXISTS idx_op_spread_group
+                    ON option_positions (spread_group_id)
+                    WHERE spread_group_id IS NOT NULL
+            """)
+        except Exception:
+            pass
     if DB_URL:
         try:
             pool = await _get_db_pool()
@@ -18199,6 +18217,331 @@ _PERSONA_NAMES: dict[str, str] = {
     "munger":  "Charlie Munger",
     "klarman": "Seth Klarman",
 }
+
+
+# ── Phase 3: Spread Screeners ────────────────────────────────────────────────
+
+async def _get_broker_option_chain(ticker: str) -> dict:
+    """Fetch option chain via broker gateway (first available connector)."""
+    import uuid as _uuid, json as _json, redis.asyncio as _aioredis
+    REDIS_URL = os.getenv("REDIS_URL", "redis://ot-redis:6379/0")
+    _r = await _aioredis.from_url(
+        REDIS_URL, encoding="utf-8", decode_responses=True,
+        socket_connect_timeout=5, socket_timeout=35,
+    )
+    req_id = str(_uuid.uuid4())
+    await _r.xadd(STREAMS["broker_commands"], {
+        "command": "get_option_chain", "request_id": req_id,
+        "symbol": ticker, "issued_by": "webui-screener",
+    })
+    result = await _r.blpop([f"broker:reply:{req_id}"], timeout=30)
+    await _r.aclose()
+    if not result:
+        raise Exception(f"Option chain gateway timeout for {ticker}")
+    raw = _json.loads(result[1])
+    r   = raw[0] if isinstance(raw, list) else raw
+    if r.get("status") != "ok":
+        raise Exception(r.get("error", "Chain fetch failed"))
+    return r.get("data", {})
+
+
+def _compute_net_debit(legs: list[dict]) -> float:
+    """Positive = net debit (paid), negative = net credit (received)."""
+    total = 0.0
+    for leg in legs:
+        price  = float(leg.get("limit_price") or leg.get("mid") or 0)
+        signed = price if "buy" in leg.get("action", "") else -price
+        total += signed
+    return round(total, 2)
+
+
+def _snap_price(price: float) -> float:
+    tick = 0.05 if price >= 3.0 else 0.01
+    return round(round(price / tick) * tick, 2)
+
+
+@app.get("/api/options/screener/bull-call-spread")
+async def screener_bull_call_spread(
+    ticker:      str,
+    min_delta:   float = 0.50,
+    max_delta:   float = 0.70,
+    min_prot:    float = 0.05,
+    min_oi:      int   = 100,
+    token:       str   = "",
+):
+    """
+    Bull call spread screener.
+    Long high-delta call (delta ≥ 0.80 ATM/ITM) + Short OTM call (delta 0.50–0.70).
+    Returns ranked spread candidates with net_debit, max_loss, max_gain, ann_roo, score.
+    """
+    check_token(token)
+    import math
+    from datetime import date, timedelta
+
+    try:
+        chain = await _get_broker_option_chain(ticker.upper())
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    spot   = float(chain.get("price") or 0)
+    if spot <= 0:
+        raise HTTPException(status_code=422, detail="No underlying price available")
+
+    calls = chain.get("calls", [])
+    if not calls:
+        raise HTTPException(status_code=422, detail="No call contracts found")
+
+    today = date.today()
+    results = []
+
+    # Group by expiry
+    expirations = sorted({c.get("expiration") for c in calls if c.get("expiration")})
+    for exp_str in expirations:
+        try:
+            exp_date = date.fromisoformat(exp_str)
+        except Exception:
+            continue
+        dte = (exp_date - today).days
+        if dte < 7 or dte > 90:
+            continue
+
+        exp_calls = [c for c in calls if c.get("expiration") == exp_str]
+
+        # Long leg: delta ≥ 0.75 (ATM or slightly ITM)
+        long_candidates = [
+            c for c in exp_calls
+            if float(c.get("delta") or 0) >= 0.75
+            and float(c.get("oi") or 0) >= min_oi
+        ]
+        # Short leg: delta in [min_delta, max_delta]
+        short_candidates = [
+            c for c in exp_calls
+            if min_delta <= float(c.get("delta") or 0) <= max_delta
+            and float(c.get("oi") or 0) >= min_oi
+        ]
+
+        for short in short_candidates:
+            short_strike = float(short.get("strike") or 0)
+            short_delta  = float(short.get("delta") or 0)
+            short_theta  = float(short.get("theta") or 0)
+            short_mid    = float(short.get("mid") or 0)
+
+            # Downside protection: how far OTM the short is
+            prot_pct = (short_strike - spot) / spot if spot > 0 else 0
+            if prot_pct < min_prot:
+                continue
+
+            for long in long_candidates:
+                long_strike = float(long.get("strike") or 0)
+                if long_strike >= short_strike:
+                    continue
+                long_theta = float(long.get("theta") or 0)
+                long_mid   = float(long.get("mid") or 0)
+
+                net_debit = _snap_price(long_mid - short_mid)
+                if net_debit <= 0:
+                    continue
+
+                width    = short_strike - long_strike
+                max_gain = round((width - net_debit) * 100, 2)
+                max_loss = round(net_debit * 100, 2)
+                if max_gain <= 0:
+                    continue
+
+                theta_spread = short_theta - long_theta
+                ann_roo = (theta_spread / net_debit) * (365 / dte) if net_debit > 0 else 0
+                score   = (prot_pct * 200) + (ann_roo * 1.5) + (theta_spread / net_debit * 10 if net_debit > 0 else 0)
+
+                results.append({
+                    "underlying":    ticker.upper(),
+                    "strategy":      "bull_call_spread",
+                    "expiry":        exp_str,
+                    "dte":           dte,
+                    "long_strike":   long_strike,
+                    "short_strike":  short_strike,
+                    "long_contract": long.get("contract", ""),
+                    "short_contract":short.get("contract", ""),
+                    "long_delta":    round(float(long.get("delta") or 0), 3),
+                    "short_delta":   round(short_delta, 3),
+                    "net_debit":     net_debit,
+                    "max_loss":      max_loss,
+                    "max_gain":      max_gain,
+                    "prot_pct":      round(prot_pct * 100, 2),
+                    "ann_roo":       round(ann_roo, 4),
+                    "theta_spread":  round(theta_spread, 4),
+                    "score":         round(score, 3),
+                    "legs": [
+                        {"symbol": long.get("contract",""),  "action": "buy_to_open",  "qty": 1,
+                         "limit_price": _snap_price(long_mid),  "option_type": "call",
+                         "strike": long_strike,  "expiry": exp_str},
+                        {"symbol": short.get("contract",""), "action": "sell_to_open", "qty": 1,
+                         "limit_price": _snap_price(short_mid), "option_type": "call",
+                         "strike": short_strike, "expiry": exp_str},
+                    ],
+                })
+
+    results.sort(key=lambda r: -r["score"])
+    return {"ticker": ticker.upper(), "spot": spot, "candidates": results[:25]}
+
+
+@app.get("/api/options/screener/pmcc")
+async def screener_pmcc(
+    ticker:      str,
+    min_short_dte: int   = 7,
+    max_short_dte: int   = 30,
+    min_long_dte:  int   = 45,
+    max_long_dte:  int   = 180,
+    otm_pct:       float = 0.04,
+    token:         str   = "",
+):
+    """
+    Poor Man's Covered Call screener.
+    Long deep-ITM LEAP (45–180 DTE, delta ≥ 0.70) + Short OTM weekly call (7–30 DTE).
+    Returns viable PMCC pairs ranked by annualised gain.
+    """
+    check_token(token)
+    from datetime import date
+
+    try:
+        chain = await _get_broker_option_chain(ticker.upper())
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    spot = float(chain.get("price") or 0)
+    if spot <= 0:
+        raise HTTPException(status_code=422, detail="No underlying price available")
+
+    calls = chain.get("calls", [])
+    today = date.today()
+
+    def _dte(exp_str):
+        try:
+            return (date.fromisoformat(exp_str) - today).days
+        except Exception:
+            return -1
+
+    long_calls  = [
+        c for c in calls
+        if min_long_dte  <= _dte(c.get("expiration","")) <= max_long_dte
+        and float(c.get("delta") or 0) >= 0.70
+    ]
+    short_calls = [
+        c for c in calls
+        if min_short_dte <= _dte(c.get("expiration","")) <= max_short_dte
+        and float(c.get("strike") or 0) >= spot * (1 + otm_pct)
+    ]
+
+    results = []
+    for long_leg in long_calls:
+        long_price      = float(long_leg.get("mid") or long_leg.get("ask") or 0)
+        long_time_value = float(long_leg.get("extrinsic") or 0)
+        long_dte        = _dte(long_leg.get("expiration",""))
+
+        for short_leg in short_calls:
+            short_bid = float(short_leg.get("bid") or 0)
+            short_dte = _dte(short_leg.get("expiration",""))
+
+            if short_dte >= long_dte:
+                continue
+            if short_bid <= long_time_value:
+                continue
+
+            out_of_pocket  = long_price - short_bid
+            if out_of_pocket <= 0:
+                continue
+
+            max_gain_pp    = (float(short_leg.get("strike") or 0) -
+                              float(long_leg.get("strike") or 0)) - out_of_pocket
+            if max_gain_pp <= 0:
+                continue
+
+            ann_gain = (max_gain_pp / out_of_pocket) * (365 / short_dte) if short_dte > 0 else 0
+
+            results.append({
+                "underlying":     ticker.upper(),
+                "strategy":       "pmcc",
+                "long_expiry":    long_leg.get("expiration",""),
+                "long_dte":       long_dte,
+                "long_strike":    float(long_leg.get("strike") or 0),
+                "long_delta":     round(float(long_leg.get("delta") or 0), 3),
+                "long_contract":  long_leg.get("contract",""),
+                "short_expiry":   short_leg.get("expiration",""),
+                "short_dte":      short_dte,
+                "short_strike":   float(short_leg.get("strike") or 0),
+                "short_contract": short_leg.get("contract",""),
+                "short_bid":      short_bid,
+                "out_of_pocket":  round(out_of_pocket * 100, 2),
+                "max_gain":       round(max_gain_pp * 100, 2),
+                "ann_gain":       round(ann_gain, 4),
+                "score":          round(ann_gain, 4),
+                "legs": [
+                    {"symbol": long_leg.get("contract",""),  "action": "buy_to_open",  "qty": 1,
+                     "limit_price": _snap_price(long_price), "option_type": "call",
+                     "strike": float(long_leg.get("strike") or 0), "expiry": long_leg.get("expiration","")},
+                    {"symbol": short_leg.get("contract",""), "action": "sell_to_open", "qty": 1,
+                     "limit_price": _snap_price(short_bid),  "option_type": "call",
+                     "strike": float(short_leg.get("strike") or 0), "expiry": short_leg.get("expiration","")},
+                ],
+            })
+
+    results.sort(key=lambda r: -r["score"])
+    return {"ticker": ticker.upper(), "spot": spot, "candidates": results[:20]}
+
+
+@app.post("/api/options/spreads/place")
+async def place_spread_order(request: Request):
+    """
+    Place a multi-leg spread order through the broker gateway.
+    Body: {token, account_label, underlying, strategy_type, legs, net_debit, duration}
+    """
+    body = await request.json()
+    check_token(body.get("token", ""))
+
+    account_label = body.get("account_label", "")
+    underlying    = body.get("underlying", "").upper()
+    strategy_type = body.get("strategy_type", "")
+    legs          = body.get("legs", [])
+    net_debit     = body.get("net_debit")
+    duration      = body.get("duration", "day")
+
+    if not underlying or not legs or len(legs) < 2:
+        raise HTTPException(status_code=400, detail="underlying and at least 2 legs are required")
+
+    import uuid as _uuid, json as _json, redis.asyncio as _aioredis
+    try:
+        REDIS_URL = os.getenv("REDIS_URL", "redis://ot-redis:6379/0")
+        redis = await _aioredis.from_url(
+            REDIS_URL, encoding="utf-8", decode_responses=True,
+            socket_connect_timeout=5, socket_timeout=20,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Redis unavailable: {e}")
+
+    req_id = str(_uuid.uuid4())
+    cmd = {
+        "command":       "place_spread_order",
+        "request_id":    req_id,
+        "account_label": account_label,
+        "underlying":    underlying,
+        "strategy_type": strategy_type,
+        "legs":          _json.dumps(legs),
+        "net_debit":     str(net_debit) if net_debit is not None else "",
+        "duration":      duration,
+        "issued_by":     "webui",
+    }
+    await redis.xadd(STREAMS["broker_commands"], cmd)
+    result = await redis.blpop([f"broker:reply:{req_id}"], timeout=20)
+    await redis.aclose()
+
+    if not result:
+        raise HTTPException(status_code=504, detail="Spread order gateway timeout")
+
+    raw = _json.loads(result[1])
+    r   = raw[0] if isinstance(raw, list) else raw
+    if r.get("status") != "ok":
+        raise HTTPException(status_code=502, detail=r.get("error", "Spread order failed"))
+
+    return {"status": "ok", "data": r.get("data", {})}
 
 
 @app.post("/api/market/stock-analysis/{ticker}/persona")

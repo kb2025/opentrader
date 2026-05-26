@@ -76,3 +76,27 @@ class OrderEventPayload(BaseModel):
     pnl:         Optional[float] = None
     order_id:    str = ""
     strategy:    str = ""
+
+
+class SpreadLeg(BaseModel):
+    symbol:      str        # OCC contract symbol
+    action:      str        # buy_to_open | sell_to_open | buy_to_close | sell_to_close
+    qty:         int
+    limit_price: float      # per-leg tick-snapped price
+    option_type: str        # call | put
+    strike:      float
+    expiry:      str        # YYYY-MM-DD
+
+
+class SpreadOrderPayload(BaseModel):
+    strategy_type:  str                 # bull_call_spread | bear_put_spread | bull_put_spread |
+                                        # bear_call_spread | pmcc | iron_condor | straddle | strangle
+    legs:           list[SpreadLeg]
+    net_debit:      Optional[float]     # positive = debit paid, negative = credit received
+    max_loss:       float               # abs(net_debit)*100*qty for debit; wing width - credit for condor
+    max_gain:       float               # abs(net_credit)*100*qty for credit spreads
+    underlying:     str
+    account_label:  str
+    strategy_tag:   str
+    mode:           str
+    request_id:     str

@@ -74,6 +74,45 @@ class WebullConnector(BrokerConnector):
             duration=duration, tag=tag,
         )
 
+    async def place_spread_order(
+        self,
+        underlying:    str,
+        strategy_type: str,
+        legs:          list[dict],
+        net_debit:     float | None = None,
+        duration:      str = "day",
+        tag:           str | None = None,
+    ) -> dict:
+        """Webull sequential leg fallback — multi-leg not supported via API."""
+        import uuid
+        spread_group_id = str(uuid.uuid4())
+        order_ids = []
+        log.warning(
+            f"[webull:{self.account_label}] Placing {strategy_type} as sequential legs "
+            f"(Webull multi-leg not supported via API)"
+        )
+        for i, leg in enumerate(legs, start=1):
+            result = await self._orders.place_option_order(
+                symbol        = underlying,
+                option_symbol = leg["symbol"],
+                side          = leg["action"],
+                quantity      = leg["qty"],
+                order_type    = "LMT" if leg.get("limit_price") else "MKT",
+                price         = leg.get("limit_price"),
+                duration      = duration,
+                tag           = tag,
+            )
+            order_id = str(result.get("orderId") or result.get("id") or "")
+            order_ids.append({"leg": leg["symbol"], "order_id": order_id})
+        return {
+            "spread_group_id": spread_group_id,
+            "strategy_type":   strategy_type,
+            "underlying":      underlying,
+            "order_ids":       order_ids,
+            "net_debit":       net_debit,
+            "status":          "ok",
+        }
+
     async def cancel_order(self, order_id: str) -> dict:
         return await self._orders.cancel_order(order_id)
 

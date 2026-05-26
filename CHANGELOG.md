@@ -3,6 +3,20 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.24] - 2026-05-26
+
+### Added
+- **Multi-leg options execution** (5 phases):
+  - `SpreadLeg` + `SpreadOrderPayload` data models in `shared/envelope.py`
+  - Tradier native `multileg` order class (`place_multileg_order`); Alpaca + Webull sequential-leg fallback
+  - Broker gateway `place_spread_order` command + `get_option_contract` + `place_option_order` commands
+  - DB schema: `spread_group_id`, `spread_role`, `spread_type`, `spread_meta` columns on `option_positions`
+  - Screener API endpoints: `/api/options/screener/bull-call-spread` and `/api/options/screener/pmcc`
+  - Spread order API: `/api/options/spreads/place`
+  - Options trader confidence-based spread routing (0.55–0.85 confidence + `signal_type=spread`)
+  - Options Dashboard: **Spread Screener** collapsible panel + **New Spread** button + spread order modal
+    with leg preview, net debit/max-loss/max-gain summary, and one-click "Open in modal" from screener
+
 ## [4.0.23] - 2026-05-25
 
 ### Changed

@@ -80,6 +80,48 @@ class BrokerConnector(ABC):
     async def get_quotes(self, symbols: list[str]) -> list[dict]:
         """Return latest quotes for multiple symbols."""
 
+    # ── Multi-leg options ─────────────────────────────────────────────────────
+
+    async def place_spread_order(
+        self,
+        underlying:    str,
+        strategy_type: str,
+        legs:          list[dict],    # list of SpreadLeg dicts
+        net_debit:     Optional[float] = None,
+        duration:      str = "day",
+        tag:           Optional[str] = None,
+    ) -> dict:
+        """
+        Place a multi-leg spread order.
+        Default: sequential single-leg fallback.
+        Override in connectors that support native multi-leg (e.g. Tradier).
+        Returns combined result dict with spread_group_id and per-leg order_ids.
+        """
+        import uuid
+        spread_group_id = str(uuid.uuid4())
+        order_ids = []
+        for leg in legs:
+            result = await self.place_option_order(
+                symbol        = underlying,
+                option_symbol = leg["symbol"],
+                side          = leg["action"],
+                quantity      = leg["qty"],
+                order_type    = "limit" if leg.get("limit_price") else "market",
+                price         = leg.get("limit_price"),
+                duration      = duration,
+                tag           = tag,
+            )
+            order_id = str(result.get("id") or result.get("orderId") or "")
+            order_ids.append({"leg": leg["symbol"], "order_id": order_id})
+        return {
+            "spread_group_id": spread_group_id,
+            "strategy_type":   strategy_type,
+            "underlying":      underlying,
+            "order_ids":       order_ids,
+            "net_debit":       net_debit,
+            "status":          "ok",
+        }
+
     # ── Options market data ───────────────────────────────────────────────────
 
     async def get_option_chain(self, symbol: str) -> dict:

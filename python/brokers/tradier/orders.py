@@ -88,6 +88,57 @@ class TradierOrders:
         )
         return result.get("order", result)
 
+    async def place_multileg_order(
+        self,
+        underlying:    str,
+        strategy_type: str,
+        legs:          list[dict],
+        net_debit:     float | None = None,
+        duration:      str = "day",
+        tag:           str | None = None,
+    ) -> dict:
+        """
+        Tradier native multileg order (class=multileg).
+        legs: list of dicts with keys: symbol, action, qty, limit_price
+        Net debit is the combined limit price (positive = debit, negative = credit).
+        """
+        import uuid
+        data: dict = {
+            "class":    "multileg",
+            "symbol":   underlying,
+            "type":     "limit",
+            "duration": duration,
+        }
+        if net_debit is not None:
+            # Tradier expects positive price for the net debit/credit
+            data["price"] = str(round(abs(net_debit), 2))
+        if tag:
+            data["tag"] = tag
+
+        for i, leg in enumerate(legs, start=1):
+            data[f"option_symbol[{i}]"] = leg["symbol"]
+            data[f"side[{i}]"]          = leg["action"]
+            data[f"quantity[{i}]"]      = str(leg["qty"])
+
+        log.info(
+            f"[tradier:{self.account.label}] Multileg {strategy_type} on {underlying} "
+            f"({len(legs)} legs, net_debit={net_debit})"
+        )
+        result = await self.client.post(
+            f"/accounts/{self.acct_id}/orders", data=data
+        )
+        order = result.get("order", result)
+        order_id = str(order.get("id", ""))
+        return {
+            "spread_group_id": str(uuid.uuid4()),
+            "strategy_type":   strategy_type,
+            "underlying":      underlying,
+            "order_id":        order_id,
+            "order_ids":       [{"leg": leg["symbol"], "order_id": order_id} for leg in legs],
+            "net_debit":       net_debit,
+            "status":          "ok",
+        }
+
     async def cancel_order(self, order_id: str) -> dict:
         log.info(f"[tradier:{self.account.label}] Cancelling order {order_id}")
         return await self.client.delete(

@@ -83,6 +83,20 @@ class TradierConnector(BrokerConnector):
             duration=duration, tag=tag,
         )
 
+    async def place_spread_order(
+        self,
+        underlying:    str,
+        strategy_type: str,
+        legs:          list[dict],
+        net_debit:     float | None = None,
+        duration:      str = "day",
+        tag:           str | None = None,
+    ) -> dict:
+        return await self._orders.place_multileg_order(
+            underlying=underlying, strategy_type=strategy_type,
+            legs=legs, net_debit=net_debit, duration=duration, tag=tag,
+        )
+
     async def cancel_order(self, order_id: str) -> dict:
         return await self._orders.cancel_order(order_id)
 

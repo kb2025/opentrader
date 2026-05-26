@@ -233,10 +233,19 @@ class OptionsTrader(BaseAgent):
                               strategy=assignment["strategy_name"],
                               tone=tone)
                     continue
-                await self._place_option_order(
-                    ticker, direction, confidence, data, assignment,
-                    tone_tier=tone_tier,
-                )
+
+                # Medium-confidence signals → spread instead of naked option
+                # (confidence 0.55–0.70: narrower spread; 0.70–0.85: standard $5 spread)
+                use_spread = (0.55 <= confidence <= 0.85) and data.get("signal_type") == "spread"
+                if use_spread:
+                    await self._place_spread_order(
+                        ticker, direction, confidence, data, assignment,
+                    )
+                else:
+                    await self._place_option_order(
+                        ticker, direction, confidence, data, assignment,
+                        tone_tier=tone_tier,
+                    )
 
         except Exception as e:
             log.error("trader-options.handle_signal_error",
@@ -495,6 +504,171 @@ class OptionsTrader(BaseAgent):
                      ticker=ticker, contract=contract_symbol,
                      account=acct, strategy=strategy_name,
                      order_id=order_id, event_type=event_type)
+
+    async def _place_spread_order(
+        self,
+        ticker:     str,
+        direction:  str,
+        confidence: float,
+        data:       dict,
+        assignment: dict,
+    ):
+        """
+        Place a bull call spread (long) or bear put spread (short) via the gateway.
+        Spread width scales with confidence:
+          ≥0.85 → $10 width; 0.70–0.85 → $5; 0.55–0.70 → $2.50
+        Resolves both legs from the chain, then sends place_spread_order.
+        """
+        account_label = assignment["account_label"]
+        trade_mode    = await self._trade_mode()
+
+        if confidence >= 0.85:
+            width = 10.0
+        elif confidence >= 0.70:
+            width = 5.0
+        else:
+            width = 2.5
+
+        opt_type   = "call" if direction == "long" else "put"
+        strategy   = "bull_call_spread" if direction == "long" else "bear_put_spread"
+
+        # Resolve long leg (ATM or slightly ITM)
+        long_leg = await self._resolve_spread_leg(ticker, opt_type, 0.0, trade_mode)
+        if not long_leg:
+            log.warning("trader-options.spread_no_long_leg", ticker=ticker)
+            return
+
+        long_strike = float(long_leg.get("strike") or 0)
+        short_strike = (
+            round(long_strike + width, 2) if direction == "long"
+            else round(long_strike - width, 2)
+        )
+
+        short_leg = await self._resolve_spread_leg(ticker, opt_type, short_strike, trade_mode)
+        if not short_leg:
+            log.warning("trader-options.spread_no_short_leg", ticker=ticker, strike=short_strike)
+            return
+
+        long_mid  = float(long_leg.get("mid") or long_leg.get("ask") or 0)
+        short_mid = float(short_leg.get("mid") or short_leg.get("bid") or 0)
+
+        long_price  = _snap_to_tick(long_mid)
+        short_price = _snap_to_tick(short_mid)
+        net_debit   = round(long_price - short_price, 2)
+        if net_debit <= 0:
+            log.warning("trader-options.spread_zero_debit", ticker=ticker, net=net_debit)
+            return
+
+        max_risk_usd  = float(assignment.get("max_pos") or 500) * confidence
+        contracts     = max(1, min(int(max_risk_usd / (net_debit * 100)), MAX_CONTRACTS))
+
+        legs = [
+            {"symbol": long_leg.get("symbol",""),  "action": "buy_to_open",  "qty": contracts,
+             "limit_price": long_price,  "option_type": opt_type,
+             "strike": long_strike,      "expiry": long_leg.get("expiry","")},
+            {"symbol": short_leg.get("symbol",""), "action": "sell_to_open", "qty": contracts,
+             "limit_price": short_price, "option_type": opt_type,
+             "strike": short_strike,     "expiry": short_leg.get("expiry","")},
+        ]
+
+        request_id = str(uuid.uuid4())
+        log.info("trader-options.spread_placing",
+                 ticker=ticker, strategy=strategy, width=width,
+                 long_strike=long_strike, short_strike=short_strike,
+                 net_debit=net_debit, contracts=contracts, account=account_label)
+
+        import json as _json
+        await self.redis.xadd(
+            STREAMS["broker_commands"],
+            {
+                "command":       "place_spread_order",
+                "request_id":    request_id,
+                "account_label": account_label,
+                "underlying":    ticker,
+                "strategy_type": strategy,
+                "legs":          _json.dumps(legs),
+                "net_debit":     str(net_debit),
+                "duration":      "day",
+                "mode":          trade_mode,
+                "issued_by":     "trader-options",
+            },
+            maxlen=10_000,
+        )
+
+        reply_raw = await self.redis.blpop(
+            f"broker:reply:{request_id}", timeout=GATEWAY_TIMEOUT
+        )
+        if reply_raw is None:
+            log.warning("trader-options.spread_gateway_timeout", ticker=ticker)
+            return
+
+        _, reply_json = reply_raw
+        try:
+            r = json.loads(reply_json)
+            if isinstance(r, list):
+                r = r[0]
+        except Exception:
+            return
+
+        if r.get("status") == "error":
+            log.warning("trader-options.spread_rejected", ticker=ticker, error=r.get("error"))
+            return
+
+        self._positions_today.add(ticker)
+        log.info("trader-options.spread_submitted",
+                 ticker=ticker, strategy=strategy,
+                 spread_group_id=r.get("data", {}).get("spread_group_id", ""),
+                 account=account_label)
+
+    async def _resolve_spread_leg(
+        self,
+        ticker:        str,
+        opt_type:      str,
+        target_strike: float,
+        trade_mode:    str,
+    ) -> Optional[dict]:
+        """Resolve a single spread leg — returns {symbol, strike, expiry, mid, bid, ask} or None."""
+        try:
+            request_id = str(uuid.uuid4())
+            await self.redis.xadd(
+                STREAMS["broker_commands"],
+                {
+                    "command":       "get_option_contract",
+                    "request_id":    request_id,
+                    "symbol":        ticker,
+                    "option_type":   opt_type,
+                    "target_strike": str(target_strike) if target_strike else "",
+                    "expiry_days":   str(DEFAULT_EXPIRY_DAYS),
+                    "mode":          trade_mode if trade_mode != "all" else "",
+                    "issued_by":     "trader-options",
+                },
+                maxlen=10_000,
+            )
+            reply_raw = await self.redis.blpop(
+                f"broker:reply:{request_id}", timeout=10
+            )
+            if reply_raw is None:
+                return None
+            _, reply_json = reply_raw
+            r = json.loads(reply_json)
+            if isinstance(r, list):
+                r = r[0]
+            d = r.get("data", {})
+            if not d.get("symbol"):
+                return None
+            return {
+                "symbol": d.get("symbol"),
+                "strike": d.get("strike"),
+                "expiry": d.get("expiry"),
+                "mid":    d.get("mid"),
+                "bid":    d.get("bid"),
+                "ask":    d.get("ask"),
+                "delta":  d.get("delta"),
+            }
+        except Exception as e:
+            log.warning("trader-options.spread_leg_resolve_failed",
+                        ticker=ticker, error=str(e))
+            return None
 
     async def _get_quote(self, ticker: str, trade_mode: str) -> dict:
         """Fetch full quote (last, bid, ask) via broker gateway. Returns {} on failure."""

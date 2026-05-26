@@ -68,15 +68,18 @@ class BrokerRouter:
         """
         command = cmd.get("command", "")
         handler = {
-            "place_order":      self._place_order,
-            "cancel_order":     self._cancel_order,
-            "cancel_all":       self._cancel_all,
-            "get_positions":    self._get_positions,
-            "get_balances":     self._get_balances,
-            "get_orders":       self._get_orders,
-            "get_quote":        self._get_quote,
-            "get_quotes":       self._get_quotes,
-            "get_option_chain": self._get_option_chain,
+            "place_order":         self._place_order,
+            "place_option_order":  self._place_option_order,
+            "place_spread_order":  self._place_spread_order,
+            "get_option_contract": self._get_option_contract,
+            "cancel_order":        self._cancel_order,
+            "cancel_all":          self._cancel_all,
+            "get_positions":       self._get_positions,
+            "get_balances":        self._get_balances,
+            "get_orders":          self._get_orders,
+            "get_quote":           self._get_quote,
+            "get_quotes":          self._get_quotes,
+            "get_option_chain":    self._get_option_chain,
         }.get(command)
 
         if not handler:
@@ -186,6 +189,109 @@ class BrokerRouter:
                     r["data"]["fill_impact"] = fill_impact
 
         return results
+
+    async def _place_option_order(self, cmd: dict) -> list[dict]:
+        """Single-leg option order — alias that maps to place_order with asset_class=option."""
+        patched = dict(cmd)
+        patched["command"]      = "place_order"
+        patched["asset_class"]  = "option"
+        patched.setdefault("option_symbol", cmd.get("symbol", ""))
+        patched.setdefault("symbol",        cmd.get("underlying", cmd.get("symbol", "")))
+        return await self._place_order(patched)
+
+    async def _get_option_contract(self, cmd: dict) -> list[dict]:
+        """
+        Resolve nearest options contract for a given underlying, type, strike, and DTE.
+        Routes to the first available connector that supports get_option_chain.
+        Returns {symbol, strike, expiry, option_type} in result data.
+        """
+        symbol        = cmd.get("symbol", "")
+        opt_type      = cmd.get("option_type", "call")
+        target_strike = _flt(cmd.get("target_strike", ""))
+        expiry_days   = _int(cmd.get("expiry_days", "7"))
+
+        if not symbol:
+            return [self._error(cmd, "get_option_contract requires symbol")]
+
+        accounts = self._resolve_accounts(cmd)
+        if not accounts:
+            accounts = self.registry.all_records()
+        if not accounts:
+            return [self._error(cmd, "No connectors available for get_option_contract")]
+
+        rec = accounts[0]
+        try:
+            chain_data = await rec.connector.get_option_chain(symbol)
+        except Exception as e:
+            return [self._error(cmd, str(e), rec.label)]
+
+        from datetime import date, timedelta
+        import math
+
+        target_date = date.today() + timedelta(days=expiry_days)
+        contracts   = chain_data.get("calls" if opt_type == "call" else "puts", [])
+
+        if not contracts:
+            return [self._error(cmd, f"No {opt_type} contracts found for {symbol}", rec.label)]
+
+        # Find nearest expiry to target_date, then nearest strike to target_strike
+        def _dist(c):
+            try:
+                exp = date.fromisoformat(c.get("expiration", "9999-12-31"))
+                dte_diff    = abs((exp - target_date).days)
+                strike_diff = abs(float(c.get("strike", 0)) - (target_strike or 0))
+                return (dte_diff, strike_diff)
+            except Exception:
+                return (9999, 9999)
+
+        best = min(contracts, key=_dist)
+        return [self._result(cmd, rec, {
+            "symbol":      best.get("contract", ""),
+            "strike":      best.get("strike"),
+            "expiry":      best.get("expiration"),
+            "option_type": opt_type,
+            "bid":         best.get("bid"),
+            "ask":         best.get("ask"),
+            "mid":         best.get("mid"),
+            "delta":       best.get("delta"),
+            "iv":          best.get("iv"),
+        })]
+
+    async def _place_spread_order(self, cmd: dict) -> list[dict]:
+        """
+        Route a multi-leg spread order to the correct connector.
+        cmd fields: underlying, strategy_type, legs (JSON array), net_debit,
+                    account_label, duration, tag
+        """
+        import json as _json
+
+        accounts = self._resolve_accounts(cmd)
+        if not accounts:
+            return [self._error(cmd, "No matching accounts for place_spread_order")]
+
+        underlying    = cmd.get("underlying", "")
+        strategy_type = cmd.get("strategy_type", "")
+        duration      = cmd.get("duration", "day")
+        tag           = cmd.get("tag") or None
+        net_debit     = _flt(cmd.get("net_debit", ""))
+
+        legs_raw = cmd.get("legs", "[]")
+        try:
+            legs = _json.loads(legs_raw) if isinstance(legs_raw, str) else legs_raw
+        except Exception:
+            return [self._error(cmd, "legs field must be a JSON array")]
+
+        if not legs:
+            return [self._error(cmd, "place_spread_order requires at least 2 legs")]
+
+        tasks = [
+            (rec, rec.connector.place_spread_order(
+                underlying=underlying, strategy_type=strategy_type,
+                legs=legs, net_debit=net_debit, duration=duration, tag=tag,
+            ))
+            for rec in accounts
+        ]
+        return await self._gather(cmd, tasks)
 
     async def _cancel_order(self, cmd: dict) -> list[dict]:
         accounts = self._resolve_accounts(cmd)

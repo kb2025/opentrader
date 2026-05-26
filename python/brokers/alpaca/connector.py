@@ -75,6 +75,45 @@ class AlpacaConnector(BrokerConnector):
             duration=duration, tag=tag,
         )
 
+    async def place_spread_order(
+        self,
+        underlying:    str,
+        strategy_type: str,
+        legs:          list[dict],
+        net_debit:     float | None = None,
+        duration:      str = "day",
+        tag:           str | None = None,
+    ) -> dict:
+        """Alpaca sequential leg fallback — no native multi-leg API."""
+        import uuid
+        spread_group_id = str(uuid.uuid4())
+        order_ids = []
+        log.warning(
+            f"[alpaca:{self.account_label}] Placing {strategy_type} as sequential legs "
+            f"(Alpaca has no native multi-leg API)"
+        )
+        for i, leg in enumerate(legs, start=1):
+            result = await self._orders.place_option_order(
+                symbol        = underlying,
+                option_symbol = leg["symbol"],
+                side          = leg["action"],
+                quantity      = leg["qty"],
+                order_type    = "limit" if leg.get("limit_price") else "market",
+                price         = leg.get("limit_price"),
+                duration      = duration,
+                tag           = f"{spread_group_id[:16]}-{i}",
+            )
+            order_id = str(result.get("id") or result.get("orderId") or "")
+            order_ids.append({"leg": leg["symbol"], "order_id": order_id})
+        return {
+            "spread_group_id": spread_group_id,
+            "strategy_type":   strategy_type,
+            "underlying":      underlying,
+            "order_ids":       order_ids,
+            "net_debit":       net_debit,
+            "status":          "ok",
+        }
+
     async def cancel_order(self, order_id: str) -> dict:
         return await self._orders.cancel_order(order_id)
 
