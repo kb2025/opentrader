@@ -5478,46 +5478,74 @@ async def get_alpaca_accounts(token: str = ""):
 async def get_ovtlyr_market_signals(token: str = ""):
     """
     Return latest OVTLYR signals for SPY and QQQ, enriched with daily price change.
-    Price change (close vs prev_close) comes from the sentiment scraper's Redis cache.
+    Signal source priority: ovtlyr:position_intel → scanner:ovtlyr:latest
+    Price source priority:  sentiment:latest → last 2 bars from get_market_bars
     """
     check_token(token)
     import json as _json
     _redis = await get_redis()
 
-    # Fetch OVTLYR intel
+    # Fetch OVTLYR signal — position_intel first (2h TTL), fall back to scanner cache
     result = {}
     for ticker in ("SPY", "QQQ"):
         raw = await _redis.hget("ovtlyr:position_intel", ticker)
+        if not raw:
+            raw = await _redis.hget("scanner:ovtlyr:latest", ticker)
         if raw:
             try:
                 result[ticker] = _json.loads(raw)
             except Exception:
                 pass
 
-    # Enrich with daily price change from sentiment scraper cache (no yfinance needed)
+    # Enrich with daily price change — sentiment cache first, then bars fallback
     for ticker in ("SPY", "QQQ"):
+        price_data = None
+
+        # Primary: sentiment scraper cache
         raw = await _redis.hget("sentiment:latest", ticker)
-        if not raw:
-            continue
-        try:
-            s = _json.loads(raw)
-            close      = s.get("close")
-            prev_close = s.get("prev_close")
-            if close is not None and prev_close:
-                change     = round(float(close) - float(prev_close), 2)
-                change_pct = round(change / float(prev_close) * 100, 2)
-                pdata = {
-                    "close":      round(float(close), 2),
-                    "prev_close": round(float(prev_close), 2),
-                    "change":     change,
-                    "change_pct": change_pct,
-                }
-                if ticker in result:
-                    result[ticker].update(pdata)
-                else:
-                    result[ticker] = pdata
-        except Exception as e:
-            log.warning("market_signals.price_enrich_error", ticker=ticker, error=str(e))
+        if raw:
+            try:
+                s = _json.loads(raw)
+                close      = s.get("close")
+                prev_close = s.get("prev_close")
+                if close is not None and prev_close:
+                    change     = round(float(close) - float(prev_close), 2)
+                    change_pct = round(change / float(prev_close) * 100, 2)
+                    price_data = {
+                        "close":      round(float(close), 2),
+                        "prev_close": round(float(prev_close), 2),
+                        "change":     change,
+                        "change_pct": change_pct,
+                    }
+            except Exception as e:
+                log.warning("market_signals.price_enrich_error", ticker=ticker, error=str(e))
+
+        # Fallback: derive change % from last 2 daily bars
+        if price_data is None:
+            try:
+                bars_resp = await get_market_bars(ticker=ticker, days=5)
+                bars = [b for b in (bars_resp.get("bars") or []) if b.get("close")]
+                if len(bars) >= 2:
+                    close      = round(float(bars[-1]["close"]), 2)
+                    prev_close = round(float(bars[-2]["close"]), 2)
+                    change     = round(close - prev_close, 2)
+                    change_pct = round(change / prev_close * 100, 2)
+                    price_data = {
+                        "close":      close,
+                        "prev_close": prev_close,
+                        "change":     change,
+                        "change_pct": change_pct,
+                    }
+                elif len(bars) == 1:
+                    price_data = {"close": round(float(bars[-1]["close"]), 2)}
+            except Exception as e:
+                log.warning("market_signals.bars_fallback_error", ticker=ticker, error=str(e))
+
+        if price_data:
+            if ticker in result:
+                result[ticker].update(price_data)
+            else:
+                result[ticker] = price_data
 
     return result
 

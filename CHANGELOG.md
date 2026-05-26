@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.33] - 2026-05-26
+
+### Fixed
+- **Trading Dashboard SPY/QQQ cards**: `ovtlyr:position_intel` expires after 2h and `sentiment:latest` is empty after-hours — both were the only sources. Added fallbacks: signal falls back to `scanner:ovtlyr:latest` (24h TTL); price falls back to last 2 daily bars from the market data gateway
+
 ## [4.0.32] - 2026-05-26
 
 ### Fixed
