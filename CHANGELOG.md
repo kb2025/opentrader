@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.29] - 2026-05-26
+
+### Fixed
+- **Trading Dashboard / Market Breadth**: added padding between the percentage number and the gauge arc (changed margin-top from -8px to 4px)
+
 ## [4.0.28] - 2026-05-26
 
 ### Fixed
