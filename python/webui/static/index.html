@@ -10667,6 +10667,11 @@ const BROKER_META = {
 
 let _bkCfgBroker = '';
 
+// Tracks whether the live banner has already auto-hidden this session.
+// Reset whenever the mode actually changes so the banner re-appears on toggle.
+let _liveBannerDismissed = false;
+let _liveBannerLastMode  = null;
+
 function _applyTradeModeBanner(mode) {
   const broker  = document.getElementById('broker-mode-banner');
   const toggle  = document.getElementById('trade-mode-toggle');
@@ -10675,6 +10680,14 @@ function _applyTradeModeBanner(mode) {
   const dash    = document.getElementById('td-mode-banner');
   const chip    = document.getElementById('trade-mode-chip');
   const isLive  = mode === 'live';
+
+  // If mode changed, reset the dismissed flag so the banner shows again
+  if (mode !== _liveBannerLastMode) {
+    _liveBannerLastMode = mode;
+    _liveBannerDismissed = false;
+    clearTimeout(window._liveBannerTimer);
+  }
+
   if (chip) {
     chip.style.display = '';
     chip.className = isLive ? 'chip chip-green' : 'chip chip-amber';
@@ -10690,17 +10703,25 @@ function _applyTradeModeBanner(mode) {
   if (track)  track.style.background  = isLive ? 'var(--green)' : 'var(--amber)';
   if (thumb)  thumb.style.left        = isLive ? '25px' : '3px';
   if (dash) {
-    clearTimeout(window._liveBannerTimer);
+    if (isLive && _liveBannerDismissed) {
+      // Already auto-hidden this session — keep it hidden on WS re-renders
+      dash.style.display = 'none';
+      return;
+    }
     dash.style.display = '';
     dash.style.opacity = '1';
     dash.className = isLive ? 'mode-banner live' : 'mode-banner sandbox';
     dash.innerHTML = isLive
       ? '&#128994; LIVE TRADING MODE — Real money at risk'
       : '&#9888; SANDBOX / PAPER MODE — No real trades';
-    if (isLive) {
+    if (isLive && !_liveBannerDismissed) {
+      clearTimeout(window._liveBannerTimer);
       window._liveBannerTimer = setTimeout(() => {
         dash.style.opacity = '0';
-        setTimeout(() => { dash.style.display = 'none'; }, 400);
+        setTimeout(() => {
+          dash.style.display = 'none';
+          _liveBannerDismissed = true;
+        }, 400);
       }, 5000);
     }
   }

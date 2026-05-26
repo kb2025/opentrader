@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.31] - 2026-05-26
+
+### Fixed
+- **Trading Dashboard**: Live banner auto-hide now survives WebSocket re-renders — added session dismissed flag so WS updates (which call `_applyTradeModeBanner` on every push) no longer reset the opacity/display; flag resets if mode is actually toggled
+
 ## [4.0.30] - 2026-05-26
 
 ### Changed
