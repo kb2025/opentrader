@@ -583,9 +583,20 @@ class OvtlyrScraper:
             except ValueError:
                 pass
 
+        # Channels — Pass or Fail
+        m = re.search(r'Channels\s*\n+\s*(Pass|Fail)', text, re.IGNORECASE)
+        if m:
+            result["channels"] = m.group(1).capitalize()
+
+        # Capital Efficiency — numeric value or label
+        m = re.search(r'Capital Efficiency\s*\n+\s*([\d.]+%?|[A-Za-z]+)', text, re.IGNORECASE)
+        if m:
+            result["capital_efficiency"] = m.group(1).strip()
+
         result["ticker"] = ticker.upper()
         log.info("ovtlyr.scrape_ticker", ticker=ticker, signal=result.get("signal"),
-                 nine_score=result.get("nine_score"), fear_greed=result.get("fear_greed"))
+                 nine_score=result.get("nine_score"), fear_greed=result.get("fear_greed"),
+                 channels=result.get("channels"), capital_efficiency=result.get("capital_efficiency"))
         return result
 
     @staticmethod

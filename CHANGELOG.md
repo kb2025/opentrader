@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.27] - 2026-05-26
+
+### Added
+- **OVTLYR scraper**: captures `channels` (Pass/Fail) and `capital_efficiency` from the ticker dashboard; stored in Redis position intel, `scanner:ovtlyr:latest`, and persisted to `ovtlyr_intel` DB table (new columns added via live migration)
+
 ## [4.0.26] - 2026-05-26
 
 ### Fixed

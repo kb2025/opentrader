@@ -239,6 +239,10 @@ class OvtlyrScraperAgent(BaseAgent):
                     existing["signal_active"] = data["signal_active"]
                 if data.get("signal_date_str"):
                     existing["signal_date"] = data["signal_date_str"]
+                if data.get("channels"):
+                    existing["channels"] = data["channels"]
+                if data.get("capital_efficiency"):
+                    existing["capital_efficiency"] = data["capital_efficiency"]
 
                 pipe.hset("scanner:ovtlyr:latest", ticker, json.dumps(existing))
                 enriched += 1
@@ -258,8 +262,9 @@ class OvtlyrScraperAgent(BaseAgent):
                             """
                             INSERT INTO ovtlyr_intel
                                 (ticker, signal, signal_active, signal_date, nine_score,
-                                 oscillator, fear_greed, last_close, avg_vol_30d, raw)
-                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                                 oscillator, fear_greed, last_close, avg_vol_30d,
+                                 channels, capital_efficiency, raw)
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                             """,
                             ticker,
                             data.get("signal"),
@@ -270,6 +275,8 @@ class OvtlyrScraperAgent(BaseAgent):
                             data.get("fear_greed"),
                             data.get("last_close"),
                             data.get("avg_vol_30d"),
+                            data.get("channels"),
+                            data.get("capital_efficiency"),
                             json.dumps({k: v for k, v in data.items() if k != "signal_date_str"}),
                         )
                     except Exception as db_err:
@@ -366,8 +373,9 @@ class OvtlyrScraperAgent(BaseAgent):
                             """
                             INSERT INTO ovtlyr_intel
                                 (ticker, signal, signal_active, signal_date, nine_score,
-                                 oscillator, fear_greed, last_close, avg_vol_30d, raw)
-                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                                 oscillator, fear_greed, last_close, avg_vol_30d,
+                                 channels, capital_efficiency, raw)
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                             """,
                             ticker,
                             data.get("signal"),
@@ -378,6 +386,8 @@ class OvtlyrScraperAgent(BaseAgent):
                             data.get("fear_greed"),
                             data.get("last_close"),
                             data.get("avg_vol_30d"),
+                            data.get("channels"),
+                            data.get("capital_efficiency"),
                             json.dumps({k: v for k, v in data.items() if k != "signal_date_str"}),
                         )
                     except Exception as db_err:

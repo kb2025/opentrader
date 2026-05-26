@@ -87,20 +87,24 @@ ALTER TABLE option_positions ADD COLUMN IF NOT EXISTS chain_id UUID;
 CREATE INDEX IF NOT EXISTS option_positions_chain_id ON option_positions (chain_id) WHERE chain_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS ovtlyr_intel (
-    id           UUID NOT NULL DEFAULT gen_random_uuid(),
-    ts           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    ticker       TEXT NOT NULL,
-    signal       TEXT,
-    signal_active BOOLEAN,
-    signal_date  DATE,
-    nine_score   INT,
-    oscillator   TEXT,
-    fear_greed   NUMERIC,
-    last_close   NUMERIC,
-    avg_vol_30d  BIGINT,
-    raw          JSONB,
+    id                 UUID NOT NULL DEFAULT gen_random_uuid(),
+    ts                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ticker             TEXT NOT NULL,
+    signal             TEXT,
+    signal_active      BOOLEAN,
+    signal_date        DATE,
+    nine_score         INT,
+    oscillator         TEXT,
+    fear_greed         NUMERIC,
+    last_close         NUMERIC,
+    avg_vol_30d        BIGINT,
+    channels           TEXT,
+    capital_efficiency TEXT,
+    raw                JSONB,
     PRIMARY KEY (ts, id)
 );
+ALTER TABLE ovtlyr_intel ADD COLUMN IF NOT EXISTS channels           TEXT;
+ALTER TABLE ovtlyr_intel ADD COLUMN IF NOT EXISTS capital_efficiency TEXT;
 SELECT create_hypertable('ovtlyr_intel', 'ts', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS ovtlyr_intel_ticker_ts ON ovtlyr_intel (ticker, ts DESC);
 
