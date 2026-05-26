@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.28] - 2026-05-26
+
+### Fixed
+- **Equity Dashboard**: Sectors row now has left/right scroll arrows matching the Tickers row; scroll functions made generic so both rows share the same implementation
+
 ## [4.0.27] - 2026-05-26
 
 ### Added

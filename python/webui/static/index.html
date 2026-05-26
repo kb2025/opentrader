@@ -8395,18 +8395,18 @@ function _pieHotspotHide() {
   document.getElementById('pie-tooltip').style.display = 'none';
 }
 
-// Heatmap ticker scroll
+// Heatmap row scroll — elemId is the full element ID of the scrollable row
 const _hmScrollIntervals = {};
-function _hmScrollStart(key, dir) {
-  _hmScrollStop(key);
-  _hmScrollIntervals[key] = setInterval(() => {
-    const el = document.getElementById('hm-ticker-scroll-' + key);
+function _hmScrollStart(elemId, dir) {
+  _hmScrollStop(elemId);
+  _hmScrollIntervals[elemId] = setInterval(() => {
+    const el = document.getElementById(elemId);
     if (el) el.scrollLeft += dir * 8;
   }, 16);
 }
-function _hmScrollStop(key) {
-  clearInterval(_hmScrollIntervals[key]);
-  delete _hmScrollIntervals[key];
+function _hmScrollStop(elemId) {
+  clearInterval(_hmScrollIntervals[elemId]);
+  delete _hmScrollIntervals[elemId];
 }
 
 function _pieLegend(slices, total) {
@@ -8642,22 +8642,29 @@ function _renderAccountHeatmap(positions, acctKey) {
     </div>`;
   }).join('');
 
-  const dBtn = (dir) => `<span style="font-size:13px;color:var(--muted);flex-shrink:0;cursor:default;padding:0 4px;user-select:none;opacity:.55;transition:opacity .15s"
-    onmouseenter="_hmScrollStart('${acctKey}',${dir});this.style.opacity='1'"
-    onmouseleave="_hmScrollStop('${acctKey}');this.style.opacity='.55'">&#9670;</span>`;
+  const dBtn = (elemId, dir) => `<span style="font-size:13px;color:var(--muted);flex-shrink:0;cursor:default;padding:0 4px;user-select:none;opacity:.55;transition:opacity .15s"
+    onmouseenter="_hmScrollStart('${elemId}',${dir});this.style.opacity='1'"
+    onmouseleave="_hmScrollStop('${elemId}');this.style.opacity='.55'">&#9670;</span>`;
+  const tkElem = `hm-ticker-scroll-${acctKey}`;
+  const scElem = `hm-sector-scroll-${acctKey}`;
   return `<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
     <div style="display:flex;align-items:center;gap:4px;margin-bottom:5px;min-width:0">
       <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Tickers</span>
       <div style="display:flex;align-items:center;flex:1;min-width:0;padding-left:6px">
-        ${dBtn(-1)}
-        <div id="hm-ticker-scroll-${acctKey}" style="display:flex;gap:2px;flex:1;min-width:0;overflow:hidden;scroll-behavior:auto"
+        ${dBtn(tkElem,-1)}
+        <div id="${tkElem}" style="display:flex;gap:2px;flex:1;min-width:0;overflow:hidden;scroll-behavior:auto"
              onmousemove="_pieHotspotShow(event,'${tkKey}')" onmouseleave="_pieHotspotHide()">${tickerBlocks}</div>
-        ${dBtn(1)}
+        ${dBtn(tkElem,1)}
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:6px;min-width:0">
+    <div style="display:flex;align-items:center;gap:4px;min-width:0">
       <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Sectors</span>
-      <div style="display:flex;gap:2px;flex:1;min-width:0;overflow:hidden" onmousemove="_pieHotspotShow(event,'${scKey}')" onmouseleave="_pieHotspotHide()">${sectorBlocks}</div>
+      <div style="display:flex;align-items:center;flex:1;min-width:0;padding-left:6px">
+        ${dBtn(scElem,-1)}
+        <div id="${scElem}" style="display:flex;gap:2px;flex:1;min-width:0;overflow:hidden;scroll-behavior:auto"
+             onmousemove="_pieHotspotShow(event,'${scKey}')" onmouseleave="_pieHotspotHide()">${sectorBlocks}</div>
+        ${dBtn(scElem,1)}
+      </div>
     </div>
   </div>`;
 }
