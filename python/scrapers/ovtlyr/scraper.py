@@ -527,16 +527,21 @@ class OvtlyrScraper:
 
         result: dict = {}
 
-        # Signal: "Sell" or "Buy" near "Current Signal"
-        m = re.search(r'Current Signal[^\n]*\n+\s*(Buy|Sell)', text, re.IGNORECASE)
+        # Signal: prefer "Current Active Signal" over "Current Signal" —
+        # the page may show both; Active is the authoritative one.
+        m = re.search(r'Current Active Signal[^\n]*\n+\s*(Buy|Sell)', text, re.IGNORECASE)
+        if not m:
+            m = re.search(r'Current Signal[^\n]*\n+\s*(Buy|Sell)', text, re.IGNORECASE)
         if m:
             result["signal"] = m.group(1).capitalize()
 
         # Active status
         result["signal_active"] = bool(re.search(r'\bActive\b', text))
 
-        # Signal date — e.g. "(Apr 02, 2026)"
-        m = re.search(r'Current Signal.*?\(([A-Za-z]+ \d+,\s*\d{4})\)', text, re.DOTALL)
+        # Signal date — prefer "Current Active Signal" date
+        m = re.search(r'Current Active Signal.*?\(([A-Za-z]+ \d+,\s*\d{4})\)', text, re.DOTALL)
+        if not m:
+            m = re.search(r'Current Signal.*?\(([A-Za-z]+ \d+,\s*\d{4})\)', text, re.DOTALL)
         if not m:
             m = re.search(r'Active Signal.*?\(([A-Za-z]+ \d+,\s*\d{4})\)', text, re.DOTALL)
         if m:

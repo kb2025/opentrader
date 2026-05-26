@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.25] - 2026-05-26
+
+### Fixed
+- **OVTLYR signal scraper**: `scrape_ticker()` now checks "Current Active Signal" before "Current Signal" — previously the regex matched the generic "Current Signal" field first, causing stale/inactive buy signals to override the active sell signal in the 1pm report
+
 ## [4.0.24] - 2026-05-26
 
 ### Added
