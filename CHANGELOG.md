@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.26] - 2026-05-26
+
+### Fixed
+- **OVTLYR signal semantics**: `scrape_ticker()` now captures both fields separately — `signal` (Current Signal, entry/transition trigger) and `active_signal` (Current Active Signal, exit trigger for open positions). The 1pm report uses `active_signal` so it correctly surfaces sell signals on open positions. The scanner/predictor enrichment path continues using `signal` for new entry decisions.
+
 ## [4.0.25] - 2026-05-26
 
 ### Fixed

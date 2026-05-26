@@ -11098,7 +11098,10 @@ async def email_options_report_auto(token: str = ""):
                 continue
             try:
                 d = json.loads(raw) if isinstance(raw, str) else raw
-                sig_str = (d.get("signal") or d.get("direction") or "").lower()
+                # active_signal = Current Active Signal (position monitoring / exit trigger)
+                # signal        = Current Signal (entry/transition trigger)
+                # Report uses active_signal — it tells us when to get out of a trade.
+                sig_str = (d.get("active_signal") or d.get("signal") or d.get("direction") or "").lower()
                 mapped = _SIGNAL_MAP.get(sig_str)
                 if not mapped:
                     if sig_str in ("long",):    mapped = ("long", 0.80)

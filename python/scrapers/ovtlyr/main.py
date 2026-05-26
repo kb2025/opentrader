@@ -216,13 +216,17 @@ class OvtlyrScraperAgent(BaseAgent):
                         "source":    "position",
                     }
 
-                # Apply dashboard signal direction if available (overrides bull-list default)
+                # Apply Current Signal direction (entry/transition signal)
                 raw_signal = data.get("signal", "")
                 if raw_signal:
                     if raw_signal.lower() in ("sell", "short", "bear"):
                         existing["direction"] = "short"
                     elif raw_signal.lower() in ("buy", "long", "bull"):
                         existing["direction"] = "long"
+
+                # Persist Current Active Signal separately — used by report to monitor exits
+                if data.get("active_signal"):
+                    existing["active_signal"] = data["active_signal"]
 
                 # Merge enrichment fields
                 if data.get("nine_score") is not None:
