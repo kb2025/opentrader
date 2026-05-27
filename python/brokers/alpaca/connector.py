@@ -144,7 +144,7 @@ class AlpacaConnector(BrokerConnector):
         Fetch options chain via Alpaca's v1beta1 options snapshots API.
         Returns up to 8 nearest expirations with full Greeks.
         """
-        from datetime import date as _date
+        from datetime import date as _date, timedelta as _timedelta
         sym = symbol.upper()
 
         # ── Current quote ─────────────────────────────────────────────────────
@@ -237,7 +237,8 @@ class AlpacaConnector(BrokerConnector):
             }
             (all_calls if otype == "call" else all_puts).append(rec)
 
-        expirations = sorted(exp_set)[:8]
+        cutoff = (_date.today() + _timedelta(days=548)).isoformat()  # ~18 months
+        expirations = sorted(e for e in exp_set if e <= cutoff)[:60]
         return {
             "ticker": sym, "price": round(price, 2),
             "expirations": expirations,

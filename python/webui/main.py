@@ -15136,14 +15136,15 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
             return None
         import aiohttp as _aiohttp
         hdrs = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
-        timeout = _aiohttp.ClientTimeout(total=12)
+        from datetime import date as _dt_date, timedelta as _dt_td
+        req_timeout = _aiohttp.ClientTimeout(total=15)
         try:
             async with _aiohttp.ClientSession(headers=hdrs) as s:
                 price = 0.0
                 try:
                     async with s.get(f"{base_url}/markets/quotes",
                                      params={"symbols": sym, "greeks": "false"},
-                                     timeout=timeout) as r:
+                                     timeout=req_timeout) as r:
                         if r.status == 200:
                             d = await r.json(content_type=None)
                             q = d.get("quotes", {}).get("quote", {})
@@ -15155,7 +15156,7 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
                 expirations: list[str] = []
                 async with s.get(f"{base_url}/markets/options/expirations",
                                  params={"symbol": sym, "includeAllRoots": "false"},
-                                 timeout=timeout) as r:
+                                 timeout=req_timeout) as r:
                     if r.status == 200:
                         d = await r.json(content_type=None)
                         raw = d.get("expirations") or {}
@@ -15166,11 +15167,15 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
                 if not expirations:
                     return None
 
+                # Filter to ~18 months, cap at 60 to avoid excessive parallelism
+                cutoff = (_dt_date.today() + _dt_td(days=548)).isoformat()
+                expirations = [e for e in expirations if e <= cutoff][:60]
+
                 async def _fetch_exp(exp: str):
                     try:
                         async with s.get(f"{base_url}/markets/options/chains",
                                          params={"symbol": sym, "expiration": exp, "greeks": "true"},
-                                         timeout=timeout) as r:
+                                         timeout=req_timeout) as r:
                             if r.status != 200:
                                 return []
                             d = await r.json(content_type=None)
@@ -15182,7 +15187,13 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
                     except Exception:
                         return []
 
-                chains = await _asyncio.gather(*[_fetch_exp(e) for e in expirations[:8]])
+                # Limit concurrency to avoid rate-limiting
+                _sem = _asyncio.Semaphore(15)
+                async def _fetch_exp_sem(exp):
+                    async with _sem:
+                        return await _fetch_exp(exp)
+
+                chains = await _asyncio.gather(*[_fetch_exp_sem(e) for e in expirations])
                 all_calls, all_puts = [], []
                 for contracts in chains:
                     for c in contracts:
@@ -15193,7 +15204,7 @@ async def get_options_chain_data(ticker: str, account_label: str = "", token: st
                         (all_calls if otype == "call" else all_puts).append(rec)
 
                 return {"ticker": sym, "price": round(price, 2),
-                        "expirations": expirations[:8],
+                        "expirations": expirations,
                         "calls": all_calls, "puts": all_puts, "source": "tradier"}
         except Exception as e:
             log.warning("options_trader.chain.tradier_fallback_error", ticker=sym, error=str(e))

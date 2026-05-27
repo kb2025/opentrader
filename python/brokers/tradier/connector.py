@@ -139,11 +139,18 @@ class TradierConnector(BrokerConnector):
             return {"ticker": sym, "price": round(price, 2),
                     "expirations": [], "calls": [], "puts": []}
 
-        expirations = expirations[:8]
+        from datetime import date as _date, timedelta as _timedelta
+        cutoff = (_date.today() + _timedelta(days=548)).isoformat()  # ~18 months
+        expirations = [e for e in expirations if e <= cutoff][:60]
 
-        # Fetch all expirations in parallel
+        # Fetch expirations in parallel, capped at 15 concurrent requests
+        _sem = _asyncio.Semaphore(15)
+        async def _fetch_sem(exp):
+            async with _sem:
+                return await _market.get_option_chain(sym, exp, greeks=True)
+
         chains = await _asyncio.gather(
-            *[_market.get_option_chain(sym, exp, greeks=True) for exp in expirations],
+            *[_fetch_sem(exp) for exp in expirations],
             return_exceptions=True,
         )
 

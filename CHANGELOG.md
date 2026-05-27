@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.43] - 2026-05-27
+
+### Fixed
+- **Options chain expirations**: all three sources (Tradier broker connector, Alpaca connector, webui Tradier fallback) were hard-capped at 8 expirations; now filter to ~18 months (~548 days) with a max of 60 expirations; concurrent chain fetches use a 15-slot semaphore to avoid rate-limiting
+
 ## [4.0.42] - 2026-05-27
 
 ### Changed
