@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.41] - 2026-05-27
+
+### Changed
+- **Options Chain ITM highlighting**: raised green (calls) opacity from 0.08→0.22 and red (puts) from 0.08→0.20 for clearer in-the-money visibility
+- **Options Chain selected-leg row**: entire row now highlights in blue (`rgba(96,165,250,.14)` + `1.5px inset border`) regardless of buy/sell side; strike cell also goes blue; previously the row-level highlight was broken (wrong key format) and was never shown — fixed
+
 ## [4.0.40] - 2026-05-27
 
 ### Changed
