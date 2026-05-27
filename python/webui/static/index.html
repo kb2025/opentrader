@@ -22588,6 +22588,11 @@ function _otFilterChain() {
           } else {
             const midCell = tr.querySelectorAll('td')[2];
             const mid = midCell ? (parseFloat(midCell.textContent) || 0) : 0;
+            // Single-leg strategy: replace any existing selection with the new strike
+            if (_otSelectedStrategy.legDefs.length === 1 && _otOrderLegs.size > 0) {
+              _otOrderLegs.clear();
+              _otGuidedLegIdx = 0;
+            }
             _otOrderLegs.set(key, {exp, strike, side: guidedLeg.side, mid, option_type: optType, contract, guidedIdx: _otGuidedLegIdx});
             _otGuidedLegIdx++;
             if (_otGuidedLegIdx >= _otSelectedStrategy.legDefs.length) {
@@ -22631,6 +22636,21 @@ function _otFilterChain() {
       document.getElementById('ot-risk-ticker').textContent = _otActiveTicker;
       _otRenderRiskPanel();
       _otCalcSizing();
+    });
+    // Double-click clears the selection for this row
+    tr.addEventListener('dblclick', () => {
+      if (_rowHasLeg()) {
+        if (_otSelectedStrategy) {
+          _otGuidedLegIdx = 0;
+          _otOrderLegs.clear();
+          _otUpdateGuidedBar();
+        } else {
+          _otOrderLegs.delete(keyC);
+          _otOrderLegs.delete(keyP);
+        }
+        _otFilterChain();
+        _otUpdateOrderBar();
+      }
     });
   });
 }

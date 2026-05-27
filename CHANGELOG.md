@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.42] - 2026-05-27
+
+### Changed
+- **Options Chain — single-leg strategies**: clicking a new strike when one is already selected (Long Call, Long Put, Covered Call, CSP) now automatically replaces the previous selection instead of stacking
+- **Options Chain — double-click to clear**: double-clicking any selected row clears that leg (guided mode resets to step 1; normal mode removes the specific leg)
+
 ## [4.0.41] - 2026-05-27
 
 ### Changed
