@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.36] - 2026-05-27
+
+### Changed
+- **UI-wide refresh buttons**: standardized all ↺ refresh buttons to `btn btn-ghost btn-xs` with `color:var(--fg)` and `title="Refresh"` — Signal Timeline, Traffic Stats, Platform Insights CI, Active Directives, ETF Capital Flows (new button), EODHD News, and Options Dashboard panels (YTD Performance, Portfolio Greeks, Unusual Options Flow, Trading Log YTD Performance) all updated; Options Dashboard text-link "Refresh" spans converted to icon buttons
+
 ## [4.0.35] - 2026-05-26
 
 ### Changed

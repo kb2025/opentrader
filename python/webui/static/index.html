@@ -659,7 +659,7 @@ select option{background:var(--surface2)}
         <div class="card-header">
           <span class="card-title">Signal Timeline</span>
           <span style="font-size:11px;color:var(--muted);margin-left:8px">ML · OI Wall · Options ATR</span>
-          <button class="btn btn-ghost btn-xs" onclick="loadSignalTimeline()" style="margin-left:auto">&#8635;</button>
+          <button class="btn btn-ghost btn-xs" onclick="loadSignalTimeline()" title="Refresh" style="margin-left:auto;color:var(--fg)">&#8635;</button>
         </div>
         <div id="signal-timeline-body" class="card-body">
           <div class="empty-state">Loading signals…</div>
@@ -1033,7 +1033,7 @@ select option{background:var(--surface2)}
               <option value="24" selected>24 h</option>
               <option value="168">7 d</option>
             </select>
-            <button class="btn btn-ghost btn-sm" onclick="loadTrafficStats()">&#8635;</button>
+            <button class="btn btn-ghost btn-xs" onclick="loadTrafficStats()" title="Refresh" style="color:var(--fg)">&#8635;</button>
           </div>
         </div>
         <div id="traffic-body" class="card-body" style="padding:14px 16px">
@@ -1419,7 +1419,7 @@ select option{background:var(--surface2)}
         <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer">
           <input type="checkbox" id="ci-show-resolved" onchange="ciApplyFilter()"> Show resolved
         </label>
-        <button class="btn btn-ghost btn-xs" onclick="ciLoadAll()" title="Refresh">&#8635;</button>
+        <button class="btn btn-ghost btn-xs" onclick="ciLoadAll()" title="Refresh" style="color:var(--fg)">&#8635;</button>
       </div>
 
       <!-- Summary stat cards -->
@@ -1573,7 +1573,7 @@ select option{background:var(--surface2)}
           <div style="display:flex;align-items:center;gap:10px;width:100%">
             <span class="card-title">Active Directives</span>
             <div style="flex:1;height:1px;background:var(--border)"></div>
-            <button class="btn btn-ghost btn-xs" onclick="loadDirectivesPage()">Refresh</button>
+            <button class="btn btn-ghost btn-xs" onclick="loadDirectivesPage()" title="Refresh" style="color:var(--fg)">&#8635;</button>
           </div>
         </div>
         <div class="card-body">
@@ -1798,6 +1798,7 @@ select option{background:var(--surface2)}
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
           <span class="card-title">Recent Activity</span>
+          <button class="btn btn-ghost btn-xs" onclick="_loadTdTradeStats()" title="Refresh" style="color:var(--fg)">&#8635;</button>
         </div>
         <div class="card-body table-wrap">
           <table>
@@ -1819,7 +1820,7 @@ select option{background:var(--surface2)}
           <span class="card-title">Predictor Signals</span>
           <div style="display:flex;align-items:center;gap:8px">
             <span id="pred-sig-meta" style="font-size:10px;color:var(--dim)"></span>
-            <button class="btn btn-ghost btn-xs" onclick="loadPredictorSignals()">&#8635;</button>
+            <button class="btn btn-ghost btn-xs" onclick="loadPredictorSignals()" title="Refresh" style="color:var(--fg)">&#8635;</button>
           </div>
         </div>
         <div class="card-body table-wrap" style="max-height:420px;overflow-y:auto;padding:0">
@@ -1871,7 +1872,7 @@ select option{background:var(--surface2)}
         <div class="card" style="margin-bottom:0">
           <div class="card-header" style="padding:10px 16px">
             <span class="card-title">Trending Symbols</span>
-            <button class="btn btn-ghost btn-xs" onclick="loadTrendingSymbols()">&#8635;</button>
+            <button class="btn btn-ghost btn-xs" onclick="loadTrendingSymbols()" title="Refresh" style="color:var(--fg)">&#8635;</button>
           </div>
           <div class="card-body" style="padding:8px 0;max-height:260px;overflow-y:auto">
             <div id="trending-symbols-list"><div style="padding:12px 16px;font-size:12px;color:var(--muted)">Loading…</div></div>
@@ -1882,6 +1883,7 @@ select option{background:var(--surface2)}
             <span class="card-title">ETF Capital Flows</span>
             <div style="display:flex;align-items:center;gap:8px">
               <button id="etf-anomaly-btn" onclick="_toggleEtfAnomalies()" style="font-size:10px;padding:2px 8px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.35);color:#fbbf24;border-radius:5px;cursor:pointer" title="Show anomalous flow spikes (>2σ)">⚡ Anomalies</button>
+              <button class="btn btn-ghost btn-xs" onclick="loadETFFlows()" title="Refresh" style="color:var(--fg)">&#8635;</button>
               <select id="etf-flows-category" onchange="loadETFFlows()" style="font-size:11px;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:2px 6px">
                 <option value="">All</option>
                 <option value="equity">Broad Equity</option>
@@ -1929,7 +1931,7 @@ select option{background:var(--surface2)}
               <option value="technology">Technology</option>
               <option value="energy">Energy</option>
             </select>
-            <button class="btn btn-ghost btn-xs" onclick="loadUnifiedNews()">&#8635;</button>
+            <button class="btn btn-ghost btn-xs" onclick="loadUnifiedNews()" title="Refresh" style="color:var(--fg)">&#8635;</button>
           </div>
         </div>
         <div class="card-body" style="padding:0;max-height:340px;overflow-y:auto">
@@ -1950,7 +1952,7 @@ select option{background:var(--surface2)}
               <option value="48" selected>48h</option>
               <option value="168">7d</option>
             </select>
-            <button class="btn btn-ghost btn-xs" onclick="loadEodhdNews()">&#8635;</button>
+            <button class="btn btn-ghost btn-xs" onclick="loadEodhdNews()" title="Refresh" style="color:var(--fg)">&#8635;</button>
           </div>
         </div>
         <div class="card-body" style="padding:0;max-height:420px;overflow-y:auto">
@@ -2681,7 +2683,7 @@ select option{background:var(--surface2)}
       <div class="card" style="margin-bottom:14px">
         <div class="card-header" style="padding:10px 16px">
           <span class="card-title">YTD Performance</span>
-          <span onclick="loadOptionsPerformancePanel()" style="font-size:10px;color:var(--blue);cursor:pointer">Refresh</span>
+          <button class="btn btn-ghost btn-xs" onclick="loadOptionsPerformancePanel()" title="Refresh" style="color:var(--fg)">&#8635;</button>
         </div>
         <div class="card-body" style="padding:12px 16px">
           <div id="options-perf-panel"><div style="color:var(--muted);font-size:12px;padding:4px">Loading…</div></div>
@@ -2692,7 +2694,7 @@ select option{background:var(--surface2)}
       <div class="card" style="margin-bottom:14px">
         <div class="card-header" style="padding:10px 16px">
           <span class="card-title">Portfolio Greeks</span>
-          <span onclick="loadOptionsGreeksPanel()" style="font-size:10px;color:var(--blue);cursor:pointer">Refresh</span>
+          <button class="btn btn-ghost btn-xs" onclick="loadOptionsGreeksPanel()" title="Refresh" style="color:var(--fg)">&#8635;</button>
         </div>
         <div class="card-body" style="padding:12px 16px">
           <div id="options-greeks-panel"><div style="color:var(--muted);font-size:12px;padding:4px">Loading…</div></div>
@@ -2705,7 +2707,7 @@ select option{background:var(--surface2)}
           <span class="card-title">Unusual Options Flow</span>
           <div style="display:flex;align-items:center;gap:12px">
             <span id="opt-flow-ts" style="font-size:10px;color:var(--muted)"></span>
-            <span onclick="loadOptionsFlow()" style="font-size:10px;color:var(--blue);cursor:pointer">Refresh</span>
+            <button class="btn btn-ghost btn-xs" onclick="loadOptionsFlow()" title="Refresh" style="color:var(--fg)">&#8635;</button>
           </div>
         </div>
         <div class="card-body" style="padding:12px 16px">
@@ -3107,7 +3109,7 @@ select option{background:var(--surface2)}
       <div class="card" style="margin-bottom:16px">
         <div class="card-header" style="padding:10px 16px">
           <span class="card-title">YTD Performance</span>
-          <span onclick="loadOptionsPerformancePanel()" style="font-size:10px;color:var(--blue);cursor:pointer">Refresh</span>
+          <button class="btn btn-ghost btn-xs" onclick="loadOptionsPerformancePanel()" title="Refresh" style="color:var(--fg)">&#8635;</button>
         </div>
         <div class="card-body" style="padding:12px 16px">
           <div id="options-perf-panel-log"><div style="color:var(--muted);font-size:12px;padding:4px">Loading…</div></div>
