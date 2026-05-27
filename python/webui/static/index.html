@@ -9317,7 +9317,7 @@ async function loadTradesPage() {
   const orders = ordResult.status === 'fulfilled' ? (ordResult.value.orders || []) : [];
   const pendingLabel = orders.length ? `Open Orders <span style="font-size:11px;font-weight:400;color:var(--amber)">${orders.length} pending</span>` : 'Open Orders';
   html += `<div class="card" style="margin-bottom:16px">
-    <div class="card-header"><span class="card-title">${pendingLabel}</span></div>
+    <div class="card-header"><span class="card-title">${pendingLabel}</span><button class="btn btn-ghost btn-xs" onclick="loadTradesPage()" title="Refresh" style="color:var(--fg)">&#8635;</button></div>
     <div class="card-body table-wrap">`;
   if (orders.length === 0) {
     html += '<div class="empty-state">No open orders</div>';
@@ -9348,7 +9348,7 @@ async function loadTradesPage() {
   html += `<div class="card">
     <div class="card-header">
       <span class="card-title">Completed Trades <span style="font-size:11px;font-weight:400;color:var(--muted)">30-day history</span></span>
-      <button class="btn btn-ghost btn-sm" onclick="loadTradesPage()">Refresh</button>
+      <button class="btn btn-ghost btn-xs" onclick="loadTradesPage()" title="Refresh" style="color:var(--fg)">&#8635;</button>
     </div>`;
 
   if (trades.length === 0) {
