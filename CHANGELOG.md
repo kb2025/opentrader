@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.39] - 2026-05-27
+
+### Changed
+- **Options Trader Strategy Selector**: strategies now sorted Credit-first then Debit, with full-width group headers ("Credit Strategies — Collect Premium Upfront" / "Debit Strategies — Pay Premium Upfront"); removed redundant per-card CREDIT/DEBIT badge (group header provides the context)
+
 ## [4.0.38] - 2026-05-27
 
 ### Added

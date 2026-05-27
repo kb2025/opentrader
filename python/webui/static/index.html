@@ -21540,28 +21540,13 @@ let _otGuidedLegIdx     = 0;     // which leg is next in guided mode
 let _otStratPanelOpen   = true;
 
 const _otStrategyDefs = [
-  { id:'long_call',      name:'Long Call',          desc:'Bullish · Unlimited upside',              color:'#4ade80', credit:false,
-    payoff:'0,38 38,38 70,8',
-    legDefs:[{side:'buy',  type:'call', label:'Buy Call',                        hint:'Click any call strike to add your long call'}] },
-  { id:'long_put',       name:'Long Put',           desc:'Bearish · High downside profit',          color:'#f87171', credit:false,
-    payoff:'10,8 42,38 80,38',
-    legDefs:[{side:'buy',  type:'put',  label:'Buy Put',                         hint:'Click any put strike to add your long put'}] },
+  // ── Credit strategies ────────────────────────────────────────────────────
   { id:'covered_call',   name:'Covered Call',       desc:'Income · Capped upside',                  color:'#60a5fa', credit:true,
     payoff:'0,40 22,22 40,8 80,8',
     legDefs:[{side:'sell', type:'call', label:'Sell Call',                       hint:'Sell an OTM call against your existing stock position'}] },
   { id:'csp',            name:'Cash-Secured Put',   desc:'Income · Downside risk at strike',        color:'#a78bfa', credit:true,
     payoff:'0,8 40,8 58,26 80,40',
     legDefs:[{side:'sell', type:'put',  label:'Sell Put',                        hint:'Sell an OTM put — keep cash reserved to cover assignment'}] },
-  { id:'bull_call',      name:'Bull Call Spread',   desc:'Bullish · Defined risk & reward',         color:'#4ade80', credit:false,
-    payoff:'0,37 28,37 52,9 80,9',
-    legDefs:[
-      {side:'buy',  type:'call', label:'Leg 1 — Buy Call (lower strike)',        hint:'Buy the lower-strike call (your directional leg)'},
-      {side:'sell', type:'call', label:'Leg 2 — Sell Call (higher strike)',      hint:'Sell the higher-strike call to reduce cost'}] },
-  { id:'bear_put',       name:'Bear Put Spread',    desc:'Bearish · Defined risk & reward',         color:'#f87171', credit:false,
-    payoff:'0,9 28,9 52,37 80,37',
-    legDefs:[
-      {side:'buy',  type:'put',  label:'Leg 1 — Buy Put (higher strike)',        hint:'Buy the higher-strike put (your directional leg)'},
-      {side:'sell', type:'put',  label:'Leg 2 — Sell Put (lower strike)',        hint:'Sell the lower-strike put to reduce cost'}] },
   { id:'bull_put',       name:'Bull Put Spread',    desc:'Credit · Neutral-Bullish · Defined risk', color:'#4ade80', credit:true,
     payoff:'0,37 28,37 52,9 80,9',
     legDefs:[
@@ -21572,11 +21557,6 @@ const _otStrategyDefs = [
     legDefs:[
       {side:'sell', type:'call', label:'Leg 1 — Sell Call (lower strike)',       hint:'Sell the lower-strike call to collect credit'},
       {side:'buy',  type:'call', label:'Leg 2 — Buy Call (higher strike)',       hint:'Buy the higher-strike call as your upside hedge'}] },
-  { id:'pmcc',           name:'PMCC',               desc:'Synthetic covered call · 2-leg',          color:'#60a5fa', credit:false,
-    payoff:'0,40 18,22 40,8 80,8',
-    legDefs:[
-      {side:'buy',  type:'call', label:'Leg 1 — Buy Deep ITM LEAP Call',        hint:'Buy a deep ITM long-dated call (δ ≥ 0.80, 6–24 mo expiry)'},
-      {side:'sell', type:'call', label:'Leg 2 — Sell Short-Term OTM Call',      hint:'Sell a shorter-dated OTM call to collect income'}] },
   { id:'iron_condor',    name:'Iron Condor',        desc:'Credit · Neutral · 4 legs · Range-bound', color:'#fbbf24', credit:true,
     payoff:'0,37 10,37 25,9 55,9 70,37 80,37',
     legDefs:[
@@ -21591,6 +21571,28 @@ const _otStrategyDefs = [
       {side:'sell', type:'put',  label:'Leg 2 — Sell ATM Put',                  hint:'Sell ATM put for maximum premium'},
       {side:'sell', type:'call', label:'Leg 3 — Sell ATM Call',                 hint:'Sell ATM call at the same strike as the put'},
       {side:'buy',  type:'call', label:'Leg 4 — Buy Call (upper wing)',          hint:'Buy OTM call (upper wing)'}] },
+  // ── Debit strategies ─────────────────────────────────────────────────────
+  { id:'long_call',      name:'Long Call',          desc:'Bullish · Unlimited upside',              color:'#4ade80', credit:false,
+    payoff:'0,38 38,38 70,8',
+    legDefs:[{side:'buy',  type:'call', label:'Buy Call',                        hint:'Click any call strike to add your long call'}] },
+  { id:'long_put',       name:'Long Put',           desc:'Bearish · High downside profit',          color:'#f87171', credit:false,
+    payoff:'10,8 42,38 80,38',
+    legDefs:[{side:'buy',  type:'put',  label:'Buy Put',                         hint:'Click any put strike to add your long put'}] },
+  { id:'bull_call',      name:'Bull Call Spread',   desc:'Bullish · Defined risk & reward',         color:'#4ade80', credit:false,
+    payoff:'0,37 28,37 52,9 80,9',
+    legDefs:[
+      {side:'buy',  type:'call', label:'Leg 1 — Buy Call (lower strike)',        hint:'Buy the lower-strike call (your directional leg)'},
+      {side:'sell', type:'call', label:'Leg 2 — Sell Call (higher strike)',      hint:'Sell the higher-strike call to reduce cost'}] },
+  { id:'bear_put',       name:'Bear Put Spread',    desc:'Bearish · Defined risk & reward',         color:'#f87171', credit:false,
+    payoff:'0,9 28,9 52,37 80,37',
+    legDefs:[
+      {side:'buy',  type:'put',  label:'Leg 1 — Buy Put (higher strike)',        hint:'Buy the higher-strike put (your directional leg)'},
+      {side:'sell', type:'put',  label:'Leg 2 — Sell Put (lower strike)',        hint:'Sell the lower-strike put to reduce cost'}] },
+  { id:'pmcc',           name:'PMCC',               desc:'Synthetic covered call · 2-leg',          color:'#60a5fa', credit:false,
+    payoff:'0,40 18,22 40,8 80,8',
+    legDefs:[
+      {side:'buy',  type:'call', label:'Leg 1 — Buy Deep ITM LEAP Call',        hint:'Buy a deep ITM long-dated call (δ ≥ 0.80, 6–24 mo expiry)'},
+      {side:'sell', type:'call', label:'Leg 2 — Sell Short-Term OTM Call',      hint:'Sell a shorter-dated OTM call to collect income'}] },
   { id:'straddle',       name:'Long Straddle',      desc:'Volatility play · Profit from big moves',  color:'#a78bfa', credit:false,
     payoff:'0,9 34,38 46,38 80,9',
     legDefs:[
@@ -21611,16 +21613,21 @@ const _otStrategyDefs = [
 function _otRenderStrategySelector() {
   const grid = document.getElementById('ot-strat-grid');
   if (!grid) return;
-  grid.innerHTML = _otStrategyDefs.map(s => {
-    const sel     = _otSelectedStrategy?.id === s.id;
-    const nLegs   = s.legDefs.length;
-    const border  = sel ? `border:2px solid ${s.color};box-shadow:0 0 10px ${s.color}33` : 'border:1px solid var(--border)';
+  const groupLabel = (txt, color) =>
+    `<div style="grid-column:1/-1;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${color};padding:4px 2px 2px;border-bottom:1px solid ${color}33">${txt}</div>`;
+  let html = groupLabel('Credit Strategies — Collect Premium Upfront', '#4ade80');
+  let inDebit = false;
+  for (const s of _otStrategyDefs) {
+    if (!inDebit && !s.credit) {
+      html += groupLabel('Debit Strategies — Pay Premium Upfront', '#60a5fa');
+      inDebit = true;
+    }
+    const sel       = _otSelectedStrategy?.id === s.id;
+    const nLegs     = s.legDefs.length;
+    const border    = sel ? `border:2px solid ${s.color};box-shadow:0 0 10px ${s.color}33` : 'border:1px solid var(--border)';
     const legsBadge = nLegs > 1
       ? `<span style="position:absolute;top:5px;right:5px;font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:${s.color}22;color:${s.color}">${nLegs}L</span>` : '';
-    const creditBadge = s.credit
-      ? `<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(74,222,128,.15);color:#4ade80;font-weight:600">CREDIT</span>`
-      : `<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(248,113,113,.15);color:#f87171;font-weight:600">DEBIT</span>`;
-    return `<div onclick="_otSelectStrategy('${s.id}')"
+    html += `<div onclick="_otSelectStrategy('${s.id}')"
       title="${s.desc}"
       style="position:relative;padding:10px 10px 8px;border-radius:8px;${border};background:var(--card-header);cursor:pointer;transition:border-color .15s,box-shadow .15s;text-align:center;user-select:none"
       onmouseenter="if(_otSelectedStrategy?.id!=='${s.id}')this.style.borderColor='${s.color}88'"
@@ -21633,9 +21640,9 @@ function _otRenderStrategySelector() {
         <polyline points="${s.payoff}" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
       </svg>
       <div style="font-size:11px;font-weight:700;color:var(--fg);margin-bottom:4px;line-height:1.2">${s.name}</div>
-      <div style="display:flex;justify-content:center">${creditBadge}</div>
     </div>`;
-  }).join('');
+  }
+  grid.innerHTML = html;
 }
 
 function _otSelectStrategy(id) {
