@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.44] - 2026-05-27
+
+### Fixed
+- **Options Trader account dropdown**: was using `/api/broker/positions` (live gateway query — only returns accounts that responded) which caused accounts to be missing if any broker was slow or offline; switched to `/api/broker/connections` (reads `accounts.toml` directly) so all configured enabled accounts always appear in the selector
+
 ## [4.0.43] - 2026-05-27
 
 ### Fixed
