@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.38] - 2026-05-27
+
+### Added
+- **Options Trader: Strategy Selector Dashboard** — new full-width panel at the top of the Options Trader page with 14 visual strategy cards (Long Call, Long Put, Covered Call, CSP, Bull/Bear Call/Put Spreads, PMCC, Iron Condor, Iron Butterfly, Straddle, Strangle, Calendar Spread). Each card shows an SVG payoff diagram, Credit/Debit badge, and multi-leg count badge. Collapsible via ▲/▼ toggle.
+- **Guided Leg Selection** — selecting a strategy enters guided mode: a step bar above the options chain shows the current leg (side, type, hint). Clicking a chain row auto-assigns the prescribed side (BUY/SELL) and advances to the next leg. Wrong option type clicks flash a ✕ warning inline. Removing a chip from the order bar cascades back to that step. Success toast when all legs filled.
+
 ## [4.0.36] - 2026-05-27
 
 ### Changed
