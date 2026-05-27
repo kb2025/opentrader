@@ -3616,9 +3616,15 @@ select option{background:var(--surface2)}
 
           <!-- Options Chain card -->
           <div class="card">
-            <div class="card-header" style="padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-              <span class="card-title" style="font-size:12px">Options Chain — <span id="ot-chain-ticker">—</span></span>
-              <span id="ot-chain-price" style="font-size:11px;color:var(--muted)"></span>
+            <div class="card-header" style="padding:8px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <!-- Ticker identity block -->
+              <div style="display:flex;align-items:center;gap:8px">
+                <span id="ot-chain-ticker" style="font-size:17px;font-weight:800;color:var(--fg);letter-spacing:.02em;min-width:28px">—</span>
+                <span id="ot-chain-price" style="font-size:15px;font-weight:700;color:var(--fg)"></span>
+                <span id="ot-chain-trend-arrow" style="font-size:17px;font-weight:800;line-height:1;display:none"></span>
+                <span id="ot-chain-pct" style="font-size:11px;font-weight:600;display:none"></span>
+                <span id="ot-chain-signal" style="display:none;font-size:10px;font-weight:700;padding:2px 9px;border-radius:4px;letter-spacing:.04em"></span>
+              </div>
               <div style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap">
                 <select id="ot-chain-expiry" onchange="_otFilterChain()"
                   style="background:var(--card-header);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:4px 9px;font-size:11px">
@@ -22287,9 +22293,17 @@ async function _otLoadChain(ticker) {
   const expSel   = document.getElementById('ot-chain-expiry');
 
   if (tickerEl) tickerEl.textContent = ticker;
+  // Clear signal header elements while new ticker loads
+  ['ot-chain-trend-arrow','ot-chain-pct','ot-chain-signal'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  const priceEl2 = document.getElementById('ot-chain-price');
+  if (priceEl2) priceEl2.textContent = '';
   // Clear order state when loading a new ticker
   _otOrderLegs.clear();
+  if (_otSelectedStrategy) _otGuidedLegIdx = 0;
   _otUpdateOrderBar();
+  _otUpdateGuidedBar();
   const sideEl = document.getElementById('ot-risk-side');
   if (sideEl) sideEl.style.display = 'none';
   loading.style.display = '';
@@ -22304,10 +22318,9 @@ async function _otLoadChain(ticker) {
     _otChainData = data;
     loading.style.display = 'none';
 
-    if (priceEl) {
-      const src = data.source ? ` · via ${data.source}` : '';
-      priceEl.textContent = (data.price ? `$${data.price.toFixed(2)}` : '') + src;
-    }
+    if (priceEl) priceEl.textContent = data.price ? `$${data.price.toFixed(2)}` : '';
+    // Non-blocking OVTLYR signal + trend fetch
+    _otFetchChainSignal(ticker, data.price || 0);
 
     // Populate expiry selector
     while (expSel.options.length > 1) expSel.remove(1);
@@ -22330,6 +22343,47 @@ async function _otLoadChain(ticker) {
     loading.style.display = 'none';
     wrap.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:20px">Error: ${e.message}</div>`;
   }
+}
+
+async function _otFetchChainSignal(ticker, chainPrice) {
+  const arrowEl = document.getElementById('ot-chain-trend-arrow');
+  const pctEl   = document.getElementById('ot-chain-pct');
+  const sigEl   = document.getElementById('ot-chain-signal');
+  try {
+    const d    = await apiFetch(`/api/ovtlyr/ticker/${encodeURIComponent(ticker)}`);
+    const info = d.data;
+    if (!info) return;
+
+    const raw    = (info.active_signal || info.signal || '').toLowerCase();
+    const isBuy  = /buy|long|bull/.test(raw);
+    const isSell = /sell|short|bear/.test(raw);
+    const label  = (info.active_signal || info.signal || '').toUpperCase();
+
+    // ↑ / ↓ trend arrow
+    if (arrowEl && (isBuy || isSell)) {
+      arrowEl.textContent = isBuy ? '↑' : '↓';
+      arrowEl.style.color   = isBuy ? '#4ade80' : '#f87171';
+      arrowEl.style.display = '';
+    }
+
+    // % price change vs OVTLYR last close
+    const prev = parseFloat(info.last_close || info.last_price || 0);
+    if (pctEl && prev > 0 && chainPrice > 0) {
+      const chg  = ((chainPrice - prev) / prev) * 100;
+      pctEl.textContent   = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`;
+      pctEl.style.color   = chg >= 0 ? '#4ade80' : '#f87171';
+      pctEl.style.display = '';
+    }
+
+    // BUY / SELL signal badge
+    if (sigEl && label && (isBuy || isSell)) {
+      sigEl.textContent      = label;
+      sigEl.style.color      = isBuy ? '#4ade80' : '#f87171';
+      sigEl.style.background = isBuy ? 'rgba(74,222,128,.15)' : 'rgba(248,113,113,.15)';
+      sigEl.style.border     = isBuy ? '1px solid rgba(74,222,128,.35)' : '1px solid rgba(248,113,113,.35)';
+      sigEl.style.display    = '';
+    }
+  } catch(_) { /* signal data is supplementary — silent fail */ }
 }
 
 function _otFilterChain() {

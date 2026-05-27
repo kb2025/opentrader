@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.40] - 2026-05-27
+
+### Changed
+- **Options Trader chain header**: ticker now 17px bold, price 15px bold — both full-brightness `var(--fg)` instead of muted
+- **Options Trader chain header**: after chain loads, fetches OVTLYR signal and renders: ↑/↓ trend arrow (green/red), % change vs OVTLYR last close, and BUY/SELL signal badge — non-blocking, silent-fail when no OVTLYR data exists for the ticker
+
 ## [4.0.39] - 2026-05-27
 
 ### Changed
