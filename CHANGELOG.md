@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.45] - 2026-05-28
+
+### Fixed
+- **EOD report — missing live trades**: broker fills now check all date fields (`transaction_date`, `create_date`, `filledTime`, etc.) instead of short-circuiting on the first non-empty one; trades placed yesterday but filled today are now captured
+- **EOD report — live vs paper separation**: trades and fills are now grouped into LIVE ACCOUNT and PAPER/SANDBOX sections in both template and LLM-generated reports; stats include `live_filled`/`paper_filled` and `live_trades`/`paper_trades` counts
+- **1pm daily report — live vs paper separation**: both the Options Positions and Stock Positions tables now show a "Live Accounts" header row followed by a "Paper / Sandbox" header row, with accounts sorted live-first
+- **1pm daily report — OVTLYR signal in stock positions**: stock positions table now includes a Signal column (▲ BUY / ▼ SELL with confidence %) sourced from OVTLYR via Redis position intel, screener cache, and DB fallback — same enrichment logic as the options positions table
+
 ## [4.0.44] - 2026-05-27
 
 ### Fixed

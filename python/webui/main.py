@@ -10901,11 +10901,26 @@ def _build_daily_report_html(
     opts_section = ""
     if include_opts and positions:
         sorted_pos = sorted(positions, key=lambda p: (
+            0 if (p.get("mode") or "") == "live" else 1,
             p.get("account_name") or p.get("account_label") or "",
             p.get("expiration_date") or "",
         ))
+        _OPT_COLS = 13 + (1 if include_earn else 0) + (1 if include_exdiv else 0)
         rows_html = ""
+        _prev_opt_mode = None
         for p in sorted_pos:
+            _opt_mode = p.get("mode") or ""
+            _opt_group = "live" if _opt_mode == "live" else "paper"
+            if _opt_group != _prev_opt_mode:
+                _lbl = "Live Accounts" if _opt_group == "live" else "Paper / Sandbox"
+                _bg  = "#e8f4fd" if _opt_group == "live" else "#f5f5f5"
+                _clr = "#1a5276" if _opt_group == "live" else "#666"
+                rows_html += (
+                    f'<tr><td colspan="{_OPT_COLS}" style="background:{_bg};font-weight:bold;'
+                    f'color:{_clr};padding:6px 10px;font-size:11px;letter-spacing:.08em;'
+                    f'text-transform:uppercase">{_lbl}</td></tr>'
+                )
+                _prev_opt_mode = _opt_group
             dte = p.get("days_to_exp")
             dte_str   = f"{dte}d" if dte is not None else "—"
             dte_style = "color:#c0392b;font-weight:bold" if dte is not None and dte <= 7 else ""
@@ -11005,10 +11020,15 @@ def _build_daily_report_html(
     equity_section = ""
     if include_stocks and equity_positions:
         eq_sorted = sorted(equity_positions, key=lambda p: (
+            0 if (p.get("account_mode") or p.get("mode") or "") == "live" else 1,
             p.get("account_label") or "",
             p.get("symbol") or "",
         ))
+        earn_th  = "<th>Earnings</th>" if include_earn  else ""
+        exdiv_th = "<th>Ex-Div</th>"   if include_exdiv else ""
+        _EQ_COLS = 7 + (1 if include_earn else 0) + (1 if include_exdiv else 0)
         eq_rows = ""
+        _prev_eq_mode = None
         for p in eq_sorted:
             sym    = (p.get("symbol") or "").upper()
             acct   = p.get("display_name") or p.get("account_label") or ""
@@ -11016,12 +11036,36 @@ def _build_daily_report_html(
             cost   = p.get("cost_basis") or p.get("average_cost") or p.get("avg_cost") or 0
             price  = p.get("market_price") or p.get("last_price") or p.get("current_price") or 0
             pnl    = p.get("unrealized_pnl") or p.get("unrealized_pl") or p.get("gain_loss") or 0
+            m      = p.get("account_mode") or p.get("mode") or ""
+            eq_group = "live" if m == "live" else "paper"
+            if eq_group != _prev_eq_mode:
+                _lbl = "Live Accounts" if eq_group == "live" else "Paper / Sandbox"
+                _bg  = "#e8f4fd" if eq_group == "live" else "#f5f5f5"
+                _clr = "#1a5276" if eq_group == "live" else "#666"
+                eq_rows += (
+                    f'<tr><td colspan="{_EQ_COLS}" style="background:{_bg};font-weight:bold;'
+                    f'color:{_clr};padding:6px 10px;font-size:11px;letter-spacing:.08em;'
+                    f'text-transform:uppercase">{_lbl}</td></tr>'
+                )
+                _prev_eq_mode = eq_group
             try:
                 pnl_f   = float(pnl)
                 pnl_pct = (pnl_f / (float(cost) * float(qty))) * 100 if cost and qty else 0
                 pnl_str = f'<span style="color:{"#1a7a3a" if pnl_f >= 0 else "#c0392b"};font-weight:bold">${pnl_f:,.2f} ({pnl_pct:+.1f}%)</span>'
             except Exception:
                 pnl_str = "—"
+            # OVTLYR signal
+            eq_sig = p.get("signal") or {}
+            eq_dir = (eq_sig.get("direction") or "").lower()
+            eq_conf = eq_sig.get("confidence")
+            if eq_dir == "long":
+                cp = f" {round(eq_conf * 100)}%" if eq_conf else ""
+                eq_sig_html = f'<span style="color:#1a7a3a;font-weight:bold">&#9650; BUY{cp}</span>'
+            elif eq_dir == "short":
+                cp = f" {round(eq_conf * 100)}%" if eq_conf else ""
+                eq_sig_html = f'<span style="color:#c0392b;font-weight:bold">&#9660; SELL{cp}</span>'
+            else:
+                eq_sig_html = "—"
             earn_col  = f"<td>{p.get('next_earnings_date') or '—'}</td>" if include_earn  else ""
             exdiv_col = f"<td>{_exdiv_cell(sym)}</td>"                    if include_exdiv else ""
             eq_rows += f"""<tr>
@@ -11031,16 +11075,16 @@ def _build_daily_report_html(
               <td>{fmt(cost)}</td>
               <td>{fmt(price)}</td>
               <td>{pnl_str}</td>
+              <td>{eq_sig_html}</td>
               {earn_col}{exdiv_col}
             </tr>"""
 
-        earn_th  = "<th>Earnings</th>" if include_earn  else ""
-        exdiv_th = "<th>Ex-Div</th>"   if include_exdiv else ""
         equity_section = f"""
 <h3 style="margin:24px 0 8px;color:#222;font-size:14px">Stock Positions &nbsp;<span style="font-weight:normal;color:#777;font-size:11px">({len(eq_sorted)})</span></h3>
 <table>
   <thead><tr>
-    <th>Ticker</th><th>Account</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Unrealized P&amp;L</th>
+    <th>Ticker</th><th>Account</th><th>Qty</th><th>Avg Cost</th><th>Price</th>
+    <th>Unrealized P&amp;L</th><th>Signal</th>
     {earn_th}{exdiv_th}
   </tr></thead>
   <tbody>{eq_rows}</tbody>
@@ -11163,10 +11207,59 @@ async def email_options_report_auto(token: str = ""):
             broker_data = await get_broker_positions()
             equity_positions = []
             for acct in broker_data.get("accounts", []):
+                acct_mode  = acct.get("mode", "")
+                acct_label = acct.get("display_name") or acct.get("label") or ""
                 for p in acct.get("positions", []):
                     if _is_equity_position(p) and float(p.get("qty") or p.get("quantity") or p.get("shares") or 0) > 0:
-                        p.setdefault("account_label", acct.get("display_name") or acct.get("label") or "")
+                        p.setdefault("account_label", acct_label)
+                        p["account_mode"] = acct_mode
                         equity_positions.append(p)
+        except Exception:
+            pass
+
+    # Enrich equity positions with OVTLYR signals
+    if equity_positions:
+        try:
+            _eq_redis = await get_redis()
+            _eq_intel = await _eq_redis.hgetall("ovtlyr:position_intel")
+            _eq_screen = await _eq_redis.hgetall("scanner:ovtlyr:latest")
+            _eq_pool = await _get_db_pool()
+            _SIGNAL_MAP_EQ = {"buy": ("long", 0.90), "sell": ("short", 0.80)}
+            def _nine_to_conf_eq(n):
+                return round(0.55 + (int(n) / 9.0) * 0.40, 2) if n is not None else None
+            for ep in equity_positions:
+                sym = (ep.get("symbol") or "").upper()
+                if not sym:
+                    continue
+                raw = _eq_intel.get(sym) or _eq_screen.get(sym)
+                if not raw and _eq_pool:
+                    try:
+                        row = await _eq_pool.fetchrow(
+                            """SELECT signal, signal_active, nine_score
+                               FROM ovtlyr_intel WHERE ticker=$1
+                               ORDER BY created_at DESC LIMIT 1""",
+                            sym,
+                        )
+                        if row and row["signal"]:
+                            raw = {"signal": row["signal"], "signal_active": row["signal_active"],
+                                   "nine_score": row["nine_score"]}
+                    except Exception:
+                        pass
+                if not raw:
+                    continue
+                try:
+                    d = json.loads(raw) if isinstance(raw, str) else raw
+                    sig_str = (d.get("active_signal") or d.get("signal") or d.get("direction") or "").lower()
+                    mapped = _SIGNAL_MAP_EQ.get(sig_str)
+                    if not mapped:
+                        if sig_str in ("long",):   mapped = ("long",  0.80)
+                        elif sig_str in ("short",): mapped = ("short", 0.75)
+                    if mapped:
+                        nine = d.get("nine_score")
+                        conf = _nine_to_conf_eq(nine) if nine is not None else mapped[1]
+                        ep["signal"] = {"direction": mapped[0], "confidence": conf, "source": "ovtlyr"}
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -11355,10 +11448,59 @@ async def preview_options_report(token: str = ""):
             broker_data = await get_broker_positions()
             equity_positions = []
             for acct in broker_data.get("accounts", []):
+                acct_mode  = acct.get("mode", "")
+                acct_label = acct.get("display_name") or acct.get("label") or ""
                 for p in acct.get("positions", []):
                     if _is_equity_position(p) and float(p.get("qty") or p.get("quantity") or p.get("shares") or 0) > 0:
-                        p.setdefault("account_label", acct.get("display_name") or acct.get("label") or "")
+                        p.setdefault("account_label", acct_label)
+                        p["account_mode"] = acct_mode
                         equity_positions.append(p)
+        except Exception:
+            pass
+
+    # Enrich equity positions with OVTLYR signals
+    if equity_positions:
+        try:
+            _eq_redis  = await get_redis()
+            _eq_intel  = await _eq_redis.hgetall("ovtlyr:position_intel")
+            _eq_screen = await _eq_redis.hgetall("scanner:ovtlyr:latest")
+            _eq_pool   = await _get_db_pool()
+            _SIGNAL_MAP_EQ2 = {"buy": ("long", 0.90), "sell": ("short", 0.80)}
+            def _nine_conf(n):
+                return round(0.55 + (int(n) / 9.0) * 0.40, 2) if n is not None else None
+            for ep in equity_positions:
+                sym = (ep.get("symbol") or "").upper()
+                if not sym:
+                    continue
+                raw = _eq_intel.get(sym) or _eq_screen.get(sym)
+                if not raw and _eq_pool:
+                    try:
+                        row = await _eq_pool.fetchrow(
+                            """SELECT signal, signal_active, nine_score
+                               FROM ovtlyr_intel WHERE ticker=$1
+                               ORDER BY created_at DESC LIMIT 1""",
+                            sym,
+                        )
+                        if row and row["signal"]:
+                            raw = {"signal": row["signal"], "signal_active": row["signal_active"],
+                                   "nine_score": row["nine_score"]}
+                    except Exception:
+                        pass
+                if not raw:
+                    continue
+                try:
+                    d = json.loads(raw) if isinstance(raw, str) else raw
+                    sig_str = (d.get("active_signal") or d.get("signal") or d.get("direction") or "").lower()
+                    mapped = _SIGNAL_MAP_EQ2.get(sig_str)
+                    if not mapped:
+                        if sig_str in ("long",):   mapped = ("long",  0.80)
+                        elif sig_str in ("short",): mapped = ("short", 0.75)
+                    if mapped:
+                        nine = d.get("nine_score")
+                        conf = _nine_conf(nine) if nine is not None else mapped[1]
+                        ep["signal"] = {"direction": mapped[0], "confidence": conf, "source": "ovtlyr"}
+                except Exception:
+                    pass
         except Exception:
             pass
 

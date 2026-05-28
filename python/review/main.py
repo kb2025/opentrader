@@ -315,7 +315,8 @@ class ReviewAgent(BaseAgent):
             rows = await self._db.fetch(
                 """
                 SELECT id, ticker, direction, qty, entry_price,
-                       exit_price, pnl, strategy, status, signal_src, ts
+                       exit_price, pnl, strategy, status, signal_src, ts,
+                       account_id, mode, broker
                 FROM trades
                 WHERE ts::date = $1
                 ORDER BY ts DESC
@@ -364,19 +365,21 @@ class ReviewAgent(BaseAgent):
                     status = str(o.get("status", "")).upper()
                     if status not in ("FILLED", "PARTIALLY_FILLED", "PARTIAL_FILLED"):
                         continue
-                    # Tradier: create_date; Webull: filledTime / createTime / filled_time
-                    order_date = (
-                        str(o.get("create_date", ""))
-                        or str(o.get("filledTime", ""))
-                        or str(o.get("createTime", ""))
-                        or str(o.get("filled_time", ""))
-                        or str(o.get("transaction_date", ""))
-                    )
-                    if today not in order_date:
+                    # Check all date fields — a trade placed yesterday but filled today
+                    # must be included (transaction_date wins over create_date).
+                    date_fields = [
+                        str(o.get("transaction_date", "")),
+                        str(o.get("create_date", "")),
+                        str(o.get("filledTime", "")),
+                        str(o.get("createTime", "")),
+                        str(o.get("filled_time", "")),
+                    ]
+                    if not any(today in d for d in date_fields if d and d != "None"):
                         continue
                     account_fills.append({
                         "account":  rec.label,
                         "broker":   rec.broker,
+                        "mode":     rec.mode,
                         "ticker":   o.get("symbol"),
                         "side":     str(o.get("side") or "").lower(),
                         "qty":      o.get("quantity") or o.get("qty"),
@@ -416,6 +419,12 @@ class ReviewAgent(BaseAgent):
         shorts   = total - longs
         filled   = len(fills)
 
+        live_fills  = [f for f in fills if f.get("mode") == "live"]
+        paper_fills = [f for f in fills if f.get("mode") in ("sandbox", "paper")]
+
+        live_trades  = [t for t in active if t.get("mode") == "live"]
+        paper_trades = [t for t in active if t.get("mode") in ("sandbox", "paper")]
+
         closed    = [t for t in active if t.get("pnl") is not None]
         wins      = [t for t in closed if (t.get("pnl") or 0) > 0]
         losses    = [t for t in closed if (t.get("pnl") or 0) < 0]
@@ -434,9 +443,13 @@ class ReviewAgent(BaseAgent):
         return {
             "date":              now_et().date().isoformat(),
             "total_trades":      total,
+            "live_trades":       len(live_trades),
+            "paper_trades":      len(paper_trades),
             "longs":             longs,
             "shorts":            shorts,
             "filled":            filled,
+            "live_filled":       len(live_fills),
+            "paper_filled":      len(paper_fills),
             "rejected":          len(rejects),
             "closed":            len(closed),
             "wins":              len(wins),
@@ -488,24 +501,41 @@ class ReviewAgent(BaseAgent):
         active_trades   = [t for t in trades if t.get("status") != "reject"]
         rejected_trades = [t for t in trades if t.get("status") == "reject"]
 
-        trade_lines = "\n".join(
-            f"  {t.get('ticker')} {t.get('direction')} {t.get('qty')} shares"
-            f" entry=${t.get('entry_price') or '?'}"
-            f" pnl=${t.get('pnl') or 'open'}"
-            for t in active_trades[:20]
-        ) or "  No trades recorded."
+        live_trades  = [t for t in active_trades if t.get("mode") == "live"]
+        paper_trades = [t for t in active_trades if t.get("mode") in ("sandbox", "paper")]
+        live_fills   = [f for f in fills if f.get("mode") == "live"]
+        paper_fills  = [f for f in fills if f.get("mode") in ("sandbox", "paper")]
+
+        def _trade_line(t):
+            return (
+                f"  {t.get('ticker')} {t.get('direction')} {t.get('qty')} shares"
+                f" entry=${t.get('entry_price') or '?'}"
+                f" pnl=${t.get('pnl') or 'open'}"
+                f" [{t.get('mode','?')}:{t.get('broker','?')}]"
+            )
+
+        trade_lines = (
+            "  LIVE:\n" + ("\n".join(_trade_line(t) for t in live_trades[:15]) or "  None.")
+            + "\n  PAPER/SANDBOX:\n" + ("\n".join(_trade_line(t) for t in paper_trades[:10]) or "  None.")
+        ) if (live_trades or paper_trades) else "  No trades recorded."
 
         reject_lines = "\n".join(
             f"  {t.get('ticker')} {t.get('direction')} {t.get('qty')} shares"
             f" — {t.get('signal_src') or 'reason unknown'}"
+            f" [{t.get('mode','?')}]"
             for t in rejected_trades[:20]
         ) or "  None."
 
-        fill_lines = "\n".join(
-            f"  {f.get('ticker')} {f.get('side')} {f.get('qty')} @ ${f.get('avg_fill')}"
-            f" [{f.get('broker', '')}:{f.get('account')}]"
-            for f in fills[:20]
-        ) or "  No broker fills today."
+        def _fill_line(f):
+            return (
+                f"  {f.get('ticker')} {f.get('side')} {f.get('qty')} @ ${f.get('avg_fill')}"
+                f" [{f.get('broker', '')}:{f.get('account')}]"
+            )
+
+        fill_lines = (
+            "  LIVE FILLS:\n" + ("\n".join(_fill_line(f) for f in live_fills[:15]) or "  None.")
+            + "\n  PAPER/SANDBOX FILLS:\n" + ("\n".join(_fill_line(f) for f in paper_fills[:10]) or "  None.")
+        ) if (live_fills or paper_fills) else "  No broker fills today."
 
         opt_closure_lines = "\n".join(
             f"  {o['underlying']:6s}  {o['contract_symbol']}  "
@@ -526,9 +556,9 @@ class ReviewAgent(BaseAgent):
 Date: {date_str}
 
 Equity Trading Summary:
-  Total signals acted on: {stats['total_trades']}
+  Total signals acted on: {stats['total_trades']} ({stats.get('live_trades',0)} live / {stats.get('paper_trades',0)} paper)
   Rejected orders: {stats['rejected']}
-  Filled orders (all brokers): {stats['filled']}
+  Filled orders — Live: {stats.get('live_filled',0)}, Paper/Sandbox: {stats.get('paper_filled',0)}
   Equity P&L: ${stats['total_pnl']} ({stats['wins']}W / {stats['losses']}L, {stats['win_rate']}% win rate)
 
 Options Summary (manually closed via broker):
@@ -537,13 +567,13 @@ Options Summary (manually closed via broker):
 
 Combined P&L: ${stats.get('combined_pnl', stats['total_pnl'])} across {stats.get('combined_closed', stats['closed'])} closed positions
 
-Equity trades entered:
+Equity trades entered (live vs paper separated):
 {trade_lines}
 
 Rejected orders:
 {reject_lines}
 
-Broker fills:
+Broker fills (live vs paper separated):
 {fill_lines}
 
 Options closed today (manually via broker):
@@ -580,12 +610,29 @@ Be direct, analytical, and specific. Use actual tickers from the data.
         sector_breakdown: dict = None,
         option_closures: list = None,
     ) -> str:
-        rejected_trades = [t for t in (trades or []) if t.get("status") == "reject"]
+        all_trades      = trades or []
+        rejected_trades = [t for t in all_trades if t.get("status") == "reject"]
+        active_trades   = [t for t in all_trades if t.get("status") != "reject"]
+        live_trades     = [t for t in active_trades if t.get("mode") == "live"]
+        paper_trades    = [t for t in active_trades if t.get("mode") in ("sandbox", "paper")]
+
         reject_lines = "\n".join(
             f"  {t.get('ticker')} {t.get('direction')} {t.get('qty')}sh"
             f" — {t.get('signal_src') or 'reason unknown'}"
+            f" [{t.get('mode','?')}]"
             for t in rejected_trades[:20]
         ) or "  None."
+
+        def _trade_line(t):
+            return (
+                f"  {t.get('ticker'):6s} {t.get('direction'):5s} {t.get('qty')}sh"
+                f" entry=${t.get('entry_price') or '?'}"
+                f" pnl=${t.get('pnl') or 'open'}"
+                f" [{t.get('broker','?')}]"
+            )
+
+        live_trade_lines  = "\n".join(_trade_line(t) for t in live_trades[:20])  or "  None."
+        paper_trade_lines = "\n".join(_trade_line(t) for t in paper_trades[:10]) or "  None."
 
         if sector_breakdown:
             sector_lines = "\n".join(
@@ -629,9 +676,9 @@ COMBINED (Equity + Options)
 {'=' * 40}
 
 EQUITY TRADING SUMMARY
-  Total trades:  {stats['total_trades']}
+  Total trades:  {stats['total_trades']} ({stats.get('live_trades',0)} live / {stats.get('paper_trades',0)} paper)
   Rejected:      {stats.get('rejected', 0)}
-  Filled:        {stats['filled']}
+  Filled:        {stats['filled']} ({stats.get('live_filled',0)} live / {stats.get('paper_filled',0)} paper)
   Longs:         {stats['longs']}
   Shorts:        {stats['shorts']}
 
@@ -642,6 +689,12 @@ EQUITY PERFORMANCE
   Equity P&L:    ${stats['total_pnl']}
   Avg P&L:       ${stats['avg_pnl']}
 {opt_lines}{combined}
+LIVE ACCOUNT TRADES
+{live_trade_lines}
+
+PAPER / SANDBOX TRADES
+{paper_trade_lines}
+
 REJECTED ORDERS
 {reject_lines}
 
