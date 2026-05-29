@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.49] - 2026-05-29
+
+### Fixed
+- **Broker gateway order poll loop**: added Webull-specific open statuses (`working`, `partial_filled`) to the tracking set so Webull orders are correctly detected as open and their transitions to filled are emitted; added today-fill detection path to surface fills from manually-placed trades or fills that occurred before gateway startup (deduped per order_id); emit both `account_id` and `account_label` fields so the Equity Trades dashboard correctly resolves account names
+- **Webull `get_orders`**: falls back to v2 OpenAPI endpoint (`/openapi/trade/order/list`) when v1 returns 404; both paths return 404 on the current Webull API subscription (order history requires a higher-tier plan) — platform-initiated trades still flow through the equity trader → gateway → orders.events pipeline regardless
+- **`/api/trades` endpoint**: reads `account_id` with fallback to `account_label` so poll-loop-emitted fills (which use `account_label`) show the correct account in the dashboard
+
 ## [4.0.48] - 2026-05-29
 
 ### Fixed

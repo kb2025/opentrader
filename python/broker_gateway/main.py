@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 
 import structlog
 
@@ -181,15 +182,38 @@ class BrokerGatewayAgent(BaseAgent):
         )
 
     async def _order_poll_loop(self):
-        """Every 60 s, fetch open orders from all brokers and emit fill events for any that closed."""
+        """Every 60 s, fetch orders from all brokers and emit fill events.
+
+        Two complementary detection methods:
+        1. Transition detection — order was open last poll, now filled.
+        2. Today-fill detection — order filled today and not yet emitted (catches
+           manually-placed trades and fills that occurred before gateway start).
+        """
         POLL_INTERVAL = int(os.getenv("ORDER_POLL_INTERVAL_SEC", "60"))
-        known_open: dict[str, set] = {}  # account_label → set of order_ids
+        # account_label → set of open order_ids (transition detection)
+        known_open:   dict[str, set] = {}
+        # account_label → set of order_ids already emitted (dedup for today-fill path)
+        known_emitted: dict[str, set] = {}
+
+        # Broker-specific open statuses (lowercase)
+        _OPEN_STATUSES = frozenset({
+            "open", "partially_filled", "partial_filled",
+            "pending_new", "new", "accepted", "held",
+            "working",          # Webull
+            "pending_cancel",   # Tradier
+        })
+        _FILL_STATUSES = frozenset({
+            "filled", "complete", "completed",
+            "full_fill",        # Webull
+        })
 
         await asyncio.sleep(15)  # let the command loop start first
         log.info("broker-gateway.order_poll_start", interval=POLL_INTERVAL)
 
         while self._running:
             try:
+                today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
                 for rec in self.registry.all_records():
                     try:
                         orders = await rec.connector.get_orders(status="all")
@@ -198,9 +222,10 @@ class BrokerGatewayAgent(BaseAgent):
                                     account=rec.label, error=str(e))
                         continue
 
-                    prev_open = known_open.get(rec.label, set())
-                    curr_open: set[str] = set()
-                    newly_filled = []
+                    prev_open     = known_open.get(rec.label, set())
+                    prev_emitted  = known_emitted.get(rec.label, set())
+                    curr_open:    set[str] = set()
+                    to_emit = []
 
                     for o in orders:
                         if not isinstance(o, dict):
@@ -209,27 +234,52 @@ class BrokerGatewayAgent(BaseAgent):
                         if not oid:
                             continue
                         status = str(o.get("status", "")).lower()
-                        if status in ("open", "partially_filled", "pending_new", "new", "accepted", "held"):
+
+                        if status in _OPEN_STATUSES:
                             curr_open.add(oid)
-                        elif oid in prev_open and status in ("filled", "complete", "completed"):
-                            newly_filled.append(o)
 
-                    known_open[rec.label] = curr_open
+                        elif status in _FILL_STATUSES:
+                            # Method 1: was open last cycle → just filled
+                            if oid in prev_open:
+                                to_emit.append(o)
+                            # Method 2: filled today but not yet emitted (covers manual
+                            # trades placed directly on the broker, or post-restart catch-up)
+                            elif oid not in prev_emitted:
+                                date_fields = [
+                                    str(o.get("transaction_date", "")),
+                                    str(o.get("filledTime", "")),
+                                    str(o.get("filled_at", "")),
+                                    str(o.get("create_date", "")),
+                                    str(o.get("createTime", "")),
+                                ]
+                                if any(today_str in d for d in date_fields if d and d != "None"):
+                                    to_emit.append(o)
 
-                    for o in newly_filled:
+                    known_open[rec.label]    = curr_open
+                    known_emitted[rec.label] = prev_emitted | {
+                        str(o.get("id") or o.get("order_id") or o.get("clientOrderId") or "")
+                        for o in to_emit
+                    }
+
+                    for o in to_emit:
                         try:
+                            asset_cls = str(o.get("asset_class") or o.get("assetClass") or "equity").lower()
+                            side      = str(o.get("side") or "").lower()
+                            direction = "long" if side in ("buy", "long") else ("short" if side in ("sell", "short") else side)
                             await self.redis.xadd(
                                 STREAMS.get("orders", "orders.events"),
                                 {
                                     "event_type":    "fill",
+                                    "account_id":    rec.label,
                                     "account_label": rec.label,
                                     "broker":        rec.broker,
                                     "mode":          rec.mode,
-                                    "ticker":        o.get("symbol", ""),
+                                    "ticker":        str(o.get("symbol") or o.get("ticker") or ""),
+                                    "asset_class":   asset_cls,
+                                    "direction":     direction,
                                     "order_id":      str(o.get("id") or ""),
                                     "qty":           str(o.get("quantity") or o.get("qty") or ""),
-                                    "fill_price":    str(o.get("avg_fill_price") or o.get("filledPrice") or ""),
-                                    "side":          str(o.get("side") or ""),
+                                    "price":         str(o.get("avg_fill_price") or o.get("filledPrice") or o.get("filled_price") or ""),
                                     "source":        "order_poll",
                                 },
                                 maxlen=10_000,

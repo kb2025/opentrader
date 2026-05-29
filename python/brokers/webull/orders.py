@@ -128,16 +128,31 @@ class WebullOrders:
 
     async def get_orders(self, status: str = "all") -> list[dict]:
         params: dict = {"account_id": self.account_id, "page_size": 100}
+        items: list = []
+
+        # Try v1 first; fall back to v2 OpenAPI if v1 returns 404
         try:
             result = await self.client.get("/trade/order/list", params=params)
+            items = result if isinstance(result, list) else result.get("items", result.get("data", []))
+        except RuntimeError as e:
+            if "Endpoint not found" in str(e) or "404" in str(e):
+                # v1 not available on this subscription — try v2 OpenAPI
+                try:
+                    result = await self.client.get_v2("/openapi/trade/order/list", params=params)
+                    items = result if isinstance(result, list) else result.get("items", result.get("data", result.get("orders", [])))
+                    log.info(f"[webull:{self.account_label}] get_orders via v2 → {len(items)} orders")
+                except Exception as e2:
+                    log.warning(f"[webull:{self.account_label}] get_orders unavailable (v1+v2): {e2}")
+                    return []
+            else:
+                log.warning(f"[webull:{self.account_label}] get_orders error: {e}")
+                return []
         except Exception as e:
             log.warning(f"[webull:{self.account_label}] get_orders unavailable: {e}")
             return []
-        items = result.get("items", result.get("data", []))
-        if isinstance(result, list):
-            items = result
+
         if status == "open":
             items = [o for o in items if o.get("status") in ("WORKING", "PARTIAL_FILLED")]
         elif status == "filled":
-            items = [o for o in items if o.get("status") == "FILLED"]
+            items = [o for o in items if o.get("status") in ("FILLED", "FULL_FILL")]
         return items

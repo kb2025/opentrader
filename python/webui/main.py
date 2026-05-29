@@ -1761,7 +1761,7 @@ async def get_trades(limit: int = 50):
                 "qty":           fields.get("qty", ""),
                 "price":         fields.get("price", ""),
                 "pnl":           fields.get("pnl", ""),
-                "account":       fields.get("account_id", ""),
+                "account":       fields.get("account_id") or fields.get("account_label", ""),
                 "broker":        fields.get("broker", ""),
                 "mode":          fields.get("mode", ""),
                 "strategy":      fields.get("strategy", ""),
