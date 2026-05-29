@@ -5059,8 +5059,8 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                 if not api_key:
                     raise HTTPException(status_code=400, detail="FMP_API_KEY is required")
                 resp = await s.get(
-                    "https://financialmodelingprep.com/api/v3/profile/AAPL",
-                    params={"apikey": api_key},
+                    "https://financialmodelingprep.com/stable/profile",
+                    params={"symbol": "AAPL", "apikey": api_key},
                     timeout=_aiohttp.ClientTimeout(total=10),
                 )
                 if resp.status == 401 or resp.status == 403:
@@ -5069,7 +5069,7 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                     data = await resp.json()
                     if isinstance(data, list) and data and data[0].get("companyName"):
                         name = data[0]["companyName"]
-                        mkt  = data[0].get("mktCap", 0)
+                        mkt  = data[0].get("marketCap", 0)
                         return {"ok": True, "message": f"FMP API key valid — {name} mktCap ${mkt:,.0f}"}
                     if isinstance(data, dict) and "Error Message" in data:
                         raise HTTPException(status_code=400, detail=f"FMP error: {data['Error Message']}")

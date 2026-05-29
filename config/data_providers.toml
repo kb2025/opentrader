@@ -24,7 +24,7 @@ providers = ["yahoo", "fmp"]
 ttl = 14400
 
 [earnings]
-providers = ["yahoo", "finnhub", "fmp", "massive", "eodhd"]
+providers = ["yahoo", "finnhub", "massive", "eodhd"]
 ttl = 86400
 
 [dividends]
@@ -32,7 +32,7 @@ providers = ["yahoo", "fmp", "massive", "eodhd"]
 ttl = 86400
 
 [news]
-providers = ["finnhub", "alpha_vantage", "fmp", "eodhd"]
+providers = ["finnhub", "alpha_vantage", "eodhd"]
 ttl = 3600
 
 [sentiment_news]

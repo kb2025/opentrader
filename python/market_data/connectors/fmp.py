@@ -1,18 +1,24 @@
+"""
+Financial Modeling Prep connector — uses the current /stable/ API (v3 is legacy).
+Capabilities verified against the free-tier plan as of 2026-05.
+
+Available:  quote, bars_daily, fundamentals, analyst_consensus, dividends
+Restricted: news (requires paid plan), earnings (empty on free tier)
+"""
 import os
 import aiohttp
 from .base import HTTPConnector, ConnectorError
 
-FMP_BASE = "https://financialmodelingprep.com/api/v3"
+FMP_BASE = "https://financialmodelingprep.com/stable"
 
 
 class FMPConnector(HTTPConnector):
     name = "fmp"
     cost_tier = "free"
     env_key = "FMP_API_KEY"
-    rate_limit_per_min = 5   # free tier: 250 calls/day; be conservative per-minute
+    rate_limit_per_min = 5   # free tier: 250 calls/day — conservative per-minute guard
     CAPABILITIES = frozenset({
-        "quote", "bars_daily", "fundamentals", "analyst_consensus",
-        "earnings", "dividends", "news",
+        "quote", "bars_daily", "fundamentals", "analyst_consensus", "dividends",
     })
 
     def __init__(self):
@@ -38,12 +44,8 @@ class FMPConnector(HTTPConnector):
                     return await self._fundamentals(session, params)
                 if data_type == "analyst_consensus":
                     return await self._analyst(session, params)
-                if data_type == "earnings":
-                    return await self._earnings(session, params)
                 if data_type == "dividends":
                     return await self._dividends(session, params)
-                if data_type == "news":
-                    return await self._news(session, params)
         except ConnectorError:
             raise
         except Exception as e:
@@ -52,7 +54,9 @@ class FMPConnector(HTTPConnector):
 
     async def _quote(self, session, params: dict) -> dict:
         ticker = params.get("ticker", "")
-        data = await self._rate_limited_get(session, f"{FMP_BASE}/quote/{ticker}", params=self._p())
+        data = await self._rate_limited_get(
+            session, f"{FMP_BASE}/quote", params=self._p({"symbol": ticker}),
+        )
         q = data[0] if isinstance(data, list) and data else {}
         return {
             "ticker":     ticker,
@@ -62,7 +66,7 @@ class FMPConnector(HTTPConnector):
             "low":        q.get("dayLow"),
             "prev_close": q.get("previousClose"),
             "volume":     q.get("volume"),
-            "change_pct": q.get("changesPercentage"),
+            "change_pct": q.get("changePercentage"),
             "market_cap": q.get("marketCap"),
             "pe":         q.get("pe"),
             "eps":        q.get("eps"),
@@ -72,31 +76,33 @@ class FMPConnector(HTTPConnector):
         ticker = params.get("ticker", "")
         days   = int(params.get("days", 30))
         data   = await self._rate_limited_get(
-            session, f"{FMP_BASE}/historical-price-full/{ticker}", params=self._p(),
+            session, f"{FMP_BASE}/historical-price-eod/full",
+            params=self._p({"symbol": ticker}),
         )
-        historical = (data.get("historical") or []) if isinstance(data, dict) else []
+        # /stable/historical-price-eod/full returns a flat array of bar objects
+        bars_raw = data if isinstance(data, list) else (data.get("historical") or [])
         bars = [
             {
-                "date":   b["date"],
+                "date":   b.get("date"),
                 "open":   b.get("open"),
                 "high":   b.get("high"),
                 "low":    b.get("low"),
                 "close":  b.get("close"),
                 "volume": b.get("volume"),
             }
-            for b in historical[:days]
+            for b in bars_raw[:days]
         ]
         return {"ticker": ticker, "bars": bars}
 
     async def _fundamentals(self, session, params: dict) -> dict:
         ticker = params.get("ticker", "")
+        # Profile gives company info; key-metrics gives valuation ratios
         profile_data = await self._rate_limited_get(
-            session, f"{FMP_BASE}/profile/{ticker}", params=self._p(),
+            session, f"{FMP_BASE}/profile", params=self._p({"symbol": ticker}),
         )
         prof = profile_data[0] if isinstance(profile_data, list) and profile_data else {}
-        # Key metrics TTM for ratios
         metrics_data = await self._rate_limited_get(
-            session, f"{FMP_BASE}/key-metrics-ttm/{ticker}", params=self._p(),
+            session, f"{FMP_BASE}/key-metrics", params=self._p({"symbol": ticker}),
         )
         met = metrics_data[0] if isinstance(metrics_data, list) and metrics_data else {}
         return {
@@ -104,65 +110,46 @@ class FMPConnector(HTTPConnector):
             "name":           prof.get("companyName"),
             "sector":         prof.get("sector"),
             "industry":       prof.get("industry"),
-            "market_cap":     prof.get("mktCap"),
+            "market_cap":     prof.get("marketCap"),
             "country":        prof.get("country"),
             "currency":       prof.get("currency"),
-            "exchange":       prof.get("exchangeShortName"),
+            "exchange":       prof.get("exchange"),
             "description":    prof.get("description"),
             "beta":           prof.get("beta"),
-            "pe_ratio":       met.get("peRatioTTM"),
-            "pb_ratio":       met.get("pbRatioTTM"),
-            "dividend_yield": met.get("dividendYieldPercentageTTM"),
-            "roe":            met.get("roeTTM"),
-            "debt_to_equity": met.get("debtToEquityTTM"),
-            "free_cashflow_yield": met.get("freeCashFlowYieldTTM"),
-            "ev_ebitda":      met.get("enterpriseValueOverEBITDATTM"),
+            "pe_ratio":       met.get("peRatio"),
+            "pb_ratio":       met.get("priceToBook"),
+            "ev_ebitda":      met.get("evToEBITDA"),
+            "roe":            met.get("returnOnEquity"),
+            "roa":            met.get("returnOnAssets"),
+            "roic":           met.get("returnOnInvestedCapital"),
+            "free_cashflow_yield": met.get("freeCashFlowYield"),
+            "earnings_yield": met.get("earningsYield"),
         }
 
     async def _analyst(self, session, params: dict) -> dict:
         ticker = params.get("ticker", "")
-        data = await self._rate_limited_get(session, f"{FMP_BASE}/rating/{ticker}", params=self._p())
+        data = await self._rate_limited_get(
+            session, f"{FMP_BASE}/ratings-snapshot", params=self._p({"symbol": ticker}),
+        )
         r = data[0] if isinstance(data, list) and data else {}
         return {
-            "ticker":         ticker,
-            "rating":         r.get("ratingRecommendation"),
-            "score":          r.get("ratingScore"),
-            "date":           r.get("date"),
-            "dcf_score":      r.get("ratingDetailsDCFScore"),
-            "roe_score":      r.get("ratingDetailsROEScore"),
-            "roa_score":      r.get("ratingDetailsROAScore"),
-            "de_score":       r.get("ratingDetailsDEScore"),
-            "pe_score":       r.get("ratingDetailsPEScore"),
-            "pb_score":       r.get("ratingDetailsPBScore"),
-        }
-
-    async def _earnings(self, session, params: dict) -> dict:
-        ticker = params.get("ticker", "")
-        data = await self._rate_limited_get(
-            session, f"{FMP_BASE}/earnings-surprises/{ticker}", params=self._p(),
-        )
-        records = data if isinstance(data, list) else []
-        return {
-            "ticker": ticker,
-            "earnings": [
-                {
-                    "date":     r.get("date"),
-                    "actual":   r.get("actualEarningResult"),
-                    "estimate": r.get("estimatedEarning"),
-                    "surprise": round(
-                        (r["actualEarningResult"] - r["estimatedEarning"]) / abs(r["estimatedEarning"]) * 100, 2
-                    ) if r.get("estimatedEarning") else None,
-                }
-                for r in records[:8]
-            ],
+            "ticker":     ticker,
+            "rating":     r.get("rating"),
+            "score":      r.get("overallScore"),
+            "dcf_score":  r.get("discountedCashFlowScore"),
+            "roe_score":  r.get("returnOnEquityScore"),
+            "roa_score":  r.get("returnOnAssetsScore"),
+            "de_score":   r.get("debtToEquityScore"),
+            "pe_score":   r.get("priceToEarningsScore"),
+            "pb_score":   r.get("priceToBookScore"),
         }
 
     async def _dividends(self, session, params: dict) -> dict:
         ticker = params.get("ticker", "")
         data = await self._rate_limited_get(
-            session, f"{FMP_BASE}/historical-price-full/stock_dividend/{ticker}", params=self._p(),
+            session, f"{FMP_BASE}/dividends", params=self._p({"symbol": ticker}),
         )
-        historical = (data.get("historical") or []) if isinstance(data, dict) else []
+        records = data if isinstance(data, list) else []
         return {
             "ticker": ticker,
             "dividends": [
@@ -173,29 +160,8 @@ class FMPConnector(HTTPConnector):
                     "record_date":      d.get("recordDate"),
                     "payment_date":     d.get("paymentDate"),
                     "declaration_date": d.get("declarationDate"),
+                    "frequency":        d.get("frequency"),
                 }
-                for d in historical[:params.get("limit", 20)]
-            ],
-        }
-
-    async def _news(self, session, params: dict) -> dict:
-        ticker = params.get("ticker", "")
-        limit  = params.get("limit", 20)
-        data = await self._rate_limited_get(
-            session, f"{FMP_BASE}/stock_news",
-            params=self._p({"tickers": ticker, "limit": limit}),
-        )
-        articles = data if isinstance(data, list) else []
-        return {
-            "ticker": ticker,
-            "articles": [
-                {
-                    "headline":  a.get("title"),
-                    "url":       a.get("url"),
-                    "published": a.get("publishedDate"),
-                    "source":    a.get("site"),
-                    "summary":   a.get("text"),
-                }
-                for a in articles
+                for d in records[:params.get("limit", 20)]
             ],
         }

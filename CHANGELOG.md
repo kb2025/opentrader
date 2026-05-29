@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.48] - 2026-05-29
+
+### Fixed
+- **FMP connector**: migrated all endpoints from legacy `/api/v3/` to the new `/stable/` base URL (v3 endpoints now return "Legacy Endpoint" error for accounts created after August 2025); updated response field names (`marketCap` vs `mktCap`, flat array for OHLCV history, `ratings-snapshot` for analyst data); removed `news` and `earnings` from capabilities (restricted/empty on free tier)
+- **FMP test endpoint** (`/api/config/test/fmp`): updated from `/api/v3/profile/AAPL` to `/stable/profile?symbol=AAPL`; fixed `mktCap` → `marketCap` field name in success response
+- **data_providers.toml**: removed `fmp` from `earnings` and `news` chains (connector no longer declares those capabilities on the free plan)
+
 ## [4.0.47] - 2026-05-29
 
 ### Fixed / Added
