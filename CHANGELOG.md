@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.47] - 2026-05-29
+
+### Fixed / Added
+- **Platform Dashboard — Service Connectors diagram**: FMP (and any future connector without an API key) now always renders in the bezier diagram as a grey "off" node instead of disappearing once gateway health loads; unconfigured connectors use a `{configured:false}` placeholder so the complete provider list is always visible
+- **Agents Dashboard — Market Data Connectors panel**: new card showing all connectors (including FMP) with status dot, state badge (ok/warn/down/off), and capability count; loads automatically when the Agents page opens and has its own Refresh button; also syncs `_connectorHealth` so the platform dashboard bezier stays current
+
 ## [4.0.46] - 2026-05-29
 
 ### Added

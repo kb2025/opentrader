@@ -692,6 +692,20 @@ select option{background:var(--surface2)}
           </div>
         </div>
       </div>
+
+      <!-- Market Data Connectors -->
+      <div class="card" id="md-connectors-card">
+        <div class="card-header">
+          <span class="card-title">Market Data Connectors</span>
+          <span id="md-connectors-badge" style="font-size:11px;color:var(--muted)"></span>
+          <button class="btn btn-ghost btn-sm" onclick="loadConnectorHealth()" style="margin-left:auto">Refresh</button>
+        </div>
+        <div class="card-body">
+          <div id="md-connectors-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:10px">
+            <div class="empty-state">Loading…</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ════════════════════════════════════════
@@ -5880,10 +5894,15 @@ function renderConnectorFlow(agentsArr) {
 
   const rawHealth = _connectorHealth || {};
   const healthLoaded = Object.keys(rawHealth).length > 0;
-  const providerKeys = healthLoaded
-    ? Object.keys(CONN_PROVIDER_LABELS).filter(k => rawHealth[k] !== undefined)
-    : Object.keys(CONN_PROVIDER_LABELS);
-  const providers = providerKeys.map(k => ({ id: k, label: CONN_PROVIDER_LABELS[k], info: rawHealth[k] || null }));
+  // Always show all known providers; use {configured:false} placeholder for any
+  // not present in rawHealth when health data has been loaded (e.g. no API key set).
+  const providerKeys = Object.keys(CONN_PROVIDER_LABELS);
+  const providers = providerKeys.map(k => ({
+    id:    k,
+    label: CONN_PROVIDER_LABELS[k],
+    info:  rawHealth[k] !== undefined ? rawHealth[k]
+           : (healthLoaded ? { configured: false, state: 'ok', capabilities: [] } : null),
+  }));
 
   // ── Layout ─────────────────────────────────────────────────────────────────
   const ITEM_H = 26, GAP = 10, PAD_T = 28, PAD_B = 22;
@@ -6872,6 +6891,76 @@ async function loadAgentsPage() {
   } catch(e) {
     document.getElementById('agents-grid').innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
   }
+  loadConnectorHealth();
+}
+
+async function loadConnectorHealth() {
+  const grid  = document.getElementById('md-connectors-grid');
+  const badge = document.getElementById('md-connectors-badge');
+  if (!grid) return;
+  try {
+    const health = await apiFetch('/api/market-data/health');
+    if (health.error) {
+      grid.innerHTML = `<div class="empty-state" style="color:var(--red)">Gateway offline: ${health.error}</div>`;
+      if (badge) badge.textContent = 'offline';
+      return;
+    }
+    renderConnectorHealthGrid(health);
+    // Update shared _connectorHealth so the bezier diagram can re-render
+    _connectorHealth = health;
+    if (wsData) renderConnectorFlow(wsData.agents);
+  } catch(e) {
+    grid.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
+}
+
+function renderConnectorHealthGrid(health) {
+  const grid  = document.getElementById('md-connectors-grid');
+  const badge = document.getElementById('md-connectors-badge');
+  if (!grid) return;
+
+  const allKeys = Object.keys(CONN_PROVIDER_LABELS);
+  const configured = allKeys.filter(k => health[k] && health[k].configured).length;
+  const online     = allKeys.filter(k => health[k] && health[k].configured && health[k].state === 'ok').length;
+  if (badge) badge.textContent = `${online} online · ${configured} configured · ${allKeys.length} total`;
+
+  function dotColor(info) {
+    if (!info || !info.configured) return '#6b7394';
+    return info.state === 'ok' ? '#22c55e' : info.state === 'half_open' ? '#f59e0b' : '#ef4444';
+  }
+  function stateLabel(info) {
+    if (!info || !info.configured) return 'off';
+    return info.state === 'ok' ? 'ok' : info.state === 'half_open' ? 'warn' : 'down';
+  }
+  function stateColor(info) {
+    if (!info || !info.configured) return '#6b7394';
+    return info.state === 'ok' ? '#22c55e' : info.state === 'half_open' ? '#f59e0b' : '#ef4444';
+  }
+  function borderColor(info) {
+    if (!info || !info.configured) return 'var(--border)';
+    return info.state === 'ok' ? '#22c55e44' : info.state === 'half_open' ? '#f59e0b44' : '#ef444444';
+  }
+
+  grid.innerHTML = allKeys.map(k => {
+    const info  = health[k] || null;
+    const label = CONN_PROVIDER_LABELS[k] || k;
+    const caps  = info && info.capabilities && info.capabilities.length
+      ? info.capabilities.join(', ')
+      : (info && info.configured ? 'probing…' : 'no API key');
+    const capCount = info && info.capabilities ? info.capabilities.length : 0;
+    return `
+      <div style="background:var(--surface2);border:1px solid ${borderColor(info)};border-radius:8px;padding:10px 12px;cursor:default"
+           title="${caps}">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px">
+          <span style="width:8px;height:8px;border-radius:50%;background:${dotColor(info)};flex-shrink:0"></span>
+          <span style="font-size:12px;font-weight:600;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
+          <span style="font-size:10px;font-weight:700;color:${stateColor(info)};flex-shrink:0">${stateLabel(info)}</span>
+        </div>
+        <div style="font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${info && info.configured ? `${capCount} cap${capCount !== 1 ? 's' : ''}` : 'not configured'}
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function renderAgentsGrid(agents) {
