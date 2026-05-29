@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.46] - 2026-05-29
+
+### Added
+- **FMP (Financial Modeling Prep) connector**: new `HTTPConnector` at `market_data/connectors/fmp.py` serving `quote`, `bars_daily`, `fundamentals`, `analyst_consensus`, `earnings`, `dividends`, and `news` from `financialmodelingprep.com/api/v3`; free-tier friendly (5 req/min rate limiter); activates automatically when `FMP_API_KEY` is set
+- **FMP in data provider routing**: added to `quote`, `bars_daily`, `fundamentals`, `analyst_consensus`, `earnings`, `dividends`, and `news` chains in `config/data_providers.toml` as a mid-priority fallback
+- **FMP service connector UI**: `FMP_API_KEY` in the env-var registry, test-connector endpoint (`/api/config/test-connector` with `service=fmp`), FMP card in the Service Connectors settings panel, and FMP node in the Market Data Gateway bezier diagram
+
 ## [4.0.45] - 2026-05-28
 
 ### Fixed

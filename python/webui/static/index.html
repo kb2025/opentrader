@@ -5860,6 +5860,7 @@ const CONN_PROVIDER_LABELS = {
   yahoo:         'Yahoo Finance',
   alpha_vantage: 'Alpha Vantage',
   finnhub:       'Finnhub',
+  fmp:           'FMP',
   eodhd:         'EODHD',
   eoddata:       'EODData',
   fred:          'FRED',
@@ -9598,6 +9599,13 @@ const CFG_META = {
     fields: [
       { key: 'FINNHUB_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
         hint: 'Free key at finnhub.io — powers insider transactions, insider sentiment (MSPR), and SEC filing alerts via the Finnhub Insider scraper' },
+    ],
+  },
+  fmp: {
+    label: 'FMP', letter: 'F', bg: '#2563eb', fg: '#fff',
+    fields: [
+      { key: 'FMP_API_KEY', label: 'API Key', type: 'password', required: true, mono: true,
+        hint: 'Get a free key at financialmodelingprep.com — covers quotes, OHLCV history, fundamentals, analyst ratings, earnings surprises, dividend history, and company news' },
     ],
   },
 };

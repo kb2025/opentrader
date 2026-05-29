@@ -367,6 +367,7 @@ KNOWN_SECRETS = [
     ("EODDATA_API_KEY",            "EODData — API Key"),
     ("EODHD_API_KEY",              "EODHD — API Key"),
     ("FINNHUB_API_KEY",            "Finnhub — API Key"),
+    ("FMP_API_KEY",                "FMP — API Key"),
     ("EODHD_MCP_URL",              "EODHD — MCP URL"),
     ("GOOGLE_BOOKS_API_KEY",       "Google Books — API Key"),
     # ── AI / LLM ──────────────────────────────────────────────────────────────
@@ -5052,6 +5053,28 @@ async def test_config_connector(service: str, body: CfgTestBody = CfgTestBody())
                     name = data.get("name", "Apple Inc.")
                     return {"ok": True, "message": f"Finnhub API key valid — test: {name}"}
                 raise HTTPException(status_code=400, detail=f"Finnhub returned HTTP {resp.status}")
+
+            elif service == "fmp":
+                api_key = ev("FMP_API_KEY")
+                if not api_key:
+                    raise HTTPException(status_code=400, detail="FMP_API_KEY is required")
+                resp = await s.get(
+                    "https://financialmodelingprep.com/api/v3/profile/AAPL",
+                    params={"apikey": api_key},
+                    timeout=_aiohttp.ClientTimeout(total=10),
+                )
+                if resp.status == 401 or resp.status == 403:
+                    raise HTTPException(status_code=400, detail="Invalid FMP API key")
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list) and data and data[0].get("companyName"):
+                        name = data[0]["companyName"]
+                        mkt  = data[0].get("mktCap", 0)
+                        return {"ok": True, "message": f"FMP API key valid — {name} mktCap ${mkt:,.0f}"}
+                    if isinstance(data, dict) and "Error Message" in data:
+                        raise HTTPException(status_code=400, detail=f"FMP error: {data['Error Message']}")
+                    raise HTTPException(status_code=400, detail="FMP returned no data — check API key")
+                raise HTTPException(status_code=400, detail=f"FMP returned HTTP {resp.status}")
 
             elif service == "alpaca_mcp":
                 api_key    = ev("ALPACA_API_KEY")

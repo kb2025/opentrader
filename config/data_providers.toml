@@ -4,11 +4,11 @@
 # Connector must exist in python/market_data/connectors/<name>.py
 
 [quote]
-providers = ["yahoo", "finnhub", "alpaca", "tradier", "massive"]
+providers = ["yahoo", "finnhub", "fmp", "alpaca", "tradier", "massive"]
 ttl = 60
 
 [bars_daily]
-providers = ["yahoo", "alpha_vantage", "alpaca", "massive"]
+providers = ["yahoo", "alpha_vantage", "fmp", "alpaca", "massive"]
 ttl = 86400
 
 [bars_intraday]
@@ -16,23 +16,23 @@ providers = ["alpaca", "massive"]
 ttl = 300
 
 [fundamentals]
-providers = ["yahoo", "alpha_vantage", "finnhub", "massive", "eodhd"]
+providers = ["yahoo", "alpha_vantage", "finnhub", "fmp", "massive", "eodhd"]
 ttl = 86400
 
 [analyst_consensus]
-providers = ["yahoo"]
+providers = ["yahoo", "fmp"]
 ttl = 14400
 
 [earnings]
-providers = ["yahoo", "finnhub", "massive", "eodhd"]
+providers = ["yahoo", "finnhub", "fmp", "massive", "eodhd"]
 ttl = 86400
 
 [dividends]
-providers = ["yahoo", "massive", "eodhd"]
+providers = ["yahoo", "fmp", "massive", "eodhd"]
 ttl = 86400
 
 [news]
-providers = ["finnhub", "alpha_vantage", "eodhd"]
+providers = ["finnhub", "alpha_vantage", "fmp", "eodhd"]
 ttl = 3600
 
 [sentiment_news]
