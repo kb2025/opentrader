@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.51] - 2026-05-30
+
+### Added
+- **Orchestrator email monitor**: polls `ot-orchestrator@agentmail.to` every 5 minutes for new messages; runs each through the LLM to extract content type, key tickers with directional bias, actionable insights, and risks; delivers a structured research brief via email and Telegram; deduplicates via Redis so no message is analyzed twice; interval configurable via `EMAIL_MONITOR_INTERVAL_SEC`
+
 ## [4.0.50] - 2026-05-30
 
 ### Fixed

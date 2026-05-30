@@ -18,6 +18,7 @@ from shared.redis_client import get_redis, ensure_streams, STREAMS, GROUPS
 from shared.envelope import Envelope, HeartbeatPayload
 from .watchdog import Watchdog
 from .commander import Commander
+from .email_monitor import EmailMonitor
 
 log = structlog.get_logger("orchestrator")
 
@@ -41,6 +42,7 @@ class Orchestrator:
 
         self.watchdog  = Watchdog(self.redis, ttl_sec=HB_TTL)
         self.commander = Commander()          # gets its own connection in run()
+        self.email_monitor = EmailMonitor(self.redis, self.watchdog.notifier)
         await self.watchdog.notifier.ensure_inbox()
 
         await asyncio.gather(
@@ -48,6 +50,7 @@ class Orchestrator:
             self.watchdog.run(),
             self.commander.run(),
             self._heartbeat_consumer(),
+            self.email_monitor.run(),
         )
 
     # ── Publish own heartbeat ────────────────────────────────────────────────
