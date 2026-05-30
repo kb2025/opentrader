@@ -107,6 +107,21 @@ class BrokerGatewayAgent(BaseAgent):
         request_id = cmd.get("request_id", "")
         issued_by  = cmd.get("issued_by", "unknown")
 
+        # ── Global trading mode gate ──────────────────────────────────────────
+        # When system:trading_mode = "paper_only", force all place_* commands to
+        # route exclusively to sandbox/paper accounts by injecting mode=sandbox.
+        _PLACE_CMDS = {"place_order", "place_option_order", "place_spread_order"}
+        if command in _PLACE_CMDS:
+            try:
+                trading_mode = await self.redis.get("system:trading_mode")
+                if trading_mode and trading_mode.lower() == "paper_only":
+                    cmd = dict(cmd)
+                    cmd["mode"] = "sandbox"
+                    log.info("broker-gateway.paper_only_gate",
+                             command=command, original_account=cmd.get("account_label", ""))
+            except Exception:
+                pass
+
         log.info(
             "broker-gateway.command",
             command=command,

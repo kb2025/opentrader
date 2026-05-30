@@ -193,6 +193,27 @@ async def _load_user_secrets_to_env(user_id: str):
 _PUBLIC_PATHS = {"/login", "/setup", "/api/auth/login",
                  "/api/auth/logout", "/api/auth/setup", "/api/auth/check"}
 
+# ── Request correlation middleware ────────────────────────────────────────────
+
+@app.middleware("http")
+async def correlation_middleware(request: Request, call_next):
+    """Stamp every request with X-Request-ID for end-to-end log tracing."""
+    import uuid as _uuid
+    req_id = request.headers.get("X-Request-ID") or str(_uuid.uuid4())
+    try:
+        import structlog
+        structlog.contextvars.bind_contextvars(request_id=req_id)
+    except Exception:
+        pass
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = req_id
+    try:
+        structlog.contextvars.unbind_contextvars("request_id")
+    except Exception:
+        pass
+    return response
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
@@ -3679,6 +3700,29 @@ async def resume_system(token: str = ""):
     redis = await get_redis()
     await redis.delete("system:halted")
     return {"resumed": True}
+
+
+@app.get("/api/system/trading-mode")
+async def get_trading_mode(token: str = ""):
+    """Return the current global trading mode (live | paper_only)."""
+    check_token(token)
+    redis = await get_redis()
+    mode = await redis.get("system:trading_mode") or "live"
+    return {"mode": mode.lower()}
+
+
+@app.post("/api/system/trading-mode")
+async def set_trading_mode(body: dict, token: str = ""):
+    """Set global trading mode. body: {mode: 'live' | 'paper_only'}"""
+    check_token(token)
+    mode = str(body.get("mode", "live")).lower()
+    if mode not in ("live", "paper_only"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="mode must be 'live' or 'paper_only'")
+    redis = await get_redis()
+    await redis.set("system:trading_mode", mode)
+    log.info("system.trading_mode_changed", mode=mode)
+    return {"mode": mode, "ok": True}
 
 
 @app.get("/api/system/traffic")
@@ -11835,6 +11879,50 @@ async def get_option_position_log(position_id: str, limit: int = 100):
         }
         for r in rows
     ]
+
+
+@app.get("/api/options/positions/{position_id}/greeks-history")
+async def get_option_greeks_history(position_id: str, days: int = 30, token: str = ""):
+    """Return Greeks time series for a position from greeks_history hypertable."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        return {"error": "DB unavailable", "rows": []}
+    try:
+        rows = await pool.fetch(
+            """
+            SELECT ts, underlying_price, contract_price,
+                   delta, gamma, theta, vega, rho, iv, dte
+            FROM greeks_history
+            WHERE position_id = $1::uuid
+              AND ts >= NOW() - ($2 || ' days')::INTERVAL
+            ORDER BY ts ASC
+            """,
+            position_id, str(days),
+        )
+        return {
+            "position_id": position_id,
+            "days":        days,
+            "count":       len(rows),
+            "rows": [
+                {
+                    "ts":               r["ts"].isoformat(),
+                    "underlying_price": float(r["underlying_price"]) if r["underlying_price"] is not None else None,
+                    "contract_price":   float(r["contract_price"])   if r["contract_price"]   is not None else None,
+                    "delta":            float(r["delta"])  if r["delta"]  is not None else None,
+                    "gamma":            float(r["gamma"])  if r["gamma"]  is not None else None,
+                    "theta":            float(r["theta"])  if r["theta"]  is not None else None,
+                    "vega":             float(r["vega"])   if r["vega"]   is not None else None,
+                    "rho":              float(r["rho"])    if r["rho"]    is not None else None,
+                    "iv":               float(r["iv"])     if r["iv"]     is not None else None,
+                    "dte":              r["dte"],
+                }
+                for r in rows
+            ],
+        }
+    except Exception as e:
+        log.error("options.greeks_history_error", error=str(e))
+        return {"error": str(e), "rows": []}
 
 
 @app.get("/api/options/chart/{position_id}")

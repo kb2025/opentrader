@@ -523,3 +523,25 @@ CREATE TABLE IF NOT EXISTS polymarket_trades (
     PRIMARY KEY (ts, id)
 );
 SELECT create_hypertable('polymarket_trades', 'ts', if_not_exists => TRUE);
+
+-- ── Greeks history snapshots (added for time-series analytics) ───────────────
+-- One row per scan cycle per active position. Allows charting how Greeks evolve.
+CREATE TABLE IF NOT EXISTS greeks_history (
+    ts               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    position_id      UUID        NOT NULL REFERENCES option_positions(id) ON DELETE CASCADE,
+    contract_symbol  TEXT        NOT NULL,
+    underlying       TEXT        NOT NULL,
+    underlying_price NUMERIC,
+    contract_price   NUMERIC,
+    delta            NUMERIC,
+    gamma            NUMERIC,
+    theta            NUMERIC,
+    vega             NUMERIC,
+    rho              NUMERIC,
+    iv               NUMERIC,
+    dte              INTEGER,
+    PRIMARY KEY (ts, position_id)
+);
+SELECT create_hypertable('greeks_history', 'ts', if_not_exists => TRUE);
+SELECT add_retention_policy('greeks_history', INTERVAL '6 months', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS greeks_history_position ON greeks_history (position_id, ts DESC);

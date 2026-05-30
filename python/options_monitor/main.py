@@ -770,6 +770,7 @@ async def _fetch_option_chain_details(
                 "vanna":           vanna,
                 "charm":           charm,
                 "pop":             pop,
+                "iv":              float(snap.get("implied_volatility") or 0) or None,
             }
 
     return best
@@ -1624,6 +1625,7 @@ class OptionsMonitor(BaseAgent):
         # ── Enrich contract details via Yahoo option chain ─────────────────────
         # Runs whenever: type unknown, strike missing, expiry missing, or no delta yet
         delta = theta = vega = gamma = rho = volga = vanna = charm = pop = None
+        current_iv = None
         current_opt_price = bp["current_price"]
         # Use only the live price — entry_price is stale and causes wrong expiry matches
         # for decayed options (e.g. deep-OTM near expiry matched against a later expiry
@@ -1671,6 +1673,7 @@ class OptionsMonitor(BaseAgent):
                 vanna = chain_details.get("vanna")
                 charm = chain_details.get("charm")
                 pop   = chain_details.get("pop")
+                current_iv = chain_details.get("iv")
                 log.info("options_monitor.chain_enriched", contract=contract_symbol,
                          strike=strike, option_type=option_type, delta=delta,
                          theta=theta, vega=vega, gamma=gamma)
@@ -1910,6 +1913,29 @@ class OptionsMonitor(BaseAgent):
             current_underlying, current_opt_price, atr,
             dist_emergency, dist_exit_alert, dist_roll_1, scan_notes,
         )
+
+        # ── Greeks history snapshot ────────────────────────────────────────────
+        dte_val = None
+        if expiration_date:
+            try:
+                dte_val = max((expiration_date - date.today()).days, 0)
+            except Exception:
+                pass
+        try:
+            await pool.execute(
+                """INSERT INTO greeks_history
+                   (position_id, contract_symbol, underlying,
+                    underlying_price, contract_price,
+                    delta, gamma, theta, vega, rho, iv, dte)
+                   VALUES ($1,$2,$3,$4::NUMERIC,$5::NUMERIC,
+                           $6::NUMERIC,$7::NUMERIC,$8::NUMERIC,$9::NUMERIC,$10::NUMERIC,
+                           $11::NUMERIC,$12)""",
+                pos_id, contract_symbol, underlying,
+                current_underlying, current_opt_price,
+                delta, gamma, theta, vega, rho, current_iv, dte_val,
+            )
+        except Exception as _gh_err:
+            log.debug("options_monitor.greeks_history_skip", error=str(_gh_err))
 
         # ── Check alert thresholds ────────────────────────────────────────────
         if current_underlying and levels and underlying_entry:

@@ -3,6 +3,13 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.52] - 2026-05-30
+
+### Added
+- **Greeks history tracking**: new `greeks_history` TimescaleDB hypertable (6-month retention); options_monitor writes delta/gamma/theta/vega/rho/iv/dte on every scan cycle; `GET /api/options/positions/{id}/greeks-history` endpoint; "Greeks History" tab in position modal with summary cards, sparklines, and data table
+- **Global live/paper trading mode toggle**: `GET|POST /api/system/trading-mode`; broker gateway injects `mode=sandbox` on all `place_*` commands when `paper_only` is active; toggle button + badge on System page with confirmation modal
+- **Request correlation IDs**: `X-Request-ID` middleware stamps every HTTP request (reads header or generates UUID4), binds to structlog context, echoes in response headers for end-to-end log tracing
+
 ## [4.0.51] - 2026-05-30
 
 ### Added

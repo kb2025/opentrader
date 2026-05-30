@@ -984,6 +984,20 @@ select option{background:var(--surface2)}
             <button class="btn btn-danger btn-sm" onclick="haltSystem()">Halt System</button>
             <button class="btn btn-success btn-sm" onclick="resumeSystem()">Resume</button>
           </div>
+          <!-- Global trading mode toggle -->
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px 14px;background:var(--card-header);border-radius:8px;border:1px solid var(--border)">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--fg)">Global Trading Mode</div>
+              <div style="font-size:11px;color:var(--muted)">Paper Only routes all orders to sandbox accounts only</div>
+            </div>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+              <span id="trading-mode-badge" style="font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;background:#22c55e22;color:#22c55e">LIVE</span>
+              <button id="trading-mode-btn" onclick="_toggleTradingMode()"
+                style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--card-header);color:var(--fg);font-size:12px;font-weight:600;cursor:pointer">
+                Switch to Paper Only
+              </button>
+            </div>
+          </div>
           <div id="system-halted-banner" style="display:none" class="mode-banner sandbox">
             System is HALTED — all trading suspended
           </div>
@@ -3303,6 +3317,8 @@ select option{background:var(--surface2)}
                   style="padding:10px 20px;background:var(--card-header);color:var(--muted);border:none;cursor:pointer;font-size:12px;font-weight:600">Event Log</button>
           <button id="opt-tab-levels" onclick="_optModalTab('levels')"
                   style="padding:10px 20px;background:var(--card-header);color:var(--muted);border:none;cursor:pointer;font-size:12px;font-weight:600">All Levels</button>
+          <button id="opt-tab-greeks-history" onclick="_optModalTab('greeks-history')"
+                  style="padding:10px 20px;background:var(--card-header);color:var(--muted);border:none;cursor:pointer;font-size:12px;font-weight:600">Greeks History</button>
         </div>
         <!-- Chart panel -->
         <div id="opt-panel-chart" style="padding:16px;min-height:300px;display:flex;align-items:center;justify-content:center">
@@ -3328,6 +3344,10 @@ select option{background:var(--surface2)}
         <!-- Levels panel -->
         <div id="opt-panel-levels" style="display:none;padding:16px">
           <div id="opt-levels-content"></div>
+        </div>
+        <!-- Greeks History panel -->
+        <div id="opt-panel-greeks-history" style="display:none;padding:16px">
+          <div id="opt-greeks-history-content"><span style="font-size:12px;color:var(--muted)">Loading…</span></div>
         </div>
       </div>
     </div>
@@ -7573,6 +7593,7 @@ function ctRenderPage() {
 }
 
 async function loadSystemPage() {
+  _loadTradingMode();
   try {
     const sys = await apiFetch('/api/system');
 
@@ -7648,6 +7669,53 @@ async function resumeSystem() {
   try {
     await apiFetch(`/api/system/resume?token=${encodeURIComponent(token)}`, { method: 'POST' });
     loadSystemPage();
+  } catch(e) { toast('error', 'Error', e.message); }
+}
+
+async function _loadTradingMode() {
+  try {
+    const token = getToken();
+    const d = await apiFetch(`/api/system/trading-mode?token=${encodeURIComponent(token)}`);
+    _applyTradingModeUI(d.mode);
+  } catch(e) {}
+}
+
+function _applyTradingModeUI(mode) {
+  const badge = document.getElementById('trading-mode-badge');
+  const btn   = document.getElementById('trading-mode-btn');
+  if (!badge || !btn) return;
+  if (mode === 'paper_only') {
+    badge.textContent       = 'PAPER ONLY';
+    badge.style.background  = '#f59e0b22';
+    badge.style.color       = '#f59e0b';
+    btn.textContent         = 'Switch to Live';
+    btn.style.borderColor   = '#22c55e55';
+    btn.style.color         = '#22c55e';
+  } else {
+    badge.textContent       = 'LIVE';
+    badge.style.background  = '#22c55e22';
+    badge.style.color       = '#22c55e';
+    btn.textContent         = 'Switch to Paper Only';
+    btn.style.borderColor   = 'var(--border)';
+    btn.style.color         = 'var(--fg)';
+  }
+}
+
+async function _toggleTradingMode() {
+  const token   = getToken();
+  const badge   = document.getElementById('trading-mode-badge');
+  const current = badge ? badge.textContent.trim() : 'LIVE';
+  const next    = current === 'LIVE' ? 'paper_only' : 'live';
+  const label   = next === 'paper_only' ? 'Paper Only (sandbox accounts only)' : 'Live trading';
+  if (!confirm(`Switch global trading mode to ${label}?`)) return;
+  try {
+    const d = await apiFetch(`/api/system/trading-mode?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: next, token }),
+    });
+    _applyTradingModeUI(d.mode);
+    toast('success', 'Mode Changed', `Trading mode set to: ${d.mode}`);
   } catch(e) { toast('error', 'Error', e.message); }
 }
 
@@ -19012,9 +19080,9 @@ async function _optSaveEdit() {
 }
 
 function _optModalTab(tab) {
-  const tabs   = ['chart', 'log', 'levels'];
-  const panels = { chart: 'opt-panel-chart', log: 'opt-panel-log', levels: 'opt-panel-levels' };
-  const btns   = { chart: 'opt-tab-chart',   log: 'opt-tab-log',   levels: 'opt-tab-levels'  };
+  const tabs   = ['chart', 'log', 'levels', 'greeks-history'];
+  const panels = { chart: 'opt-panel-chart', log: 'opt-panel-log', levels: 'opt-panel-levels', 'greeks-history': 'opt-panel-greeks-history' };
+  const btns   = { chart: 'opt-tab-chart',   log: 'opt-tab-log',   levels: 'opt-tab-levels',   'greeks-history': 'opt-tab-greeks-history'  };
 
   for (const t of tabs) {
     const panelEl = document.getElementById(panels[t]);
@@ -19028,6 +19096,109 @@ function _optModalTab(tab) {
   if (tab === 'chart') _optLoadChart();
   else if (tab === 'log') _optLoadLog();
   else if (tab === 'levels') _optRenderLevels();
+  else if (tab === 'greeks-history') _optLoadGreeksHistory();
+}
+
+async function _optLoadGreeksHistory() {
+  const el = document.getElementById('opt-greeks-history-content');
+  if (!el || !_optCurrentId) return;
+  el.innerHTML = '<span style="font-size:12px;color:var(--muted)">Loading Greeks history…</span>';
+  try {
+    const data = await apiFetch(`/api/options/positions/${_optCurrentId}/greeks-history?days=60&token=${getToken()}`);
+    if (!data.rows || !data.rows.length) {
+      el.innerHTML = '<span style="font-size:12px;color:var(--muted)">No Greeks history yet. Data accumulates each scan cycle (every 5 min during market hours).</span>';
+      return;
+    }
+    const rows = data.rows;
+    const fmt2 = v => v == null ? '—' : v.toFixed(4);
+    const fmtPct = v => v == null ? '—' : (v * 100).toFixed(1) + '%';
+
+    // ── SVG sparkline helper ───────────────────────────���──────────────────────
+    function sparkline(vals, color, W=120, H=30) {
+      const clean = vals.filter(v => v != null);
+      if (clean.length < 2) return '<span style="color:var(--muted);font-size:10px">—</span>';
+      const mn = Math.min(...clean), mx = Math.max(...clean);
+      const rng = mx - mn || 0.0001;
+      const pts = vals.map((v, i) => {
+        const x = (i / (vals.length - 1)) * (W - 4) + 2;
+        const y = v == null ? null : H - 4 - ((v - mn) / rng) * (H - 8);
+        return y == null ? null : `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).filter(Boolean).join(' ');
+      return `<svg viewBox="0 0 ${W} ${H}" style="width:${W}px;height:${H}px;vertical-align:middle">
+        <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="${parseFloat(pts.split(' ').pop().split(',')[0])}" cy="${parseFloat(pts.split(' ').pop().split(',')[1])}" r="2" fill="${color}"/>
+      </svg>`;
+    }
+
+    const deltas = rows.map(r => r.delta);
+    const thetas = rows.map(r => r.theta);
+    const gammas = rows.map(r => r.gamma);
+    const ivs    = rows.map(r => r.iv);
+    const vegas  = rows.map(r => r.vega);
+    const uls    = rows.map(r => r.underlying_price);
+    const last   = rows[rows.length - 1];
+    const first  = rows[0];
+    const span   = rows.length > 1
+      ? Math.round((new Date(last.ts) - new Date(first.ts)) / 86400000) + 'd'
+      : '< 1d';
+
+    // ── Summary cards ─────────────────────────���───────────────────────────────
+    const cards = [
+      { label: 'Delta',  val: fmt2(last.delta),         spark: sparkline(deltas,'#60a5fa'), change: last.delta != null && first.delta != null ? (last.delta - first.delta).toFixed(4) : null },
+      { label: 'Theta',  val: fmt2(last.theta),         spark: sparkline(thetas,'#f87171'), change: last.theta != null && first.theta != null ? (last.theta - first.theta).toFixed(4) : null },
+      { label: 'Gamma',  val: fmt2(last.gamma),         spark: sparkline(gammas,'#34d399'), change: null },
+      { label: 'Vega',   val: fmt2(last.vega),          spark: sparkline(vegas, '#a78bfa'), change: null },
+      { label: 'IV',     val: fmtPct(last.iv),          spark: sparkline(ivs,   '#fbbf24'), change: last.iv != null && first.iv != null ? ((last.iv - first.iv)*100).toFixed(1)+'pp' : null },
+      { label: 'Underlying', val: last.underlying_price != null ? '$'+last.underlying_price.toFixed(2) : '—', spark: sparkline(uls,'#94a3b8'), change: null },
+    ];
+
+    let html = `<div style="font-size:11px;color:var(--muted);margin-bottom:12px">${rows.length} snapshots · ${span} window · last updated ${new Date(last.ts).toLocaleString()}</div>`;
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:16px">';
+    for (const c of cards) {
+      html += `<div style="background:var(--card-header);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px">${c.label}</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:18px;font-weight:700;color:var(--fg)">${c.val}</span>
+          ${c.change != null ? `<span style="font-size:10px;color:${parseFloat(c.change)>=0?'var(--green)':'var(--red)'}">${parseFloat(c.change)>=0?'+':''}${c.change} total</span>` : ''}
+        </div>
+        <div style="margin-top:6px">${c.spark}</div>
+      </div>`;
+    }
+    html += '</div>';
+
+    // ── Data table (last 20 rows) ──────────────────────────────���──────────────
+    html += `<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Recent Snapshots (last ${Math.min(rows.length,20)})</div>`;
+    html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+    html += '<thead><tr style="background:var(--card-header);color:var(--muted)">' +
+      '<th style="padding:5px 8px;text-align:left">Time</th>' +
+      '<th style="padding:5px 8px;text-align:right">Underlying</th>' +
+      '<th style="padding:5px 8px;text-align:right">Contract</th>' +
+      '<th style="padding:5px 8px;text-align:right">Delta</th>' +
+      '<th style="padding:5px 8px;text-align:right">Theta</th>' +
+      '<th style="padding:5px 8px;text-align:right">Gamma</th>' +
+      '<th style="padding:5px 8px;text-align:right">Vega</th>' +
+      '<th style="padding:5px 8px;text-align:right">IV</th>' +
+      '<th style="padding:5px 8px;text-align:right">DTE</th>' +
+      '</tr></thead><tbody>';
+    for (const r of [...rows].reverse().slice(0, 20)) {
+      const dt = new Date(r.ts);
+      html += `<tr style="border-top:1px solid var(--border)">
+        <td style="padding:4px 8px;color:var(--muted);white-space:nowrap">${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td>
+        <td style="padding:4px 8px;text-align:right">${r.underlying_price != null ? '$'+r.underlying_price.toFixed(2) : '—'}</td>
+        <td style="padding:4px 8px;text-align:right">${r.contract_price != null ? '$'+r.contract_price.toFixed(2) : '—'}</td>
+        <td style="padding:4px 8px;text-align:right;color:#60a5fa">${fmt2(r.delta)}</td>
+        <td style="padding:4px 8px;text-align:right;color:#f87171">${fmt2(r.theta)}</td>
+        <td style="padding:4px 8px;text-align:right;color:#34d399">${fmt2(r.gamma)}</td>
+        <td style="padding:4px 8px;text-align:right;color:#a78bfa">${fmt2(r.vega)}</td>
+        <td style="padding:4px 8px;text-align:right;color:#fbbf24">${fmtPct(r.iv)}</td>
+        <td style="padding:4px 8px;text-align:right">${r.dte ?? '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<span style="font-size:12px;color:var(--red)">Failed to load Greeks history: ${e.message}</span>`;
+  }
 }
 
 async function _optDrawPriceChart(pos, canvasEl) {
