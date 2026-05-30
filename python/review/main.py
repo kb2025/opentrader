@@ -363,7 +363,7 @@ class ReviewAgent(BaseAgent):
                     if not isinstance(o, dict):
                         continue
                     status = str(o.get("status", "")).upper()
-                    if status not in ("FILLED", "PARTIALLY_FILLED", "PARTIAL_FILLED"):
+                    if status not in ("FILLED", "PARTIALLY_FILLED", "PARTIAL_FILLED", "FULL_FILL"):
                         continue
                     # Check all date fields — a trade placed yesterday but filled today
                     # must be included (transaction_date wins over create_date).
@@ -373,6 +373,7 @@ class ReviewAgent(BaseAgent):
                         str(o.get("filledTime", "")),
                         str(o.get("createTime", "")),
                         str(o.get("filled_time", "")),
+                        str(o.get("filled_at", "")),
                     ]
                     if not any(today in d for d in date_fields if d and d != "None"):
                         continue

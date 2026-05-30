@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.50] - 2026-05-30
+
+### Fixed
+- **Daily report Webull fills**: EOD report `_get_all_broker_fills()` now accepts `FULL_FILL` as a valid filled status (Webull's terminal fill status); previously only `FILLED`/`PARTIALLY_FILLED`/`PARTIAL_FILLED` were accepted so all Webull fills were silently dropped from the report; also added `filled_at` to the date field list to match the broker gateway's detection logic
+
 ## [4.0.49] - 2026-05-29
 
 ### Fixed
