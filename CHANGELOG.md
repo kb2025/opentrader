@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.81] - 2026-05-31
+
+### Changed
+- **Portfolio row in account heatmap**: now shows one segment per ticker (parent direct + sub holdings) instead of one block per group; each segment sized by actual market value in the account and labeled with ticker + current % of total portfolio allocation; segments ≥8% show "TICKER X%", ≥4% show ticker only, narrower segments show nothing (tooltip always available on hover)
+
 ## [4.0.80] - 2026-05-31
 
 ### Added
