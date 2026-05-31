@@ -2242,7 +2242,7 @@ select option{background:var(--surface2)}
           <div id="pg-subs-section" style="display:none">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
               <label style="font-size:11px;color:var(--muted)">Sub-Portfolios <span style="color:var(--dim)">(max 3, up to 10 stocks each)</span></label>
-              <button id="pg-add-sub-btn" onclick="_pgCreateSub()" style="background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.4);border-radius:5px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer">+ Add Sub</button>
+              <button id="pg-add-sub-btn" onclick="_pgSubAdd()" style="background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.4);border-radius:5px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer">+ Add Sub</button>
             </div>
             <div id="pg-subs-list" style="display:flex;flex-direction:column;gap:6px"></div>
           </div>
@@ -7164,11 +7164,12 @@ async function _riskClusterRun() {
 // Portfolio Groups
 // ══════════════════════════════════════════════════════════════════════════════
 
-let _pgGroups   = [];
-let _pgEditId   = null;   // null = new, string = edit existing
-let _pgEditType = 'parent';
-let _pgHoldings = [];     // live edit state
-let _pgAccounts = [];     // all available accounts
+let _pgGroups     = [];
+let _pgEditId     = null;   // null = new, string = edit existing
+let _pgEditType   = 'parent';
+let _pgHoldings   = [];     // parent direct holdings
+let _pgSubs       = [];     // [{id, name, color, alloc_mode, holdings:[]}]
+let _pgAccounts   = [];
 let _pgStrategies = [];
 
 async function loadPortfolioGroups() {
@@ -7260,6 +7261,7 @@ async function _pgCreate(type, parentId) {
   _pgEditId   = null;
   _pgEditType = type || 'parent';
   _pgHoldings = [];
+  _pgSubs     = [];
   await _pgOpenModal({
     id: null, name: '', type: _pgEditType, parent_id: parentId || null,
     max_stocks: type === 'sub' ? 10 : 25,
@@ -7269,7 +7271,6 @@ async function _pgCreate(type, parentId) {
 }
 
 async function _pgEdit(groupId) {
-  let g = null;
   const findG = (groups, id) => {
     for (const grp of groups) {
       if (grp.id === id) return grp;
@@ -7277,11 +7278,18 @@ async function _pgEdit(groupId) {
     }
     return null;
   };
-  g = findG(_pgGroups, groupId);
+  const g = findG(_pgGroups, groupId);
   if (!g) return;
   _pgEditId   = groupId;
   _pgEditType = g.type;
-  _pgHoldings = g.holdings.map(h => ({...h}));
+  _pgHoldings = (g.holdings || []).map(h => ({...h}));
+  _pgSubs     = (g.subs || []).map(s => ({
+    id:         s.id,
+    name:       s.name,
+    color:      s.color || '#a78bfa',
+    alloc_mode: s.alloc_mode || 'equal',
+    holdings:   (s.holdings || []).map(h => ({...h})),
+  }));
   await _pgOpenModal(g);
 }
 
@@ -7333,9 +7341,7 @@ async function _pgOpenModal(g) {
   const subsSec = document.getElementById('pg-subs-section');
   if (g.type === 'parent') {
     subsSec.style.display = '';
-    const subsEl = document.getElementById('pg-subs-list');
-    subsEl.innerHTML = (g.subs||[]).map(s => _pgCardHTML(s, false)).join('') || '<div style="font-size:11px;color:var(--dim)">None yet</div>';
-    document.getElementById('pg-add-sub-btn').style.display = (g.subs||[]).length >= 3 ? 'none' : '';
+    _pgRenderSubsEditor();
   } else {
     subsSec.style.display = 'none';
   }
@@ -7395,32 +7401,142 @@ function _pgAddTicker() {
   const input = document.getElementById('pg-add-ticker');
   const ticker = input.value.trim().toUpperCase();
   if (!ticker) return;
-  const maxS = _pgEditType === 'sub' ? 10 : 25;
-  if (_pgHoldings.length >= maxS) { toast('error', 'Limit reached', `Max ${maxS} stocks for this portfolio type`); return; }
-  if (_pgHoldings.find(h => h.ticker === ticker)) { toast('error', 'Duplicate', `${ticker} is already in this group`); return; }
+  if (_pgHoldings.length >= 25) { toast('error', 'Limit reached', 'Max 25 stocks for parent portfolio'); return; }
+  if (_pgHoldings.find(h => h.ticker === ticker)) { toast('error', 'Duplicate', `${ticker} is already in parent holdings`); return; }
   _pgHoldings.push({ ticker, alloc_pct: null, lot_size: 1, sort_order: _pgHoldings.length });
   input.value = '';
   _pgRefreshHoldingsEditor();
 }
 
+// ── Sub-portfolio inline editors ──────────────────────────────────────────────
+
+function _pgRenderSubsEditor() {
+  const el    = document.getElementById('pg-subs-list');
+  const btn   = document.getElementById('pg-add-sub-btn');
+  if (!el) return;
+  if (btn) btn.style.display = _pgSubs.length >= 3 ? 'none' : '';
+
+  if (!_pgSubs.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--dim);padding:4px">No sub-portfolios yet — click "+ Add Sub" to create one.</div>';
+    return;
+  }
+
+  el.innerHTML = _pgSubs.map((sub, si) => {
+    const mode     = sub.alloc_mode || 'equal';
+    const palette  = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9'];
+    let   totalPct = 0;
+
+    const holdRows = sub.holdings.map((h, ti) => {
+      const pct = mode === 'custom'
+        ? `<input type="number" min="0.1" max="100" step="0.1" value="${h.alloc_pct||''}" placeholder="%"
+             style="width:58px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:10px;text-align:right"
+             oninput="_pgSubUpdateAlloc(${si},${ti},this.value)">`
+        : `<span style="font-size:10px;color:var(--muted)">${(100/sub.holdings.length).toFixed(1)}%</span>`;
+      if (mode === 'custom') totalPct += parseFloat(h.alloc_pct||0);
+      const col = palette[ti % palette.length];
+      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:4px;background:var(--bg);border:1px solid var(--border)">
+        <span style="width:6px;height:6px;border-radius:50%;background:${col};flex-shrink:0"></span>
+        <span style="font-size:11px;font-weight:700;color:var(--fg);flex:1">${h.ticker}</span>
+        <label style="font-size:10px;color:var(--muted)">Lot</label>
+        <input type="number" min="1" value="${h.lot_size||1}"
+          style="width:44px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:10px;text-align:right"
+          oninput="_pgSubUpdateLot(${si},${ti},this.value)">
+        ${pct}
+        <button onclick="_pgSubRemoveTicker(${si},${ti})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 1px">✕</button>
+      </div>`;
+    }).join('');
+
+    const allocTotal = mode === 'custom' && sub.holdings.length
+      ? `<div style="font-size:9px;margin-top:3px;color:${Math.abs(totalPct-100)<0.5?'var(--green)':'var(--red)'}">Total: ${totalPct.toFixed(1)}% ${Math.abs(totalPct-100)<0.5?'✓':'(must = 100%)'}</div>`
+      : '';
+
+    return `<div style="border:1px solid ${sub.color||'#a78bfa'};border-radius:8px;padding:10px 12px;background:var(--surface2)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <input value="${sub.name}" placeholder="Sub-portfolio name" maxlength="50"
+          style="flex:1;min-width:120px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:12px;font-weight:600"
+          oninput="_pgSubs[${si}].name=this.value">
+        <input type="color" value="${sub.color||'#a78bfa'}"
+          style="width:30px;height:28px;border-radius:4px;border:1px solid var(--border);cursor:pointer;padding:1px"
+          oninput="_pgSubs[${si}].color=this.value;_pgRenderSubsEditor()">
+        <label style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="radio" name="pg-sub-alloc-${si}" value="equal" ${mode==='equal'?'checked':''} onchange="_pgSubs[${si}].alloc_mode='equal';_pgRenderSubsEditor()"> Equal
+        </label>
+        <label style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="radio" name="pg-sub-alloc-${si}" value="custom" ${mode==='custom'?'checked':''} onchange="_pgSubs[${si}].alloc_mode='custom';_pgRenderSubsEditor()"> Custom %
+        </label>
+        <span style="font-size:10px;color:var(--muted)">${sub.holdings.length}/10</span>
+        <button onclick="_pgSubRemove(${si})" style="background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.3);border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer">Remove</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;max-height:160px;overflow-y:auto;margin-bottom:6px">
+        ${holdRows || '<div style="font-size:10px;color:var(--dim);padding:4px">No tickers yet</div>'}
+      </div>
+      ${allocTotal}
+      <div style="display:flex;gap:5px;margin-top:6px">
+        <input id="pg-sub-ticker-${si}" type="text" placeholder="Add ticker…" maxlength="8"
+          style="flex:1;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 7px;font-size:11px;text-transform:uppercase"
+          onkeydown="if(event.key==='Enter')_pgSubAddTicker(${si})">
+        <button onclick="_pgSubAddTicker(${si})" style="background:rgba(167,139,250,.15);color:#a78bfa;border:1px solid rgba(167,139,250,.4);border-radius:4px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">Add</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _pgSubAdd() {
+  if (_pgSubs.length >= 3) { toast('error', 'Limit', 'Maximum 3 sub-portfolios per parent'); return; }
+  _pgSubs.push({ id: null, name: `Sub ${_pgSubs.length+1}`, color: '#a78bfa', alloc_mode: 'equal', holdings: [] });
+  _pgRenderSubsEditor();
+}
+
+function _pgSubRemove(si) {
+  _pgSubs.splice(si, 1);
+  _pgRenderSubsEditor();
+}
+
+function _pgSubAddTicker(si) {
+  const input  = document.getElementById(`pg-sub-ticker-${si}`);
+  if (!input) return;
+  const ticker = input.value.trim().toUpperCase();
+  if (!ticker) return;
+  if (_pgSubs[si].holdings.length >= 10) { toast('error', 'Limit', 'Max 10 stocks per sub-portfolio'); return; }
+  if (_pgSubs[si].holdings.find(h => h.ticker === ticker)) { toast('error', 'Duplicate', `${ticker} already in this sub`); return; }
+  _pgSubs[si].holdings.push({ ticker, alloc_pct: null, lot_size: 1, sort_order: _pgSubs[si].holdings.length });
+  input.value = '';
+  _pgRenderSubsEditor();
+}
+
+function _pgSubRemoveTicker(si, ti) { _pgSubs[si].holdings.splice(ti,1); _pgRenderSubsEditor(); }
+function _pgSubUpdateAlloc(si, ti, v) { _pgSubs[si].holdings[ti].alloc_pct = parseFloat(v)||null; _pgRenderSubsEditor(); }
+function _pgSubUpdateLot(si, ti, v)   { _pgSubs[si].holdings[ti].lot_size  = parseInt(v)||1; }
+
 async function _pgSave() {
-  const name  = document.getElementById('pg-name').value.trim();
+  const name = document.getElementById('pg-name').value.trim();
   if (!name) { toast('error', 'Name required', ''); return; }
-  const mode  = _pgGetAllocMode();
+  const mode = _pgGetAllocMode();
+
+  // Validate parent custom allocations
   if (mode === 'custom' && _pgHoldings.length) {
     const total = _pgHoldings.reduce((s,h) => s+(parseFloat(h.alloc_pct)||0), 0);
-    if (Math.abs(total - 100) > 0.5) { toast('error', 'Allocation error', `Custom % must sum to 100 (got ${total.toFixed(1)}%)`); return; }
+    if (Math.abs(total - 100) > 0.5) { toast('error', 'Allocation error', `Parent custom % must sum to 100 (got ${total.toFixed(1)}%)`); return; }
   }
-  const selStrat = document.getElementById('pg-strategy');
-  const stratFid = selStrat.value || null;
-  const stratName = stratFid ? selStrat.options[selStrat.selectedIndex].text.replace(/ \(.*\)$/,'') : null;
-  const color = document.getElementById('pg-color').value;
+  // Validate sub custom allocations
+  for (const [si, sub] of _pgSubs.entries()) {
+    if (!sub.name.trim()) { toast('error', 'Sub name required', `Sub-portfolio ${si+1} needs a name`); return; }
+    if (sub.alloc_mode === 'custom' && sub.holdings.length) {
+      const total = sub.holdings.reduce((s,h) => s+(parseFloat(h.alloc_pct)||0), 0);
+      if (Math.abs(total - 100) > 0.5) { toast('error', 'Sub allocation error', `"${sub.name}" custom % must sum to 100 (got ${total.toFixed(1)}%)`); return; }
+    }
+  }
 
+  const selStrat  = document.getElementById('pg-strategy');
+  const stratFid  = selStrat.value || null;
+  const stratName = stratFid ? selStrat.options[selStrat.selectedIndex].text.replace(/ \(.*\)$/,'') : null;
+  const color     = document.getElementById('pg-color').value;
   const assignedAccounts = [...document.querySelectorAll('#pg-accounts-list input[type=checkbox]:checked')]
     .map(cb => ({ account_label: cb.value, broker: cb.dataset.broker || '' }));
 
   const token = getToken();
   try {
+    // 1. Create or update the parent group
     let group;
     if (_pgEditId) {
       const r = await apiFetch(`/api/portfolio-groups/${_pgEditId}?token=${encodeURIComponent(token)}`, {
@@ -7431,12 +7547,13 @@ async function _pgSave() {
     } else {
       const r = await apiFetch(`/api/portfolio-groups?token=${encodeURIComponent(token)}`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ name, type: _pgEditType, alloc_mode: mode, strategy_family_id: stratFid, strategy_name: stratName, color,
-          max_stocks: _pgEditType === 'sub' ? 10 : 25 }),
+        body: JSON.stringify({ name, type: _pgEditType, alloc_mode: mode, strategy_family_id: stratFid, strategy_name: stratName, color, max_stocks: 25 }),
       });
       group = r.group;
     }
     const gid = group.id || _pgEditId;
+
+    // 2. Save parent holdings + account assignment in parallel
     await Promise.all([
       apiFetch(`/api/portfolio-groups/${gid}/holdings?token=${encodeURIComponent(token)}`, {
         method: 'PUT', headers: {'Content-Type':'application/json'},
@@ -7447,6 +7564,39 @@ async function _pgSave() {
         body: JSON.stringify({ accounts: assignedAccounts }),
       }),
     ]);
+
+    // 3. Save each sub-portfolio (create or update)
+    for (const sub of _pgSubs) {
+      let subId = sub.id;
+      if (!subId) {
+        // Create new sub
+        const r = await apiFetch(`/api/portfolio-groups?token=${encodeURIComponent(token)}`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            name: sub.name, type: 'sub', parent_id: gid,
+            alloc_mode: sub.alloc_mode, color: sub.color, max_stocks: 10,
+          }),
+        });
+        subId = r.group?.id;
+      } else {
+        await apiFetch(`/api/portfolio-groups/${subId}?token=${encodeURIComponent(token)}`, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ name: sub.name, alloc_mode: sub.alloc_mode, color: sub.color }),
+        });
+      }
+      if (subId) {
+        await apiFetch(`/api/portfolio-groups/${subId}/holdings?token=${encodeURIComponent(token)}`, {
+          method: 'PUT', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ holdings: sub.holdings }),
+        });
+        // Subs inherit parent account assignment
+        await apiFetch(`/api/portfolio-groups/${subId}/accounts?token=${encodeURIComponent(token)}`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ accounts: assignedAccounts }),
+        });
+      }
+    }
+
     document.getElementById('pg-modal').style.display = 'none';
     toast('success', 'Saved', `Portfolio "${name}" saved`);
     loadPortfolioGroups();
@@ -7465,10 +7615,6 @@ async function _pgDelete() {
   } catch(e) { toast('error', 'Delete failed', e.message); }
 }
 
-function _pgCreateSub() {
-  document.getElementById('pg-modal').style.display = 'none';
-  setTimeout(() => _pgCreate('sub', _pgEditId), 150);
-}
 
 async function loadConnectorHealth() {
   const grid  = document.getElementById('md-connectors-grid');
