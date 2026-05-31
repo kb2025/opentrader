@@ -9577,40 +9577,75 @@ function _pgBrokerBar(groups) {
   const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9',
                    '#4ade80','#f472b6','#818cf8','#a3e635','#38bdf8','#fb7185','#c084fc','#fdba74'];
 
-  function _makeBar(holdings, paletteOffset) {
-    const total = holdings.reduce((s,h) => s+(h.effective_pct||0),0) || 100;
-    return holdings.map((h,i) => {
-      const pct = ((h.effective_pct||0)/total*100).toFixed(2);
-      const col = palette[(paletteOffset + i) % palette.length];
-      return `<div style="flex:${pct};background:${col};min-width:2px;position:relative" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%">
-        <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;overflow:hidden;text-overflow:clip;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?h.ticker:''}</span>
-      </div>`;
-    }).join('');
-  }
-
-  // Render parent groups only; sub-portfolios are nested beneath their parent
+  // Render parent groups only; subs appear as blocks within the parent bar then break down beneath
   const parents = groups.filter(g => g.type !== 'sub');
   const rows = parents.map(g => {
-    const color    = g.color || '#60a5fa';
-    const holdings = g.holdings || [];
+    const color      = g.color || '#60a5fa';
+    const holdings   = g.holdings || [];
     const activeSubs = (g.subs || []).filter(s => s.holdings && s.holdings.length);
     if (!holdings.length && !activeSubs.length) return '';
+
+    // ── Size each slot (direct holding or sub block) ──────────────────────────
+    // Use investment_amount if set; otherwise equal slots (1 per holding, 1 per sub)
+    const parentInv  = parseFloat(g.investment_amount || 0);
+    const totalSubInv = activeSubs.reduce((s, sub) => s + parseFloat(sub.investment_amount || 0), 0);
+
+    const slots = [];   // [{type:'holding'|'sub', ref, flex, col}]
+
+    if (parentInv > 0 && totalSubInv > 0) {
+      // Investment-amount weighted
+      const directFlex = Math.max(parentInv - totalSubInv, 0);
+      const hTotal = holdings.reduce((s, h) => s + (h.effective_pct || 0), 0) || 100;
+      holdings.forEach((h, i) => {
+        slots.push({ type: 'holding', ref: h, flex: directFlex * ((h.effective_pct || 0) / hTotal), col: palette[i % palette.length] });
+      });
+      activeSubs.forEach(sub => {
+        slots.push({ type: 'sub', ref: sub, flex: parseFloat(sub.investment_amount || 0), col: sub.color || '#a78bfa' });
+      });
+    } else {
+      // Equal slots
+      holdings.forEach((h, i) => slots.push({ type: 'holding', ref: h, flex: 1, col: palette[i % palette.length] }));
+      activeSubs.forEach(sub => slots.push({ type: 'sub', ref: sub, flex: 1, col: sub.color || '#a78bfa' }));
+    }
+
+    const totalFlex = slots.reduce((s, sl) => s + sl.flex, 0) || 1;
+
+    // ── Combined parent bar ───────────────────────────────────────────────────
+    const parentBarSegs = slots.map(sl => {
+      const pct = (sl.flex / totalFlex * 100).toFixed(1);
+      if (sl.type === 'holding') {
+        return `<div style="flex:${sl.flex};background:${sl.col};min-width:2px;position:relative" title="${sl.ref.ticker}: ${pct}%">
+          <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;overflow:hidden;text-overflow:clip;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?sl.ref.ticker:''}</span>
+        </div>`;
+      } else {
+        const abbr = (sl.ref.name || '').split(' ').map(w => w[0]).join('').toUpperCase() || '?';
+        return `<div style="flex:${sl.flex};background:${sl.col}44;border-left:2px solid ${sl.col};min-width:2px;position:relative" title="${sl.ref.name}: ${pct}%">
+          <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:${sl.col};overflow:hidden;text-overflow:clip;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?abbr:''}</span>
+        </div>`;
+      }
+    }).join('');
+
+    // ── Sub breakdown bars ────────────────────────────────────────────────────
+    const subRows = activeSubs.map(s => {
+      const sColor = s.color || '#a78bfa';
+      const sHoldings = s.holdings || [];
+      const sTotal = sHoldings.reduce((t, h) => t + (h.effective_pct || 0), 0) || 100;
+      const sSegs = sHoldings.map((h, i) => {
+        const pct = ((h.effective_pct || 0) / sTotal * 100).toFixed(2);
+        const col = palette[(holdings.length + i) % palette.length];
+        return `<div style="flex:${pct};background:${col};min-width:2px;position:relative" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%">
+          <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;overflow:hidden;text-overflow:clip;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?h.ticker:''}</span>
+        </div>`;
+      }).join('');
+      return `<div style="margin-top:4px;padding-left:12px;border-left:2px solid ${sColor}88">
+        <div style="font-size:8px;color:var(--dim);margin-bottom:2px">${s.name}</div>
+        <div style="display:flex;height:16px;border-radius:3px;overflow:hidden;border:1px solid var(--border)">${sSegs}</div>
+      </div>`;
+    }).join('');
 
     const stratTag = g.strategy_name
       ? `<span style="font-size:9px;color:var(--muted);margin-left:4px">${g.strategy_name}</span>` : '';
     const totalStocks = holdings.length + activeSubs.reduce((s, sub) => s + sub.holdings.length, 0);
-
-    const parentBar = holdings.length
-      ? `<div style="display:flex;height:20px;border-radius:4px;overflow:hidden;border:1px solid var(--border);margin-bottom:2px">${_makeBar(holdings, 0)}</div>`
-      : '';
-
-    const subRows = activeSubs.map(s => {
-      const sColor = s.color || '#a78bfa';
-      return `<div style="margin-top:4px;padding-left:12px;border-left:2px solid ${sColor}55">
-        <div style="font-size:8px;color:var(--dim);margin-bottom:2px">${s.name}</div>
-        <div style="display:flex;height:16px;border-radius:3px;overflow:hidden;border:1px solid var(--border)">${_makeBar(s.holdings, holdings.length)}</div>
-      </div>`;
-    }).join('');
 
     return `<div style="margin-top:6px">
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
@@ -9619,7 +9654,7 @@ function _pgBrokerBar(groups) {
         ${stratTag}
         <span style="font-size:9px;color:var(--dim);margin-left:auto">${totalStocks} stocks</span>
       </div>
-      ${parentBar}
+      <div style="display:flex;height:20px;border-radius:4px;overflow:hidden;border:1px solid var(--border)">${parentBarSegs}</div>
       ${subRows}
     </div>`;
   }).filter(Boolean).join('');

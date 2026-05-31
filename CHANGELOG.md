@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.78] - 2026-05-31
+
+### Changed
+- **Portfolio Groups broker bar**: parent bar now shows direct holdings and sub-portfolio(s) as proportional blocks in a single combined bar; sub block uses sub's color with left border and abbreviated name; sizing uses investment_amount if set, otherwise equal slots (1 per direct holding, 1 per sub); sub breakdown bar shown beneath with indented border
+
 ## [4.0.77] - 2026-05-31
 
 ### Changed
