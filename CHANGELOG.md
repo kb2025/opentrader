@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.71] - 2026-05-31
+
+### Fixed
+- **Portfolio group Groups row never appearing below Sectors**: `loadUnifiedPositions` referenced an undeclared `token` variable when fetching portfolio groups — the ReferenceError was caught silently, leaving `portfolioGroups=[]` always; fixed by using `apiFetch('/api/portfolio-groups')` directly (auto-injects token)
+- **Account card positions hidden after toggle**: collapse state from ▲/▼ button now persisted in `localStorage` per account key; restored on every re-render so cards do not unexpectedly show empty
+
 ## [4.0.70] - 2026-05-31
 
 ### Fixed

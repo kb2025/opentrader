@@ -9835,6 +9835,14 @@ function _isEquityPosition(p) {
   return true;
 }
 
+function _toggleUnifiedCard(btn, acctKey) {
+  const body = btn.closest('.card').querySelector('.unified-card-body');
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  btn.textContent   = collapsed ? '▲' : '▼';
+  try { localStorage.setItem('ot_card_collapsed_' + acctKey, collapsed ? '0' : '1'); } catch(_) {}
+}
+
 function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap, portfolioGroups) {
   journalMap = journalMap || {};
   sectorMap = sectorMap || {};
@@ -9985,7 +9993,7 @@ function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap, por
       </button>`
     : '';
 
-  return `<div class="card" style="margin-bottom:16px;border-left:3px solid ${bColor}">
+  return `<div class="card" data-acct-key="${acctKey}" style="margin-bottom:16px;border-left:3px solid ${bColor}">
     <div class="card-header" style="padding:10px 16px">
       <div style="display:flex;align-items:center;gap:10px;min-width:0">
         <span style="font-weight:700;font-size:13px" title="${acct.label}">${acct.display_name || acct.label}</span>
@@ -9999,7 +10007,7 @@ function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap, por
         <span><span style="color:var(--muted)">Cash</span> <strong>${cash}</strong></span>
         <span><span style="color:var(--muted)">Buying Power</span> <strong>${bp}</strong></span>
         <button class="btn btn-ghost btn-xs" style="font-size:10px;padding:2px 6px;margin-left:6px;color:var(--muted)"
-          onclick="this.closest('.card').querySelector('.unified-card-body').style.display=this.closest('.card').querySelector('.unified-card-body').style.display==='none'?'':'none';this.textContent=this.textContent==='▲'?'▼':'▲'">▲</button>
+          data-collapse-btn onclick="_toggleUnifiedCard(this,'${acctKey}')">▲</button>
       </div>
     </div>
     ${heatmap}
@@ -10283,7 +10291,7 @@ async function loadUnifiedPositions(force = false) {
     // Fetch portfolio groups (non-blocking — failure just means no bar shown)
     let portfolioGroups = [];
     try {
-      const pgd = await apiFetch(`/api/portfolio-groups?token=${encodeURIComponent(token)}`);
+      const pgd = await apiFetch('/api/portfolio-groups');
       portfolioGroups = pgd.groups || [];
       // Flatten to include subs
       const flat = [];
@@ -10299,6 +10307,18 @@ async function loadUnifiedPositions(force = false) {
 
     // Render tables (always show all accounts regardless of paper filter)
     container.innerHTML = accounts.map(a => _renderUnifiedCard(a, signalMap, sentData, sectorMap, journalMaps[a.label] || {}, portfolioGroups)).join('');
+    // Restore any previously collapsed card bodies
+    try {
+      container.querySelectorAll('[data-acct-key]').forEach(card => {
+        const k = card.dataset.acctKey;
+        if (localStorage.getItem('ot_card_collapsed_' + k) === '1') {
+          const body = card.querySelector('.unified-card-body');
+          if (body) body.style.display = 'none';
+          const btn = card.querySelector('[data-collapse-btn]');
+          if (btn) btn.textContent = '▼';
+        }
+      });
+    } catch(_) {}
     if (refreshBtn) refreshBtn.disabled = false;
 
   } catch(e) {
