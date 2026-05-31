@@ -9779,18 +9779,22 @@ function _renderAccountHeatmap(positions, acctKey, acctGroups) {
     onmouseleave="_hmScrollStop('${elemId}');this.style.opacity='.55'">&#9670;</span>`;
   const tkElem = `hm-ticker-scroll-${acctKey}`;
   const scElem = `hm-sector-scroll-${acctKey}`;
-  const groupsRow = acctGroups.length ? `
-    <div style="display:flex;align-items:center;gap:4px;min-width:0;margin-top:5px">
-      <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Groups</span>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;padding-left:6px">
-        ${acctGroups.map(g => {
-          const col = g.color || '#60a5fa';
-          const typeTag = g.type === 'sub' ? ' <span style="opacity:.55;font-size:8px">(sub)</span>' : '';
-          return `<span style="font-size:9px;font-weight:600;padding:2px 8px;border-radius:4px;background:${col}22;border:1px solid ${col}55;color:${col};cursor:pointer;white-space:nowrap"
-            onclick="_pgRebalance('${g.id}')" title="Rebalance ${g.name}">${g.name}${typeTag}</span>`;
-        }).join('')}
-      </div>
-    </div>` : '';
+  let groupsRow = '';
+  try {
+    if (acctGroups.length) {
+      const chips = acctGroups.map(g => {
+        const col     = g.color || '#60a5fa';
+        const typeTag = g.type === 'sub' ? ' <span style="opacity:.55;font-size:8px">(sub)</span>' : '';
+        const safeName = (g.name || '').replace(/"/g, '&quot;');
+        return `<span style="font-size:9px;font-weight:600;padding:2px 8px;border-radius:4px;background:${col}22;border:1px solid ${col}55;color:${col};cursor:pointer;white-space:nowrap"
+          onclick="_pgRebalance('${g.id}')" title="Rebalance ${safeName}">${safeName}${typeTag}</span>`;
+      }).join('');
+      groupsRow = `<div style="display:flex;align-items:center;gap:4px;min-width:0;margin-top:5px">
+        <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Groups</span>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;padding-left:6px">${chips}</div>
+      </div>`;
+    }
+  } catch(_) {}
 
   return `<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
     <div style="display:flex;align-items:center;gap:4px;margin-bottom:5px;min-width:0">
@@ -9831,10 +9835,12 @@ function _isEquityPosition(p) {
 function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap, portfolioGroups) {
   journalMap = journalMap || {};
   sectorMap = sectorMap || {};
-  portfolioGroups = portfolioGroups || [];
-  const acctGroups = portfolioGroups.filter(g =>
-    (g.accounts || []).some(a => a.account_label === acct.label)
-  );
+  let acctGroups = [];
+  try {
+    acctGroups = (portfolioGroups || []).filter(g =>
+      (g.accounts || []).some(a => a.account_label === (acct && acct.label))
+    );
+  } catch(_) {}
   const brokerColors = { tradier:'#1da462', alpaca:'#ffa500', webull:'#e82f3e' };
   const bal     = acct.balances || {};
   const broker  = acct.broker || '';

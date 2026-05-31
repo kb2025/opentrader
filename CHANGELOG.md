@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.68] - 2026-05-31
+
+### Fixed
+- **Webull account card blank on equity dashboard**: portfolio group filter and groups-row chip rendering in account heatmap now wrapped in try-catch so any JS error degrades gracefully instead of breaking the whole card; group names HTML-escaped in title attributes
+
 ## [4.0.67] - 2026-05-31
 
 ### Added
