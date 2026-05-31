@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.55] - 2026-05-31
+
+### Added
+- **Portfolio Groups**: full CRUD system for grouping stocks into custom portfolios — parent portfolios (max 25 stocks, max 3 subs) and sub-portfolios (max 10 stocks each); equal or custom % allocation per holding; lot size per ticker; optional strategy assignment from strategies.json; multi-broker/account assignment; rename at any time; color-coded for visual identification
+- **Portfolio Groups page**: new nav item under Equity with full management UI — group cards showing allocation bars, ticker chips, strategy and account badges; create/edit modal with holdings editor, allocation mode toggle, strategy picker, account checkboxes, and real-time allocation total validation
+- **Horizontal allocation bar on broker risk cards**: each broker card on the Equity Dashboard now shows a "Portfolio Groups" section below the sector donut — one labeled segmented bar per assigned group, each segment colored by ticker with label and allocation %; strategy name shown as sub-label; parent and sub groups displayed separately
+- **9 new API endpoints**: `GET/POST /api/portfolio-groups`, `PATCH/DELETE /api/portfolio-groups/{id}`, `PUT /api/portfolio-groups/{id}/holdings`, `POST /api/portfolio-groups/{id}/accounts`, `GET /api/portfolio-groups/strategies`; DB: `portfolio_groups`, `portfolio_group_holdings`, `portfolio_group_accounts` tables
+
 ## [4.0.54] - 2026-05-31
 
 ### Added

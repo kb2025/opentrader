@@ -3702,6 +3702,277 @@ async def resume_system(token: str = ""):
     return {"resumed": True}
 
 
+# ── Portfolio Groups ──────────────────────────────────────────────────────────
+
+async def _pg_load_full(pool, group_id: str = None) -> list[dict]:
+    """Load groups with their holdings and account assignments."""
+    q = "SELECT * FROM portfolio_groups"
+    args = []
+    if group_id:
+        q += " WHERE id = $1"
+        args.append(group_id)
+    q += " ORDER BY type DESC, name"   # parents first
+    rows = await pool.fetch(q, *args)
+
+    if not rows:
+        return []
+
+    ids = [str(r["id"]) for r in rows]
+    holdings_rows = await pool.fetch(
+        "SELECT * FROM portfolio_group_holdings WHERE group_id = ANY($1::uuid[]) ORDER BY sort_order, ticker",
+        ids,
+    )
+    accounts_rows = await pool.fetch(
+        "SELECT * FROM portfolio_group_accounts WHERE group_id = ANY($1::uuid[])",
+        ids,
+    )
+
+    hold_map: dict = {}
+    for h in holdings_rows:
+        gid = str(h["group_id"])
+        hold_map.setdefault(gid, []).append({
+            "id": str(h["id"]), "ticker": h["ticker"],
+            "alloc_pct": float(h["alloc_pct"]) if h["alloc_pct"] else None,
+            "lot_size": h["lot_size"], "sort_order": h["sort_order"],
+        })
+
+    acct_map: dict = {}
+    for a in accounts_rows:
+        gid = str(a["group_id"])
+        acct_map.setdefault(gid, []).append({
+            "account_label": a["account_label"], "broker": a["broker"],
+        })
+
+    result = []
+    for r in rows:
+        gid = str(r["id"])
+        holdings = hold_map.get(gid, [])
+        # Compute effective allocation percentages
+        if r["alloc_mode"] == "equal" and holdings:
+            eq = round(100.0 / len(holdings), 4)
+            for h in holdings:
+                h["effective_pct"] = eq
+        else:
+            for h in holdings:
+                h["effective_pct"] = h["alloc_pct"]
+        result.append({
+            "id":                 gid,
+            "name":               r["name"],
+            "type":               r["type"],
+            "parent_id":          str(r["parent_id"]) if r["parent_id"] else None,
+            "max_stocks":         r["max_stocks"],
+            "alloc_mode":         r["alloc_mode"],
+            "strategy_family_id": r["strategy_family_id"],
+            "strategy_name":      r["strategy_name"],
+            "color":              r["color"],
+            "created_at":         r["created_at"].isoformat(),
+            "updated_at":         r["updated_at"].isoformat(),
+            "holdings":           holdings,
+            "accounts":           acct_map.get(gid, []),
+        })
+    return result
+
+
+@app.get("/api/portfolio-groups")
+async def list_portfolio_groups(token: str = ""):
+    """List all portfolio groups with holdings and account assignments."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        return {"error": "DB unavailable", "groups": []}
+    groups = await _pg_load_full(pool)
+    # Nest subs under parents
+    parent_map = {g["id"]: g for g in groups if g["type"] == "parent"}
+    for g in groups:
+        if g["type"] == "parent":
+            g["subs"] = []
+    for g in groups:
+        if g["type"] == "sub" and g["parent_id"] and g["parent_id"] in parent_map:
+            parent_map[g["parent_id"]]["subs"].append(g)
+    return {"groups": [g for g in groups if g["type"] == "parent"]}
+
+
+@app.post("/api/portfolio-groups")
+async def create_portfolio_group(body: dict, token: str = ""):
+    """Create a portfolio group (parent or sub)."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="DB unavailable")
+
+    grp_type   = str(body.get("type", "parent"))
+    parent_id  = body.get("parent_id") or None
+    max_stocks = int(body.get("max_stocks", 25 if grp_type == "parent" else 10))
+    max_stocks = min(max_stocks, 25 if grp_type == "parent" else 10)
+
+    if grp_type == "sub" and parent_id:
+        sub_count = await pool.fetchval(
+            "SELECT COUNT(*) FROM portfolio_groups WHERE parent_id=$1::uuid AND type='sub'",
+            parent_id,
+        )
+        if sub_count >= 3:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="Maximum 3 sub-portfolios per parent")
+
+    row = await pool.fetchrow(
+        """INSERT INTO portfolio_groups
+               (name, type, parent_id, max_stocks, alloc_mode, strategy_family_id, strategy_name, color)
+           VALUES ($1,$2,$3::uuid,$4,$5,$6,$7,$8)
+           RETURNING id""",
+        str(body.get("name", "New Portfolio")),
+        grp_type,
+        parent_id,
+        max_stocks,
+        str(body.get("alloc_mode", "equal")),
+        body.get("strategy_family_id") or None,
+        body.get("strategy_name")      or None,
+        str(body.get("color", "#60a5fa")),
+    )
+    groups = await _pg_load_full(pool, str(row["id"]))
+    return {"group": groups[0] if groups else {}}
+
+
+@app.patch("/api/portfolio-groups/{group_id}")
+async def update_portfolio_group(group_id: str, body: dict, token: str = ""):
+    """Rename or update a portfolio group's settings."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    fields, vals, idx = [], [], 1
+    for field in ("name", "alloc_mode", "strategy_family_id", "strategy_name", "color"):
+        if field in body:
+            fields.append(f"{field}=${idx}")
+            vals.append(body[field])
+            idx += 1
+    if not fields:
+        return {"ok": True}
+    vals.append(group_id)
+    await pool.execute(
+        f"UPDATE portfolio_groups SET {', '.join(fields)}, updated_at=NOW() WHERE id=${idx}::uuid",
+        *vals,
+    )
+    groups = await _pg_load_full(pool, group_id)
+    return {"group": groups[0] if groups else {}}
+
+
+@app.delete("/api/portfolio-groups/{group_id}")
+async def delete_portfolio_group(group_id: str, token: str = ""):
+    """Delete a portfolio group (cascades to holdings and accounts)."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    await pool.execute("DELETE FROM portfolio_groups WHERE id=$1::uuid", group_id)
+    return {"deleted": True}
+
+
+@app.put("/api/portfolio-groups/{group_id}/holdings")
+async def replace_holdings(group_id: str, body: dict, token: str = ""):
+    """Replace all holdings for a group.
+    Body: {holdings: [{ticker, alloc_pct?, lot_size?}]}
+    """
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="DB unavailable")
+
+    grp = await pool.fetchrow(
+        "SELECT max_stocks, alloc_mode FROM portfolio_groups WHERE id=$1::uuid", group_id
+    )
+    if not grp:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    holdings = body.get("holdings", [])[:grp["max_stocks"]]
+
+    # Validate custom allocations sum to 100
+    if grp["alloc_mode"] == "custom" and holdings:
+        total = sum(float(h.get("alloc_pct") or 0) for h in holdings)
+        if holdings and abs(total - 100.0) > 0.5:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400,
+                                detail=f"Custom allocations must sum to 100% (got {total:.1f}%)")
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM portfolio_group_holdings WHERE group_id=$1::uuid", group_id
+        )
+        for i, h in enumerate(holdings):
+            ticker = str(h.get("ticker", "")).upper().strip()
+            if not ticker:
+                continue
+            await conn.execute(
+                """INSERT INTO portfolio_group_holdings
+                       (group_id, ticker, alloc_pct, lot_size, sort_order)
+                   VALUES ($1::uuid,$2,$3,$4,$5)
+                   ON CONFLICT (group_id, ticker) DO UPDATE SET
+                       alloc_pct=$3, lot_size=$4, sort_order=$5""",
+                group_id, ticker,
+                float(h["alloc_pct"]) if h.get("alloc_pct") else None,
+                int(h.get("lot_size") or 1),
+                i,
+            )
+    groups = await _pg_load_full(pool, group_id)
+    return {"group": groups[0] if groups else {}}
+
+
+@app.post("/api/portfolio-groups/{group_id}/accounts")
+async def assign_accounts(group_id: str, body: dict, token: str = ""):
+    """Assign broker accounts to a portfolio group.
+    Body: {accounts: [{account_label, broker}]}
+    """
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    accounts = body.get("accounts", [])
+    await pool.execute(
+        "DELETE FROM portfolio_group_accounts WHERE group_id=$1::uuid", group_id
+    )
+    for a in accounts:
+        label = str(a.get("account_label", "")).strip()
+        if label:
+            await pool.execute(
+                """INSERT INTO portfolio_group_accounts (group_id, account_label, broker)
+                   VALUES ($1::uuid,$2,$3)
+                   ON CONFLICT DO NOTHING""",
+                group_id, label, str(a.get("broker", "")),
+            )
+    groups = await _pg_load_full(pool, group_id)
+    return {"group": groups[0] if groups else {}}
+
+
+@app.get("/api/portfolio-groups/strategies")
+async def list_strategies_for_groups(token: str = ""):
+    """Return available strategies for portfolio group assignment."""
+    check_token(token)
+    import json as _json
+    strat_path = "/app/config/strategies.json"
+    try:
+        with open(strat_path) as f:
+            strats = _json.load(f)
+        return {
+            "strategies": [
+                {
+                    "family_id": s.get("family_id", ""),
+                    "name":      s.get("name", ""),
+                    "asset":     s.get("asset", ""),
+                    "status":    s.get("status", ""),
+                }
+                for s in strats
+                if s.get("status") == "active"
+            ]
+        }
+    except Exception as e:
+        return {"strategies": [], "error": str(e)}
+
+
 @app.get("/api/risk-clusters/latest")
 async def get_risk_clusters_latest(token: str = ""):
     """Return the most recent cluster assignments for all tickers."""

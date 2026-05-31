@@ -314,6 +314,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:var(--green)"></span>
         Equity Dividend Income
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-portfolio-groups')" data-page="page-portfolio-groups">
+        <span class="nav-dot" style="background:#f59e0b"></span>
+        Portfolio Groups
+      </div>
     </div>
     <div class="nav-group" data-group="options">
       <div class="nav-label">Options</div>
@@ -2139,6 +2143,121 @@ select option{background:var(--surface2)}
     <!-- ════════════════════════════════════════
          PAGE: Broker
     ════════════════════════════════════════ -->
+    <!-- ════════════════════════════════════════
+         PAGE: Portfolio Groups
+    ════════════════════════════════════════ -->
+    <div class="page" id="page-portfolio-groups">
+
+      <!-- Header bar -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--fg)">Portfolio Groups</div>
+          <div style="font-size:11px;color:var(--muted)">Group stocks into custom portfolios · assign strategies · link broker accounts</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button onclick="_pgCreate('parent')" style="background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.4);border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">+ New Parent Portfolio</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadPortfolioGroups()">↻ Refresh</button>
+        </div>
+      </div>
+
+      <!-- Groups list -->
+      <div id="pg-list">
+        <div class="empty-state">Loading…</div>
+      </div>
+
+    </div>
+
+    <!-- Portfolio Group Edit Modal -->
+    <div id="pg-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;overflow-y:auto;padding:40px 20px">
+      <div style="max-width:680px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <div id="pg-modal-title" style="font-size:14px;font-weight:700;color:var(--fg)">Portfolio Group</div>
+          <button onclick="document.getElementById('pg-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+          <!-- Name + Color row -->
+          <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end">
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Portfolio Name</label>
+              <input id="pg-name" type="text" maxlength="60" placeholder="e.g. Core Growth"
+                style="width:100%;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px;box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Color</label>
+              <input id="pg-color" type="color" value="#60a5fa" style="width:44px;height:36px;border-radius:6px;border:1px solid var(--border);cursor:pointer;background:none;padding:2px">
+            </div>
+          </div>
+
+          <!-- Type / limits info -->
+          <div id="pg-type-info" style="font-size:11px;color:var(--muted);padding:8px 12px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)"></div>
+
+          <!-- Allocation mode -->
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">Allocation Mode</label>
+            <div style="display:flex;gap:8px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                <input type="radio" name="pg-alloc" value="equal" checked> Equal distribution
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                <input type="radio" name="pg-alloc" value="custom"> Custom %
+              </label>
+            </div>
+          </div>
+
+          <!-- Strategy picker -->
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Trading Strategy (optional)</label>
+            <select id="pg-strategy" style="width:100%;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px">
+              <option value="">— No strategy assigned —</option>
+            </select>
+          </div>
+
+          <!-- Account assignment -->
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">Broker / Account Assignment</label>
+            <div id="pg-accounts-list" style="display:flex;flex-direction:column;gap:4px;max-height:140px;overflow-y:auto;padding:4px;border:1px solid var(--border);border-radius:6px;background:var(--surface2)">
+              <div style="font-size:11px;color:var(--dim);padding:6px">Loading accounts…</div>
+            </div>
+          </div>
+
+          <!-- Holdings editor -->
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <label style="font-size:11px;color:var(--muted)">Holdings <span id="pg-holdings-count" style="color:var(--muted)"></span></label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input id="pg-add-ticker" type="text" placeholder="Ticker…" maxlength="8"
+                  style="width:80px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:11px;text-transform:uppercase"
+                  onkeydown="if(event.key==='Enter')_pgAddTicker()">
+                <button onclick="_pgAddTicker()" style="background:rgba(96,165,250,.15);color:#60a5fa;border:1px solid rgba(96,165,250,.4);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">Add</button>
+              </div>
+            </div>
+            <div id="pg-holdings-editor" style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto">
+              <div style="font-size:11px;color:var(--dim);padding:8px">No holdings yet — add tickers above.</div>
+            </div>
+            <div id="pg-alloc-total" style="font-size:10px;margin-top:4px"></div>
+          </div>
+
+          <!-- Sub-portfolios section (parent only) -->
+          <div id="pg-subs-section" style="display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <label style="font-size:11px;color:var(--muted)">Sub-Portfolios <span style="color:var(--dim)">(max 3, up to 10 stocks each)</span></label>
+              <button id="pg-add-sub-btn" onclick="_pgCreateSub()" style="background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.4);border-radius:5px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer">+ Add Sub</button>
+            </div>
+            <div id="pg-subs-list" style="display:flex;flex-direction:column;gap:6px"></div>
+          </div>
+
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+          <button id="pg-delete-btn" onclick="_pgDelete()" style="background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer;display:none">Delete</button>
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <button onclick="document.getElementById('pg-modal').style.display='none'" style="background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="_pgSave()" style="background:#f59e0b;color:#000;border:none;border-radius:6px;padding:7px 20px;font-size:12px;font-weight:700;cursor:pointer">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="page" id="page-trading-broker">
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:14px 18px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
         <div style="flex:1">
@@ -5508,6 +5627,7 @@ const PAGE_TITLES = {
   'page-trading-trades':     'Equity Trades',
   'page-trading-broker':     'Broker Configuration',
   'page-trading-dividends':  'Equity Dividend Income',
+  'page-portfolio-groups':   'Portfolio Groups',
   'page-trading-sectormap':  'Sector Map',
   'page-trading-alerts':     'Price Alerts',
   'page-trading-options':    'Options Dashboard',
@@ -5660,6 +5780,7 @@ function navigate(pageId) {
     case 'page-trading-trades':     loadTradesPage();    break;
     case 'page-trading-broker':     loadBrokerPage();       break;
     case 'page-trading-dividends':  loadDividendPage();     break;
+    case 'page-portfolio-groups':   loadPortfolioGroups();  break;
     case 'page-trading-sectormap':  /* loaded by _smNavSelect */ break;
     case 'page-trading-alerts':     loadAlertsPage(); break;
     case 'page-trading-options':    loadOptionsPositions(); loadOptionsGreeksPanel(); loadOptionsPerformancePanel(); loadOptionsExpiryCalendar(); loadOptionsFlow(); break;
@@ -7037,6 +7158,316 @@ async function _riskClusterRun() {
     await apiFetch(`/api/risk-clusters/run?token=${encodeURIComponent(token)}`, { method: 'POST' });
     toast('success', 'Clustering Triggered', 'Risk clustering job queued — results will appear in ~2 min once complete.');
   } catch(e) { toast('error', 'Error', e.message); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Portfolio Groups
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _pgGroups   = [];
+let _pgEditId   = null;   // null = new, string = edit existing
+let _pgEditType = 'parent';
+let _pgHoldings = [];     // live edit state
+let _pgAccounts = [];     // all available accounts
+let _pgStrategies = [];
+
+async function loadPortfolioGroups() {
+  const el = document.getElementById('pg-list');
+  if (!el) return;
+  el.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const token = getToken();
+    const [gd, sd] = await Promise.all([
+      apiFetch(`/api/portfolio-groups?token=${encodeURIComponent(token)}`),
+      apiFetch(`/api/portfolio-groups/strategies?token=${encodeURIComponent(token)}`),
+    ]);
+    _pgGroups    = gd.groups || [];
+    _pgStrategies = sd.strategies || [];
+    _pgRenderList(el);
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state" style="color:var(--red)">Error: ${e.message}</div>`;
+  }
+}
+
+function _pgRenderList(el) {
+  if (!_pgGroups.length) {
+    el.innerHTML = `<div class="empty-state" style="padding:40px">
+      No portfolio groups yet.<br>
+      <button onclick="_pgCreate('parent')" style="margin-top:12px;background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.4);border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">+ Create your first portfolio</button>
+    </div>`;
+    return;
+  }
+  el.innerHTML = _pgGroups.map(g => _pgCardHTML(g, true)).join('');
+}
+
+function _pgCardHTML(g, showSubs) {
+  const c = g.color || '#60a5fa';
+  const allocs = g.holdings.map(h => h.effective_pct || 0);
+  const barHTML = _pgAllocBar(g.holdings, g.color, 'height:14px;border-radius:4px;overflow:hidden;margin-top:6px');
+  const acctChips = (g.accounts||[]).map(a =>
+    `<span style="padding:1px 7px;border-radius:3px;font-size:10px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">${a.account_label}</span>`
+  ).join('');
+  const stratBadge = g.strategy_name
+    ? `<span style="padding:1px 7px;border-radius:3px;font-size:10px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);color:#60a5fa">${g.strategy_name}</span>`
+    : '';
+  const subsHTML = showSubs && g.subs?.length
+    ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">Sub-Portfolios</div>
+        ${g.subs.map(s => _pgCardHTML(s, false)).join('')}
+       </div>`
+    : '';
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${c};border-radius:8px;padding:14px 16px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-size:14px;font-weight:700;color:var(--fg);flex:1">${g.name}</div>
+      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:10px;padding:1px 7px;border-radius:3px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#f59e0b;font-weight:600">${g.type.toUpperCase()}</span>
+        <span style="font-size:10px;color:var(--muted)">${g.holdings.length}/${g.max_stocks} stocks</span>
+        <span style="font-size:10px;color:var(--muted)">${g.alloc_mode === 'equal' ? '⚖ Equal' : '% Custom'}</span>
+        ${stratBadge}
+        ${acctChips}
+        <button onclick="_pgEdit('${g.id}')" style="background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:5px;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer">Edit</button>
+        ${g.type === 'parent' ? `<button onclick="_pgCreate('sub','${g.id}')" style="background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.3);color:#a855f7;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer">+ Sub</button>` : ''}
+      </div>
+    </div>
+    ${g.holdings.length ? barHTML : '<div style="font-size:11px;color:var(--dim);margin-top:6px">No holdings yet</div>'}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+      ${g.holdings.slice(0,20).map(h => {
+        const pct = h.effective_pct ? h.effective_pct.toFixed(1)+'%' : '';
+        return `<span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;background:${c}22;border:1px solid ${c}55;color:${c}">${h.ticker}${pct?'<span style="opacity:.7;font-weight:400;margin-left:2px">'+pct+'</span>':''}</span>`;
+      }).join('')}
+      ${g.holdings.length > 20 ? `<span style="font-size:10px;color:var(--dim)">+${g.holdings.length-20} more</span>` : ''}
+    </div>
+    ${subsHTML}
+  </div>`;
+}
+
+function _pgAllocBar(holdings, color, style) {
+  if (!holdings.length) return '';
+  const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9',
+                   '#4ade80','#f472b6','#818cf8','#a3e635','#38bdf8','#fb7185','#c084fc','#fdba74'];
+  const total = holdings.reduce((s,h) => s+(h.effective_pct||0), 0) || 100;
+  const segs = holdings.map((h,i) => {
+    const pct = ((h.effective_pct||0)/total*100).toFixed(2);
+    const col = palette[i % palette.length];
+    return `<div style="flex:${pct};background:${col};min-width:2px" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%"></div>`;
+  }).join('');
+  return `<div style="display:flex;${style}">${segs}</div>`;
+}
+
+// ── Modal open/save/delete ─────────────────────────────────────────────────
+
+async function _pgCreate(type, parentId) {
+  _pgEditId   = null;
+  _pgEditType = type || 'parent';
+  _pgHoldings = [];
+  await _pgOpenModal({
+    id: null, name: '', type: _pgEditType, parent_id: parentId || null,
+    max_stocks: type === 'sub' ? 10 : 25,
+    alloc_mode: 'equal', strategy_family_id: null, strategy_name: null,
+    color: '#60a5fa', holdings: [], accounts: [], subs: [],
+  });
+}
+
+async function _pgEdit(groupId) {
+  let g = null;
+  const findG = (groups, id) => {
+    for (const grp of groups) {
+      if (grp.id === id) return grp;
+      if (grp.subs) { const f = findG(grp.subs, id); if (f) return f; }
+    }
+    return null;
+  };
+  g = findG(_pgGroups, groupId);
+  if (!g) return;
+  _pgEditId   = groupId;
+  _pgEditType = g.type;
+  _pgHoldings = g.holdings.map(h => ({...h}));
+  await _pgOpenModal(g);
+}
+
+async function _pgOpenModal(g) {
+  // Load accounts for assignment
+  try {
+    const token = getToken();
+    const pos = await apiFetch(`/api/broker/positions?token=${encodeURIComponent(token)}`);
+    _pgAccounts = (pos.accounts || []).map(a => ({ account_label: a.label, broker: a.broker }));
+  } catch(_) { _pgAccounts = []; }
+
+  document.getElementById('pg-modal-title').textContent =
+    _pgEditId ? `Edit — ${g.name}` : (g.type === 'sub' ? 'New Sub-Portfolio' : 'New Parent Portfolio');
+  document.getElementById('pg-name').value  = g.name || '';
+  document.getElementById('pg-color').value = g.color || '#60a5fa';
+
+  const maxS = g.max_stocks || (g.type === 'sub' ? 10 : 25);
+  document.getElementById('pg-type-info').innerHTML =
+    g.type === 'parent'
+      ? `<b>Parent Portfolio</b> — up to ${maxS} stocks, up to 3 sub-portfolios`
+      : `<b>Sub-Portfolio</b> — up to ${maxS} stocks, nested under parent`;
+
+  document.querySelectorAll('input[name="pg-alloc"]').forEach(r => {
+    r.checked = r.value === (g.alloc_mode || 'equal');
+  });
+  document.querySelectorAll('input[name="pg-alloc"]').forEach(r => {
+    r.onchange = () => _pgRefreshHoldingsEditor();
+  });
+
+  // Strategy picker
+  const sel = document.getElementById('pg-strategy');
+  sel.innerHTML = '<option value="">— No strategy —</option>' +
+    _pgStrategies.map(s =>
+      `<option value="${s.family_id}" ${s.family_id === g.strategy_family_id ? 'selected' : ''}>${s.name} (${s.asset})</option>`
+    ).join('');
+
+  // Accounts checkboxes
+  const acEl = document.getElementById('pg-accounts-list');
+  const assigned = new Set((g.accounts||[]).map(a => a.account_label));
+  acEl.innerHTML = _pgAccounts.length
+    ? _pgAccounts.map(a => `<label style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:5px;cursor:pointer;font-size:12px;hover:background:var(--surface)">
+        <input type="checkbox" value="${a.account_label}" data-broker="${a.broker}" ${assigned.has(a.account_label)?'checked':''}>
+        <span>${a.account_label}</span>
+        <span style="font-size:10px;color:var(--muted);margin-left:auto">${a.broker}</span>
+      </label>`).join('')
+    : '<div style="font-size:11px;color:var(--dim);padding:6px">No broker accounts configured</div>';
+
+  // Sub-portfolios section
+  const subsSec = document.getElementById('pg-subs-section');
+  if (g.type === 'parent') {
+    subsSec.style.display = '';
+    const subsEl = document.getElementById('pg-subs-list');
+    subsEl.innerHTML = (g.subs||[]).map(s => _pgCardHTML(s, false)).join('') || '<div style="font-size:11px;color:var(--dim)">None yet</div>';
+    document.getElementById('pg-add-sub-btn').style.display = (g.subs||[]).length >= 3 ? 'none' : '';
+  } else {
+    subsSec.style.display = 'none';
+  }
+
+  document.getElementById('pg-delete-btn').style.display = _pgEditId ? '' : 'none';
+  document.getElementById('pg-modal').style.display = '';
+
+  _pgRefreshHoldingsEditor();
+}
+
+function _pgGetAllocMode() {
+  return document.querySelector('input[name="pg-alloc"]:checked')?.value || 'equal';
+}
+
+function _pgRefreshHoldingsEditor() {
+  const mode = _pgGetAllocMode();
+  const maxS = _pgEditType === 'sub' ? 10 : 25;
+  document.getElementById('pg-holdings-count').textContent = `(${_pgHoldings.length}/${maxS})`;
+  const el = document.getElementById('pg-holdings-editor');
+  if (!_pgHoldings.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--dim);padding:8px">No holdings yet.</div>';
+    document.getElementById('pg-alloc-total').textContent = '';
+    return;
+  }
+  let totalCustom = 0;
+  el.innerHTML = _pgHoldings.map((h,i) => {
+    const pct = mode === 'custom'
+      ? `<input type="number" min="0.1" max="100" step="0.1" value="${h.alloc_pct||''}" placeholder="%"
+           style="width:64px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:11px;text-align:right"
+           oninput="_pgUpdateAlloc(${i},this.value)">`
+      : `<span style="font-size:11px;color:var(--muted)">${(100/_pgHoldings.length).toFixed(1)}%</span>`;
+    if (mode === 'custom') totalCustom += parseFloat(h.alloc_pct||0);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:5px;background:var(--surface2);border:1px solid var(--border)">
+      <span style="font-size:11px;font-weight:700;color:var(--fg);flex:1">${h.ticker}</span>
+      <label style="font-size:11px;color:var(--muted)">Lot:</label>
+      <input type="number" min="1" value="${h.lot_size||1}"
+        style="width:50px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:3px 5px;font-size:11px;text-align:right"
+        oninput="_pgUpdateLot(${i},this.value)">
+      ${pct}
+      <button onclick="_pgRemoveTicker(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 2px">✕</button>
+    </div>`;
+  }).join('');
+  if (mode === 'custom') {
+    const ok = Math.abs(totalCustom - 100) < 0.5;
+    document.getElementById('pg-alloc-total').innerHTML =
+      `<span style="color:${ok?'var(--green)':'var(--red)'}">Total: ${totalCustom.toFixed(1)}% ${ok?'✓':'(must equal 100%)'}</span>`;
+  } else {
+    document.getElementById('pg-alloc-total').textContent = '';
+  }
+}
+
+function _pgUpdateAlloc(i, v) { _pgHoldings[i].alloc_pct = parseFloat(v)||null; _pgRefreshHoldingsEditor(); }
+function _pgUpdateLot(i, v)   { _pgHoldings[i].lot_size  = parseInt(v)  || 1;  }
+function _pgRemoveTicker(i)   { _pgHoldings.splice(i,1); _pgRefreshHoldingsEditor(); }
+
+function _pgAddTicker() {
+  const input = document.getElementById('pg-add-ticker');
+  const ticker = input.value.trim().toUpperCase();
+  if (!ticker) return;
+  const maxS = _pgEditType === 'sub' ? 10 : 25;
+  if (_pgHoldings.length >= maxS) { toast('error', 'Limit reached', `Max ${maxS} stocks for this portfolio type`); return; }
+  if (_pgHoldings.find(h => h.ticker === ticker)) { toast('error', 'Duplicate', `${ticker} is already in this group`); return; }
+  _pgHoldings.push({ ticker, alloc_pct: null, lot_size: 1, sort_order: _pgHoldings.length });
+  input.value = '';
+  _pgRefreshHoldingsEditor();
+}
+
+async function _pgSave() {
+  const name  = document.getElementById('pg-name').value.trim();
+  if (!name) { toast('error', 'Name required', ''); return; }
+  const mode  = _pgGetAllocMode();
+  if (mode === 'custom' && _pgHoldings.length) {
+    const total = _pgHoldings.reduce((s,h) => s+(parseFloat(h.alloc_pct)||0), 0);
+    if (Math.abs(total - 100) > 0.5) { toast('error', 'Allocation error', `Custom % must sum to 100 (got ${total.toFixed(1)}%)`); return; }
+  }
+  const selStrat = document.getElementById('pg-strategy');
+  const stratFid = selStrat.value || null;
+  const stratName = stratFid ? selStrat.options[selStrat.selectedIndex].text.replace(/ \(.*\)$/,'') : null;
+  const color = document.getElementById('pg-color').value;
+
+  const assignedAccounts = [...document.querySelectorAll('#pg-accounts-list input[type=checkbox]:checked')]
+    .map(cb => ({ account_label: cb.value, broker: cb.dataset.broker || '' }));
+
+  const token = getToken();
+  try {
+    let group;
+    if (_pgEditId) {
+      const r = await apiFetch(`/api/portfolio-groups/${_pgEditId}?token=${encodeURIComponent(token)}`, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, alloc_mode: mode, strategy_family_id: stratFid, strategy_name: stratName, color }),
+      });
+      group = r.group;
+    } else {
+      const r = await apiFetch(`/api/portfolio-groups?token=${encodeURIComponent(token)}`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, type: _pgEditType, alloc_mode: mode, strategy_family_id: stratFid, strategy_name: stratName, color,
+          max_stocks: _pgEditType === 'sub' ? 10 : 25 }),
+      });
+      group = r.group;
+    }
+    const gid = group.id || _pgEditId;
+    await Promise.all([
+      apiFetch(`/api/portfolio-groups/${gid}/holdings?token=${encodeURIComponent(token)}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ holdings: _pgHoldings }),
+      }),
+      apiFetch(`/api/portfolio-groups/${gid}/accounts?token=${encodeURIComponent(token)}`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ accounts: assignedAccounts }),
+      }),
+    ]);
+    document.getElementById('pg-modal').style.display = 'none';
+    toast('success', 'Saved', `Portfolio "${name}" saved`);
+    loadPortfolioGroups();
+  } catch(e) { toast('error', 'Save failed', e.message); }
+}
+
+async function _pgDelete() {
+  if (!_pgEditId) return;
+  if (!confirm('Delete this portfolio group and all its holdings?')) return;
+  const token = getToken();
+  try {
+    await apiFetch(`/api/portfolio-groups/${_pgEditId}?token=${encodeURIComponent(token)}`, { method: 'DELETE' });
+    document.getElementById('pg-modal').style.display = 'none';
+    toast('success', 'Deleted', 'Portfolio group removed');
+    loadPortfolioGroups();
+  } catch(e) { toast('error', 'Delete failed', e.message); }
+}
+
+function _pgCreateSub() {
+  document.getElementById('pg-modal').style.display = 'none';
+  setTimeout(() => _pgCreate('sub', _pgEditId), 150);
 }
 
 async function loadConnectorHealth() {
@@ -8773,7 +9204,7 @@ function _posMarketValue(p, sentMap) {
   return Math.abs(parseFloat(p.cost_basis ?? 0));
 }
 
-function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData }) {
+function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData, portfolioGroups }) {
   const brokerColors = { tradier:'#1da462', alpaca:'#ffa500', webull:'#e82f3e' };
   const excludePaper = document.getElementById('risk-exclude-paper')?.checked;
 
@@ -8832,12 +9263,22 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData }) {
   if (!brokerList.length) { brokerEl.innerHTML = ''; return; }
   const cols = Math.min(brokerList.length, 3);
   brokerEl.style.gridTemplateColumns = Array(cols).fill('1fr').join(' ');
+  // Build a map of account_label → broker for group matching
+  const acctBrokerMap = {};
+  for (const a of (accounts||[])) acctBrokerMap[a.label] = a.broker || '';
+
   brokerEl.innerHTML = brokerList.map(broker => {
     const bColor = brokerColors[broker] || 'var(--blue)';
     const tSlices = Object.entries(brokerTicker[broker]).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>({ label:k, value:v, color:_PIE_PALETTE[i%_PIE_PALETTE.length] }));
     const sSlices = Object.entries(brokerSector[broker]).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>({ label:k, value:v, color:_PIE_PALETTE[i%_PIE_PALETTE.length] }));
-    const tTotal = tSlices.reduce((s,x)=>s+x.value,0);
-    const sTotal = sSlices.reduce((s,x)=>s+x.value,0);
+
+    // Portfolio groups assigned to this broker
+    const brokerGroups = (portfolioGroups||[]).filter(g =>
+      (g.accounts||[]).some(a => (a.broker||acctBrokerMap[a.account_label]||'') === broker
+                               || acctBrokerMap[a.account_label] === broker)
+    );
+    const pgBar = brokerGroups.length ? _pgBrokerBar(brokerGroups) : '';
+
     return `<div class="card" style="padding:14px;border-left:3px solid ${bColor}">
       <div style="font-size:11px;font-weight:700;color:var(--fg);margin-bottom:12px;text-transform:capitalize">${broker}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -8850,8 +9291,49 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData }) {
           <div style="display:flex;justify-content:center">${_svgDonut(sSlices,180,38,'bk-sector-'+broker)}</div>
         </div>
       </div>
+      ${pgBar}
     </div>`;
   }).join('');
+}
+
+function _pgBrokerBar(groups) {
+  if (!groups.length) return '';
+  const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9',
+                   '#4ade80','#f472b6','#818cf8','#a3e635','#38bdf8','#fb7185','#c084fc','#fdba74'];
+
+  const rows = groups.map(g => {
+    const color = g.color || '#60a5fa';
+    const holdings = g.holdings || [];
+    if (!holdings.length) return '';
+    const total = holdings.reduce((s,h) => s+(h.effective_pct||0),0) || 100;
+    const segs = holdings.map((h,i) => {
+      const pct = ((h.effective_pct||0)/total*100).toFixed(2);
+      const col  = palette[i % palette.length];
+      return `<div style="flex:${pct};background:${col};min-width:2px;position:relative" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%">
+        <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;overflow:hidden;text-overflow:clip;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?h.ticker:''}</span>
+      </div>`;
+    }).join('');
+    const stratTag = g.strategy_name
+      ? `<span style="font-size:9px;color:var(--muted);margin-left:4px">${g.strategy_name}</span>`
+      : '';
+    const typeTag = g.type === 'sub'
+      ? `<span style="font-size:9px;color:var(--muted);opacity:.7"> (sub)</span>` : '';
+    return `<div style="margin-top:6px">
+      <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>
+        <span style="font-size:10px;font-weight:600;color:var(--fg)">${g.name}${typeTag}</span>
+        ${stratTag}
+        <span style="font-size:9px;color:var(--dim);margin-left:auto">${holdings.length} stocks</span>
+      </div>
+      <div style="display:flex;height:20px;border-radius:4px;overflow:hidden;border:1px solid var(--border)">${segs}</div>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  if (!rows) return '';
+  return `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px">Portfolio Groups</div>
+    ${rows}
+  </div>`;
 }
 
 // Company name lookup (compact display names)
@@ -9439,8 +9921,19 @@ async function loadUnifiedPositions(force = false) {
       } catch { journalMaps[a.label] = {}; }
     }));
 
+    // Fetch portfolio groups (non-blocking — failure just means no bar shown)
+    let portfolioGroups = [];
+    try {
+      const pgd = await apiFetch(`/api/portfolio-groups?token=${encodeURIComponent(token)}`);
+      portfolioGroups = pgd.groups || [];
+      // Flatten to include subs
+      const flat = [];
+      for (const g of portfolioGroups) { flat.push(g); if (g.subs) flat.push(...g.subs); }
+      portfolioGroups = flat;
+    } catch(_) {}
+
     // Store for checkbox re-render
-    _unifiedLastData = { accounts, signalMap, sectorMap, sentData, journalMaps };
+    _unifiedLastData = { accounts, signalMap, sectorMap, sentData, journalMaps, portfolioGroups };
 
     // Build risk charts
     _buildRiskCharts(_unifiedLastData);

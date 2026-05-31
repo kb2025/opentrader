@@ -339,6 +339,46 @@ CREATE TABLE IF NOT EXISTS daily_loss_log (
     UNIQUE (log_date, account_label)
 );
 
+-- ── Portfolio Groups (custom grouped portfolios with allocation and strategy) ──
+CREATE TABLE IF NOT EXISTS portfolio_groups (
+    id                  UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    name                TEXT        NOT NULL,
+    type                TEXT        NOT NULL DEFAULT 'parent' CHECK (type IN ('parent','sub')),
+    parent_id           UUID        REFERENCES portfolio_groups(id) ON DELETE CASCADE,
+    max_stocks          INTEGER     NOT NULL DEFAULT 25,
+    alloc_mode          TEXT        NOT NULL DEFAULT 'equal' CHECK (alloc_mode IN ('equal','custom')),
+    strategy_family_id  TEXT,       -- references strategies.json family_id
+    strategy_name       TEXT,       -- denormalised display name
+    color               TEXT        NOT NULL DEFAULT '#60a5fa',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT pg_sub_limit CHECK (type = 'parent' OR parent_id IS NOT NULL),
+    CONSTRAINT pg_max_check  CHECK (
+        (type = 'parent' AND max_stocks <= 25) OR
+        (type = 'sub'    AND max_stocks <= 10)
+    )
+);
+CREATE INDEX IF NOT EXISTS pg_parent ON portfolio_groups (parent_id) WHERE parent_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS portfolio_group_holdings (
+    id          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    group_id    UUID        NOT NULL REFERENCES portfolio_groups(id) ON DELETE CASCADE,
+    ticker      TEXT        NOT NULL,
+    alloc_pct   NUMERIC     CHECK (alloc_pct > 0 AND alloc_pct <= 100),
+    lot_size    INTEGER     NOT NULL DEFAULT 1 CHECK (lot_size > 0),
+    sort_order  INTEGER     NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (group_id, ticker)
+);
+CREATE INDEX IF NOT EXISTS pgh_group ON portfolio_group_holdings (group_id);
+
+CREATE TABLE IF NOT EXISTS portfolio_group_accounts (
+    group_id        UUID    NOT NULL REFERENCES portfolio_groups(id) ON DELETE CASCADE,
+    account_label   TEXT    NOT NULL,
+    broker          TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (group_id, account_label)
+);
+
 -- ── Shadow Account: Counterfactual P&L Runs ──────────────────────────────────
 -- Each row is one analysis run. trades_detail JSONB holds the full scored list.
 CREATE TABLE IF NOT EXISTS shadow_runs (
