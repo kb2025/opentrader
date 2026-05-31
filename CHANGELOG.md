@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.73] - 2026-05-31
+
+### Changed
+- **Groups row in equity dashboard account heatmap**: changed from clickable pills to a proportional horizontal bar matching the Tickers and Sectors rows; each segment is sized by the sum of market values for that group's holdings held in the account; clicking a segment still opens the Rebalance modal
+
 ## [4.0.72] - 2026-05-31
 
 ### Fixed

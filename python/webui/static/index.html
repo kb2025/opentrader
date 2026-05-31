@@ -9785,16 +9785,27 @@ function _renderAccountHeatmap(positions, acctKey, acctGroups) {
   let groupsRow = '';
   try {
     if (acctGroups.length) {
-      const chips = acctGroups.map(g => {
-        const col     = g.color || '#60a5fa';
-        const typeTag = g.type === 'sub' ? ' <span style="opacity:.55;font-size:8px">(sub)</span>' : '';
-        const safeName = (g.name || '').replace(/"/g, '&quot;');
-        return `<span style="font-size:9px;font-weight:600;padding:2px 8px;border-radius:4px;background:${col}22;border:1px solid ${col}55;color:${col};cursor:pointer;white-space:nowrap"
-          onclick="_pgRebalance('${g.id}')" title="Rebalance ${safeName}">${safeName}${typeTag}</span>`;
+      const pgElem = `hm-pg-scroll-${acctKey}`;
+      const groupBlocks = acctGroups.map(g => {
+        const col   = g.color || '#60a5fa';
+        // Size each group by the sum of market values for its holdings held in this account
+        const groupMv = (g.holdings || []).reduce((s, h) => s + (tickerMv[(h.ticker||'').toUpperCase()] || 0), 0);
+        const flexVal = groupMv || 1;   // fall back to equal weight if no MV data
+        const safeName = (g.name || '').replace(/'/g, "&#39;");
+        const abbr = (g.name || '').split(' ').map(w => w[0]).join('').toUpperCase() || '?';
+        const tip  = `${g.name}${groupMv ? ': ' + _fmtUsd(groupMv) : ''}`.replace(/'/g, "&#39;");
+        return `<div style="flex:${flexVal};min-width:0;height:28px;background:${col}28;border:1px solid ${col}55;border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer"
+          onclick="_pgRebalance('${g.id}')"
+          onmousemove="_pieSliceHover(event,'${tip}','${col}')" onmouseleave="_pieSliceLeave()"
+          onmouseenter="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
+          <span style="font-size:9px;font-weight:600;color:${col};pointer-events:none;padding:0 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${abbr}</span>
+        </div>`;
       }).join('');
       groupsRow = `<div style="display:flex;align-items:center;gap:4px;min-width:0;margin-top:5px">
         <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Groups</span>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;padding-left:6px">${chips}</div>
+        <div style="display:flex;align-items:center;flex:1;min-width:0;padding-left:6px">
+          <div id="${pgElem}" style="display:flex;gap:2px;flex:1;min-width:0;overflow:hidden">${groupBlocks}</div>
+        </div>
       </div>`;
     }
   } catch(_) {}
