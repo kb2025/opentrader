@@ -7393,8 +7393,15 @@ function _pgRefreshHoldingsEditor() {
   }
 }
 
-function _pgUpdateAlloc(i, v) { _pgHoldings[i].alloc_pct = parseFloat(v)||null; _pgRefreshHoldingsEditor(); }
-function _pgUpdateLot(i, v)   { _pgHoldings[i].lot_size  = parseInt(v)  || 1;  }
+function _pgUpdateAlloc(i, v) {
+  _pgHoldings[i].alloc_pct = parseFloat(v) || null;
+  // Update only the total display — no full re-render (would steal focus)
+  const total = _pgHoldings.reduce((s,h) => s + (parseFloat(h.alloc_pct)||0), 0);
+  const ok    = Math.abs(total - 100) < 0.5;
+  const el    = document.getElementById('pg-alloc-total');
+  if (el) el.innerHTML = `<span style="color:${ok?'var(--green)':'var(--red)'}">Total: ${total.toFixed(1)}% ${ok?'✓':'(must equal 100%)'}</span>`;
+}
+function _pgUpdateLot(i, v)   { _pgHoldings[i].lot_size = parseInt(v) || 1; }
 function _pgRemoveTicker(i)   { _pgHoldings.splice(i,1); _pgRefreshHoldingsEditor(); }
 
 function _pgAddTicker() {
@@ -7446,9 +7453,9 @@ function _pgRenderSubsEditor() {
       </div>`;
     }).join('');
 
-    const allocTotal = mode === 'custom' && sub.holdings.length
-      ? `<div style="font-size:9px;margin-top:3px;color:${Math.abs(totalPct-100)<0.5?'var(--green)':'var(--red)'}">Total: ${totalPct.toFixed(1)}% ${Math.abs(totalPct-100)<0.5?'✓':'(must = 100%)'}</div>`
-      : '';
+    const allocTotal = mode === 'custom'
+      ? `<div id="pg-sub-total-${si}" style="font-size:9px;margin-top:3px;color:${Math.abs(totalPct-100)<0.5?'var(--green)':'var(--red)'}">Total: ${totalPct.toFixed(1)}% ${Math.abs(totalPct-100)<0.5?'✓':'(must = 100%)'}</div>`
+      : `<div id="pg-sub-total-${si}"></div>`;
 
     return `<div style="border:1px solid ${sub.color||'#a78bfa'};border-radius:8px;padding:10px 12px;background:var(--surface2)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
@@ -7505,8 +7512,23 @@ function _pgSubAddTicker(si) {
 }
 
 function _pgSubRemoveTicker(si, ti) { _pgSubs[si].holdings.splice(ti,1); _pgRenderSubsEditor(); }
-function _pgSubUpdateAlloc(si, ti, v) { _pgSubs[si].holdings[ti].alloc_pct = parseFloat(v)||null; _pgRenderSubsEditor(); }
-function _pgSubUpdateLot(si, ti, v)   { _pgSubs[si].holdings[ti].lot_size  = parseInt(v)||1; }
+
+function _pgSubUpdateAlloc(si, ti, v) {
+  _pgSubs[si].holdings[ti].alloc_pct = parseFloat(v) || null;
+  // Update only the running total for this sub — no full re-render
+  const sub   = _pgSubs[si];
+  const total = sub.holdings.reduce((s,h) => s + (parseFloat(h.alloc_pct)||0), 0);
+  const ok    = Math.abs(total - 100) < 0.5;
+  const el    = document.getElementById(`pg-sub-total-${si}`);
+  if (el) {
+    el.style.color = ok ? 'var(--green)' : 'var(--red)';
+    el.textContent = sub.alloc_mode === 'custom'
+      ? `Total: ${total.toFixed(1)}% ${ok?'✓':'(must = 100%)'}`
+      : '';
+  }
+}
+
+function _pgSubUpdateLot(si, ti, v) { _pgSubs[si].holdings[ti].lot_size = parseInt(v) || 1; }
 
 async function _pgSave() {
   const name = document.getElementById('pg-name').value.trim();
