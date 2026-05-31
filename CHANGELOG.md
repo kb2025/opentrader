@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.77] - 2026-05-31
+
+### Changed
+- **Portfolio Groups broker bar**: parent group now shows its direct holdings bar + all sub-portfolio bars nested beneath (indented with left border in sub color); sub-portfolio label shown above each sub bar; total stock count includes sub holdings
+
 ## [4.0.76] - 2026-05-31
 
 ### Changed

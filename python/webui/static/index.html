@@ -9577,32 +9577,50 @@ function _pgBrokerBar(groups) {
   const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9',
                    '#4ade80','#f472b6','#818cf8','#a3e635','#38bdf8','#fb7185','#c084fc','#fdba74'];
 
-  // Each group (parent or sub) gets its own bar showing only its own holdings
-  const rows = groups.map(g => {
-    const color    = g.color || '#60a5fa';
-    const holdings = g.holdings || [];
-    if (!holdings.length) return '';
+  function _makeBar(holdings, paletteOffset) {
     const total = holdings.reduce((s,h) => s+(h.effective_pct||0),0) || 100;
-    const segs = holdings.map((h,i) => {
+    return holdings.map((h,i) => {
       const pct = ((h.effective_pct||0)/total*100).toFixed(2);
-      const col  = palette[i % palette.length];
+      const col = palette[(paletteOffset + i) % palette.length];
       return `<div style="flex:${pct};background:${col};min-width:2px;position:relative" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%">
         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;overflow:hidden;text-overflow:clip;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?h.ticker:''}</span>
       </div>`;
     }).join('');
+  }
+
+  // Render parent groups only; sub-portfolios are nested beneath their parent
+  const parents = groups.filter(g => g.type !== 'sub');
+  const rows = parents.map(g => {
+    const color    = g.color || '#60a5fa';
+    const holdings = g.holdings || [];
+    const activeSubs = (g.subs || []).filter(s => s.holdings && s.holdings.length);
+    if (!holdings.length && !activeSubs.length) return '';
+
     const stratTag = g.strategy_name
-      ? `<span style="font-size:9px;color:var(--muted);margin-left:4px">${g.strategy_name}</span>`
+      ? `<span style="font-size:9px;color:var(--muted);margin-left:4px">${g.strategy_name}</span>` : '';
+    const totalStocks = holdings.length + activeSubs.reduce((s, sub) => s + sub.holdings.length, 0);
+
+    const parentBar = holdings.length
+      ? `<div style="display:flex;height:20px;border-radius:4px;overflow:hidden;border:1px solid var(--border);margin-bottom:2px">${_makeBar(holdings, 0)}</div>`
       : '';
-    const typeTag = g.type === 'sub'
-      ? `<span style="font-size:9px;color:var(--muted);opacity:.7"> (sub)</span>` : '';
+
+    const subRows = activeSubs.map(s => {
+      const sColor = s.color || '#a78bfa';
+      return `<div style="margin-top:4px;padding-left:12px;border-left:2px solid ${sColor}55">
+        <div style="font-size:8px;color:var(--dim);margin-bottom:2px">${s.name}</div>
+        <div style="display:flex;height:16px;border-radius:3px;overflow:hidden;border:1px solid var(--border)">${_makeBar(s.holdings, holdings.length)}</div>
+      </div>`;
+    }).join('');
+
     return `<div style="margin-top:6px">
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
         <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>
-        <span style="font-size:10px;font-weight:600;color:var(--fg)">${g.name}${typeTag}</span>
+        <span style="font-size:10px;font-weight:600;color:var(--fg)">${g.name}</span>
         ${stratTag}
-        <span style="font-size:9px;color:var(--dim);margin-left:auto">${holdings.length} stocks</span>
+        <span style="font-size:9px;color:var(--dim);margin-left:auto">${totalStocks} stocks</span>
       </div>
-      <div style="display:flex;height:20px;border-radius:4px;overflow:hidden;border:1px solid var(--border)">${segs}</div>
+      ${parentBar}
+      ${subRows}
     </div>`;
   }).filter(Boolean).join('');
 
