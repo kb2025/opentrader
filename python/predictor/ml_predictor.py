@@ -390,11 +390,16 @@ class MLEnsemble:
     Async wrapper around the synchronous _train_and_predict pipeline.
     Maintains a per-(ticker, direction, date) in-memory cache so models
     are only retrained once per calendar day per ticker.
+
+    Optionally blends a CNN-based SPY regime signal as a 4th input when
+    REGIME_CNN_ENABLED=true and torch is installed.
     """
 
     def __init__(self):
         # cache: (ticker, direction, date) -> result dict
         self._cache: dict[tuple, dict] = {}
+        # shared SPY regime cache — fetched once per predictor run
+        self._spy_regime_cache: dict[date, dict] = {}
 
     async def predict(
         self,
@@ -424,6 +429,9 @@ class MLEnsemble:
                         ticker, direction, e)
             result = {}
 
+        # Optional CNN regime blend
+        result = await self._apply_cnn_regime(result, direction)
+
         self._cache[cache_key] = result
         if result:
             log.info(
@@ -435,9 +443,46 @@ class MLEnsemble:
             )
         return result
 
+    async def _apply_cnn_regime(self, result: dict, direction: str) -> dict:
+        """Blend CNN SPY regime signal into ml_confidence when enabled."""
+        try:
+            from predictor.regime_cnn import (
+                REGIME_CNN_ENABLED, get_spy_regime_probabilities,
+                regime_to_confidence_adjustment,
+            )
+            if not REGIME_CNN_ENABLED or not result:
+                return result
+
+            today = date.today()
+            if today not in self._spy_regime_cache:
+                spy_regime = await get_spy_regime_probabilities()
+                if spy_regime:
+                    self._spy_regime_cache[today] = spy_regime
+                else:
+                    return result
+
+            spy_regime = self._spy_regime_cache.get(today)
+            if not spy_regime:
+                return result
+
+            cnn_adj  = regime_to_confidence_adjustment(spy_regime, direction)
+            prev_conf = result.get("ml_confidence", 0.0)
+            blended  = round(max(0.0, min(1.0, prev_conf * 0.85 + cnn_adj)), 4)
+
+            result = dict(result)
+            result["ml_confidence"] = blended
+            result["cnn_regime"]      = spy_regime.get("regime")
+            result["cnn_regime_probs"] = spy_regime.get("probs")
+        except Exception as e:
+            log.warning("ml_predictor: cnn_regime blend failed: %s", e)
+        return result
+
     def clear_old_cache(self):
         """Evict entries from prior days to prevent unbounded growth."""
         today = date.today()
         stale = [k for k in self._cache if k[2] != today]
         for k in stale:
             del self._cache[k]
+        stale_r = [k for k in self._spy_regime_cache if k != today]
+        for k in stale_r:
+            del self._spy_regime_cache[k]

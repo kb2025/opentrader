@@ -479,10 +479,17 @@ CREATE TABLE IF NOT EXISTS macro_regime_snapshots (
     vix_level       NUMERIC,
     dxy_trend       TEXT,       -- rising | falling | neutral
     tlt_trend       TEXT,       -- rising | falling | neutral
-    breadth_pct     NUMERIC,    -- from OVTLYR
-    raw             JSONB,
+    breadth_pct        NUMERIC,    -- from OVTLYR
+    raw                JSONB,
+    technical_regime   TEXT,       -- STRONG_OVERBOUGHT | OVERBOUGHT | NEUTRAL | OVERSOLD | STRONG_OVERSOLD
+    technical_score    NUMERIC,    -- consensus oscillator vote sum
+    oscillators        JSONB,      -- per-oscillator latest values
     PRIMARY KEY (ts, id)
 );
+-- Backfill columns if table pre-exists
+ALTER TABLE macro_regime_snapshots ADD COLUMN IF NOT EXISTS technical_regime TEXT;
+ALTER TABLE macro_regime_snapshots ADD COLUMN IF NOT EXISTS technical_score NUMERIC;
+ALTER TABLE macro_regime_snapshots ADD COLUMN IF NOT EXISTS oscillators JSONB;
 SELECT create_hypertable('macro_regime_snapshots', 'ts', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS mrs_ts ON macro_regime_snapshots (ts DESC);
 

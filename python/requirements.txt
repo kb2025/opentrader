@@ -33,5 +33,10 @@ matplotlib>=3.8.0
 # ── ML Predictor Ensemble ─────────────────────
 scikit-learn>=1.4.0
 
+# ── CNN Regime Classifier (optional — CPU only) ─
+# Enabled via REGIME_CNN_ENABLED=true env var.
+# Install: pip install torch==2.3.1+cpu --index-url https://download.pytorch.org/whl/cpu
+# Not included by default to keep image size small.
+
 # ── Portfolio Optimization (MVO / Risk Parity) ─
 scipy>=1.11.0

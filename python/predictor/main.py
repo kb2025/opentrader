@@ -254,6 +254,31 @@ class PredictorAgent(BaseAgent):
         except Exception as e:
             log.warning("predictor.market_breadth_load_error", error=str(e))
 
+        # ── 2a. Load macro regime (technical_regime for confidence adjustment) ─
+        tech_regime = "NEUTRAL"
+        macro_regime_label = "unknown"
+        try:
+            from datetime import datetime, timezone
+            regime_raw = await self.redis.get("macro_regime:latest")
+            if regime_raw:
+                regime_snap = json.loads(regime_raw)
+                ts_str = regime_snap.get("ts")
+                stale = False
+                if ts_str:
+                    try:
+                        ts = datetime.fromisoformat(ts_str)
+                        age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+                        stale = age_h > 48
+                    except Exception:
+                        pass
+                if not stale:
+                    tech_regime = regime_snap.get("technical_regime", "NEUTRAL") or "NEUTRAL"
+                    macro_regime_label = regime_snap.get("regime", "unknown")
+                    log.info("predictor.regime_loaded",
+                             macro=macro_regime_label, technical=tech_regime)
+        except Exception as e:
+            log.warning("predictor.regime_load_error", error=str(e))
+
         # ── 3. Load aggregator intelligence for each candidate ───────────────
         from aggregator.models import TickerIntelligence
         intel_map: dict = {}
@@ -273,7 +298,8 @@ class PredictorAgent(BaseAgent):
         min_conf = min(MIN_CONF_EQUITY, MIN_CONF_ETF) - 0.05
         candidates = score_tickers(ovtlyr_data, intel_map,
                                    market_breadth=market_breadth,
-                                   min_confidence=min_conf)
+                                   min_confidence=min_conf,
+                                   tech_regime=tech_regime)
 
         if not candidates:
             log.info("predictor.no_candidates")
@@ -361,6 +387,10 @@ class PredictorAgent(BaseAgent):
                     "ml_val_accuracy":     s.metadata.get("ml_val_accuracy"),
                     "ml_model_count":      s.metadata.get("ml_model_count"),
                     "ml_composite_weight": s.metadata.get("ml_composite_weight"),
+                    "technical_regime":    s.metadata.get("technical_regime"),
+                    "tech_regime_adj":     s.metadata.get("tech_regime_adj"),
+                    "macro_regime":        macro_regime_label,
+                    "cnn_regime":          s.metadata.get("cnn_regime"),
                 },
             )
             await self.redis.xadd(

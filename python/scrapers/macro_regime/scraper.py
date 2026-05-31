@@ -9,6 +9,7 @@ import logging
 
 from shared.data_client import DataClient
 from shared.fred_client import FREDClient
+from shared.technical_regime import compute_technical_regime
 
 log = logging.getLogger("scraper.macro_regime")
 
@@ -237,7 +238,9 @@ async def compute_macro_regime(
     else:
         regime = "neutral"
 
-    return {
+    tech = compute_technical_regime(bars.get("SPY", []))
+
+    snapshot = {
         "regime":        regime,
         "bull_signals":  bull,
         "bear_signals":  bear,
@@ -256,3 +259,5 @@ async def compute_macro_regime(
         },
         "raw": signals,
     }
+    snapshot.update(tech)
+    return snapshot

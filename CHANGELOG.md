@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.63] - 2026-05-31
+
+### Added
+- **Technical Regime Classifier** (`shared/technical_regime.py`): 5-class overbought/oversold regime from consensus oscillator voting — RSI-14, Stochastic %K, Williams %R, Stochastic RSI, MFI-14, Ultimate Oscillator; classes: STRONG_OVERBOUGHT → STRONG_OVERSOLD; pure pandas/numpy, no new deps
+- **Macro regime now feeds the predictor**: `predictor/main.py` loads `macro_regime:latest` on each run; `technical_regime` extracted and passed to scorer; confidence adjustment ±10% (strong) / ±5% (moderate) for aligned/opposing market regime; both `technical_regime` and `macro_regime` published in signal metadata
+- **2D Regime Gate in equity_trader** (`shared/regime_gate.py`): reads macro+technical regime at trade-time; 2D matrix produces position size multiplier (0.50–1.25) or hard SKIP based on macro (risk_on/neutral/risk_off) × technical (5-class) × direction; staleness guard (48h TTL); skip logged with reason; multiplier applied to `max_pos_usd` before sizing
+- **CNN Regime Classifier** (`predictor/regime_cnn.py`): optional 4th MLEnsemble signal; 6-layer 1D CNN trained on SPY daily OHLCV → 5-class regime probabilities; 14 features (MACD hist, BB%, ADX-14, ATR%, OBV, RSI, Williams %R, Stoch %K, MFI, SMA%, momentum); class-weighted CrossEntropyLoss (no SMOTE/leakage); daily model cache at /tmp; enabled via `REGIME_CNN_ENABLED=true`; blended into `ml_confidence` at 85%/15% via `regime_to_confidence_adjustment()`
+- **DB schema update**: `macro_regime_snapshots` gains `technical_regime TEXT`, `technical_score NUMERIC`, `oscillators JSONB` columns
+
 ## [4.0.55] - 2026-05-31
 
 ### Added

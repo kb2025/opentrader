@@ -29,6 +29,7 @@ from shared.risk_controls import (
     check_daily_loss,
 )
 from shared.telemetry import emit as _tel_emit, TelemetryEvent
+from shared.regime_gate import evaluate_regime_gate
 from scheduler.calendar import is_market_open, is_trading_day
 
 log = structlog.get_logger("trader-equity")
@@ -265,6 +266,38 @@ class EquityTrader(BaseAgent):
                          tv_rec=tv["recommendation"],
                          buy=tv["buy"], sell=tv["sell"])
 
+            # Regime gate — read macro_regime:latest, evaluate 2D matrix
+            regime_size_mult = 1.0
+            try:
+                from datetime import datetime, timezone
+                regime_raw = await self.redis.get("macro_regime:latest")
+                macro_label = "neutral"
+                tech_label  = "NEUTRAL"
+                if regime_raw:
+                    snap = json.loads(regime_raw)
+                    ts_str = snap.get("ts")
+                    stale = False
+                    if ts_str:
+                        try:
+                            ts = datetime.fromisoformat(ts_str)
+                            stale = (datetime.now(timezone.utc) - ts).total_seconds() > 172800
+                        except Exception:
+                            pass
+                    if not stale:
+                        macro_label = snap.get("regime", "neutral") or "neutral"
+                        tech_label  = snap.get("technical_regime", "NEUTRAL") or "NEUTRAL"
+
+                allowed, gate_reason, regime_size_mult = evaluate_regime_gate(
+                    macro_label, tech_label, direction
+                )
+                log.info("trader-equity.regime_gate",
+                         ticker=ticker, macro=macro_label, technical=tech_label,
+                         allowed=allowed, mult=regime_size_mult, reason=gate_reason)
+                if not allowed:
+                    return
+            except Exception as e:
+                log.warning("trader-equity.regime_gate_error", ticker=ticker, error=str(e))
+
             # Place an order for each assigned account, using that
             # assignment's strategy parameters
             for assignment in assignments:
@@ -275,7 +308,8 @@ class EquityTrader(BaseAgent):
                               strategy=assignment["strategy_name"])
                     continue
                 await self._place_order(
-                    ticker, direction, confidence, asset_cls, data, assignment
+                    ticker, direction, confidence, asset_cls, data, assignment,
+                    regime_size_mult=regime_size_mult,
                 )
 
         except Exception as e:
@@ -292,10 +326,11 @@ class EquityTrader(BaseAgent):
         asset_cls:  str,
         raw_data:   dict,
         assignment: dict,
+        regime_size_mult: float = 1.0,
     ):
         account_label = assignment["account_label"]
         strategy_name = assignment["strategy_name"]
-        max_pos_usd   = assignment["max_pos_usd"]
+        max_pos_usd   = assignment["max_pos_usd"] * regime_size_mult
 
         # ── 1. Get quote for position sizing + risk controls ─────────────────
         trade_mode = await self._trade_mode()

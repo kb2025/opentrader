@@ -18,6 +18,14 @@ from dataclasses import dataclass, field
 
 from aggregator.models import TickerIntelligence
 
+TECH_REGIME_ADJ: dict[str, float] = {
+    "STRONG_OVERBOUGHT": -0.10,
+    "OVERBOUGHT":        -0.05,
+    "NEUTRAL":            0.00,
+    "OVERSOLD":          +0.05,
+    "STRONG_OVERSOLD":   +0.10,
+}
+
 ETF_SET = {
     "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO", "GLD", "SLV", "TLT", "HYG",
     "LQD", "XLF", "XLE", "XLK", "XLV", "XLI", "XLU", "XLP", "XLB", "XLRE",
@@ -49,10 +57,12 @@ def score_tickers(
     intel_map:      dict,   # ticker → TickerIntelligence | None
     market_breadth: dict = None,   # {breadth_pct, signal, bull_count, bear_count}
     min_confidence: float = 0.60,
+    tech_regime:    str   = "NEUTRAL",   # from macro_regime:latest
 ) -> list[ScoredTicker]:
     """
     Score OVTLYR candidates, apply aggregator intelligence delta,
-    nine_score weighting, and market breadth directional filter.
+    nine_score weighting, market breadth directional filter, and
+    technical regime confidence adjustment.
     """
     if market_breadth is None:
         market_breadth = {}
@@ -99,7 +109,13 @@ def score_tickers(
 
         # Apply intelligence confidence delta
         delta = intel.confidence_delta if intel else 0.0
-        confidence = max(0.0, min(1.0, base_conf + delta + breadth_adj))
+
+        # Technical regime adjustment (inverted for shorts)
+        tech_adj = TECH_REGIME_ADJ.get(tech_regime, 0.0)
+        if ov_direction == "short":
+            tech_adj = -tech_adj
+
+        confidence = max(0.0, min(1.0, base_conf + delta + breadth_adj + tech_adj))
 
         if confidence < min_confidence:
             continue
@@ -117,7 +133,9 @@ def score_tickers(
             "intel_delta":    delta,
             "breadth_pct":    breadth_pct,
             "breadth_signal": breadth_signal,
-            "breadth_adj":    round(breadth_adj, 4),
+            "breadth_adj":        round(breadth_adj, 4),
+            "technical_regime":   tech_regime,
+            "tech_regime_adj":    round(tech_adj, 4),
         }
         if intel:
             metadata.update({

@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+from datetime import datetime, timezone
 from urllib.parse import urlparse, unquote
 
 import asyncpg
@@ -93,13 +94,17 @@ class MacroRegimeAgent(BaseAgent):
                 await self._db.execute(
                     """INSERT INTO macro_regime_snapshots
                        (regime, bull_signals, bear_signals, total_signals, regime_score,
-                        spy_trend, vix_level, dxy_trend, tlt_trend, breadth_pct, raw)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
+                        spy_trend, vix_level, dxy_trend, tlt_trend, breadth_pct, raw,
+                        technical_regime, technical_score, oscillators)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)""",
                     snapshot["regime"], snapshot["bull_signals"], snapshot["bear_signals"],
                     snapshot["total_signals"], snapshot["regime_score"],
                     snapshot["spy_trend"], snapshot["vix_level"],
                     snapshot["dxy_trend"], snapshot["tlt_trend"],
                     snapshot["breadth_pct"], json.dumps(snapshot["raw"]),
+                    snapshot.get("technical_regime"),
+                    snapshot.get("technical_score"),
+                    json.dumps(snapshot.get("oscillators") or {}),
                 )
 
                 fred = snapshot.get("fred", {})
@@ -111,6 +116,7 @@ class MacroRegimeAgent(BaseAgent):
                         fred.get("fsi"), fred.get("usrec"),
                     )
 
+            snapshot["ts"] = datetime.now(timezone.utc).isoformat()
             await self.redis.set("macro_regime:latest", json.dumps(snapshot), ex=7200)
             if snapshot.get("fred"):
                 await self.redis.set("fred:macro:latest", json.dumps(snapshot["fred"]), ex=7200)
