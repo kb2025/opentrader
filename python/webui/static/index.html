@@ -9556,6 +9556,11 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData, portfolioG
             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">
               ${g.holdings.map((h,i) => `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${palette[i%palette.length]}22;border:1px solid ${palette[i%palette.length]}55;color:${palette[i%palette.length]}">${h.ticker}</span>`).join('')}
             </div>
+            <div style="display:flex;gap:4px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)33">
+              <button onclick="_pgCostBasis('${g.id}')" style="flex:1;font-size:9px;font-weight:600;padding:3px 0;background:rgba(96,165,250,.1);color:#60a5fa;border:1px solid rgba(96,165,250,.3);border-radius:4px;cursor:pointer">Cost Basis</button>
+              <button onclick="_pgRebalance('${g.id}')" style="flex:1;font-size:9px;font-weight:600;padding:3px 0;background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.3);border-radius:4px;cursor:pointer">Rebalance</button>
+              <button onclick="_pgDca('${g.id}')" style="flex:1;font-size:9px;font-weight:600;padding:3px 0;background:rgba(52,211,153,.1);color:#34d399;border:1px solid rgba(52,211,153,.3);border-radius:4px;cursor:pointer">DCA</button>
+            </div>
           </div>`;
         }).join('')}
         </div>`;
@@ -28975,6 +28980,326 @@ function _ciRenderChatHistory() {
   background:#1a1e2b;border:1px solid #3b4263;border-radius:10px;
   padding:14px 16px;min-width:280px;max-width:340px;
   box-shadow:0 12px 40px rgba(0,0,0,.75);pointer-events:none"></div>
+
+<!-- ── Portfolio Group: Cost Basis Modal ────────────────────────────────── -->
+<div id="pg-cb-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;overflow-y:auto;padding:40px 20px" onclick="if(event.target===this)document.getElementById('pg-cb-modal').style.display='none'">
+  <div style="max-width:640px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <div id="pg-cb-title" style="font-size:14px;font-weight:700;color:var(--fg)">Cost Basis</div>
+      <button onclick="document.getElementById('pg-cb-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px">&times;</button>
+    </div>
+    <div id="pg-cb-body">
+      <div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Portfolio Group: Rebalance Modal ─────────────────────────────────── -->
+<div id="pg-reb-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;overflow-y:auto;padding:40px 20px" onclick="if(event.target===this)document.getElementById('pg-reb-modal').style.display='none'">
+  <div style="max-width:720px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div id="pg-reb-title" style="font-size:14px;font-weight:700;color:var(--fg)">Rebalance Preview</div>
+      <button onclick="document.getElementById('pg-reb-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px">&times;</button>
+    </div>
+    <div id="pg-reb-summary" style="font-size:11px;color:var(--muted);margin-bottom:14px"></div>
+    <div id="pg-reb-body">
+      <div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Loading…</div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('pg-reb-modal').style.display='none'" style="background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:7px 16px;font-size:12px;cursor:pointer">Close</button>
+      <button id="pg-reb-exec-btn" onclick="_pgRebalanceExecute()" style="background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.4);border-radius:6px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer;display:none">Execute Rebalance</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Portfolio Group: DCA Schedule Modal ──────────────────────────────── -->
+<div id="pg-dca-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;overflow-y:auto;padding:40px 20px" onclick="if(event.target===this)document.getElementById('pg-dca-modal').style.display='none'">
+  <div style="max-width:480px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <div id="pg-dca-title" style="font-size:14px;font-weight:700;color:var(--fg)">DCA Schedule</div>
+      <button onclick="document.getElementById('pg-dca-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px">&times;</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px">
+        Investment Amount ($)
+        <input id="pg-dca-amount" type="number" min="1" step="50" placeholder="e.g. 500"
+               style="background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px">
+      </label>
+      <label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px">
+        Frequency
+        <select id="pg-dca-freq" onchange="_pgDcaFreqChange()"
+                style="background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px">
+          <option value="daily">Daily</option>
+          <option value="weekly" selected>Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </label>
+      <div id="pg-dca-dow-row">
+        <label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px">
+          Day of Week
+          <select id="pg-dca-dow" style="background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px">
+            <option value="0">Monday</option>
+            <option value="1">Tuesday</option>
+            <option value="2">Wednesday</option>
+            <option value="3">Thursday</option>
+            <option value="4">Friday</option>
+          </select>
+        </label>
+      </div>
+      <div id="pg-dca-dom-row" style="display:none">
+        <label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px">
+          Day of Month
+          <select id="pg-dca-dom" style="background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+            <option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option>
+            <option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15" selected>15</option>
+            <option value="16">16</option><option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option>
+            <option value="21">21</option><option value="22">22</option><option value="23">23</option><option value="24">24</option><option value="25">25</option>
+            <option value="26">26</option><option value="27">27</option><option value="28">28</option>
+          </select>
+        </label>
+      </div>
+      <div style="display:flex;gap:8px">
+        <label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px;flex:1">
+          Hour ET
+          <select id="pg-dca-hour" style="background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px">
+            <option value="9">09:xx</option><option value="10" selected>10:xx</option><option value="11">11:xx</option>
+            <option value="12">12:xx</option><option value="13">13:xx</option><option value="14">14:xx</option>
+            <option value="15">15:xx</option>
+          </select>
+        </label>
+        <label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px;flex:1">
+          Minute
+          <select id="pg-dca-min" style="background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px">
+            <option value="0" selected>:00</option>
+            <option value="15">:15</option>
+            <option value="30">:30</option>
+            <option value="45">:45</option>
+          </select>
+        </label>
+      </div>
+      <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="pg-dca-active" checked style="width:14px;height:14px"> Active
+      </label>
+    </div>
+    <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="_pgDcaRunNow()" style="background:rgba(52,211,153,.15);color:#34d399;border:1px solid rgba(52,211,153,.4);border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">▶ Run Now</button>
+      <button onclick="_pgDcaSave()" style="background:rgba(96,165,250,.15);color:#60a5fa;border:1px solid rgba(96,165,250,.4);border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">Save Schedule</button>
+      <button id="pg-dca-del-btn" onclick="_pgDcaDelete()" style="display:none;background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">Delete</button>
+      <button onclick="document.getElementById('pg-dca-modal').style.display='none'" style="margin-left:auto;background:var(--surface2);border:1px solid var(--border);color:var(--fg);border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer">Close</button>
+    </div>
+    <div id="pg-dca-last-run" style="font-size:10px;color:var(--muted);margin-top:10px"></div>
+  </div>
+</div>
+
+<script>
+// ── Portfolio Group Action Modals ─────────────────────────────────────────────
+let _pgActionGroupId = null;
+let _pgRebOrders     = [];
+
+async function _pgCostBasis(groupId) {
+  _pgActionGroupId = groupId;
+  const modal = document.getElementById('pg-cb-modal');
+  const body  = document.getElementById('pg-cb-body');
+  document.getElementById('pg-cb-title').textContent = 'Cost Basis';
+  body.innerHTML = '<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Loading…</div>';
+  modal.style.display = '';
+
+  try {
+    const d = await apiFetch(`/api/portfolio-groups/${groupId}/cost-basis?token=${encodeURIComponent(token)}`);
+    document.getElementById('pg-cb-title').textContent = `Cost Basis — ${d.group_name || ''}`;
+    const holdings = d.holdings || [];
+    const t = d.totals || {};
+    const pnlColor = v => v >= 0 ? '#34d399' : '#f87171';
+    const fmt$ = v => v == null ? '—' : '$' + Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const fmtPct = v => v == null ? '—' : (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted)">
+          <th style="text-align:left;padding:4px 6px">Ticker</th>
+          <th style="text-align:right;padding:4px 6px">Qty</th>
+          <th style="text-align:right;padding:4px 6px">Cost Basis</th>
+          <th style="text-align:right;padding:4px 6px">Market Value</th>
+          <th style="text-align:right;padding:4px 6px">P&amp;L</th>
+          <th style="text-align:right;padding:4px 6px">P&amp;L %</th>
+        </tr></thead>
+        <tbody>
+        ${holdings.map(h => `
+          <tr style="border-bottom:1px solid var(--border)22">
+            <td style="padding:5px 6px;font-weight:700;color:var(--fg)">${h.ticker}</td>
+            <td style="text-align:right;padding:5px 6px;color:var(--muted)">${Number(h.qty||0).toFixed(0)}</td>
+            <td style="text-align:right;padding:5px 6px">${fmt$(h.cost_basis)}</td>
+            <td style="text-align:right;padding:5px 6px">${fmt$(h.market_value)}</td>
+            <td style="text-align:right;padding:5px 6px;color:${pnlColor(h.unrealized_pnl)}">${fmt$(h.unrealized_pnl)}</td>
+            <td style="text-align:right;padding:5px 6px;color:${pnlColor(h.unrealized_pnl_pct)}">${fmtPct(h.unrealized_pnl_pct)}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr style="border-top:2px solid var(--border);font-weight:700">
+          <td style="padding:6px 6px" colspan="2">Total</td>
+          <td style="text-align:right;padding:6px 6px">${fmt$(t.cost_basis)}</td>
+          <td style="text-align:right;padding:6px 6px">${fmt$(t.market_value)}</td>
+          <td style="text-align:right;padding:6px 6px;color:${pnlColor(t.unrealized_pnl)}">${fmt$(t.unrealized_pnl)}</td>
+          <td style="text-align:right;padding:6px 6px;color:${pnlColor(t.unrealized_pnl_pct)}">${fmtPct(t.unrealized_pnl_pct)}</td>
+        </tr></tfoot>
+      </table>`;
+  } catch(e) {
+    body.innerHTML = `<div style="color:#f87171;font-size:12px;padding:12px">Error: ${e.message||e}</div>`;
+  }
+}
+
+async function _pgRebalance(groupId) {
+  _pgActionGroupId = groupId;
+  _pgRebOrders = [];
+  const modal   = document.getElementById('pg-reb-modal');
+  const body    = document.getElementById('pg-reb-body');
+  const summary = document.getElementById('pg-reb-summary');
+  const execBtn = document.getElementById('pg-reb-exec-btn');
+  document.getElementById('pg-reb-title').textContent = 'Rebalance Preview';
+  body.innerHTML = '<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Loading preview…</div>';
+  summary.textContent = '';
+  execBtn.style.display = 'none';
+  modal.style.display = '';
+
+  try {
+    const d = await apiFetch(`/api/portfolio-groups/${groupId}/rebalance-preview?token=${encodeURIComponent(token)}`);
+    document.getElementById('pg-reb-title').textContent = `Rebalance Preview — ${d.group_name || ''}`;
+    summary.textContent = `Total portfolio value: $${Number(d.total_value||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}  ·  ${d.orders_count||0} order(s) needed`;
+    _pgRebOrders = d.orders || [];
+
+    const positions = d.positions || [];
+    const fmt$ = v => v == null ? '—' : '$' + Number(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    const fmtPct = v => v == null ? '—' : Number(v).toFixed(1) + '%';
+    const actionStyle = a => a==='buy' ? 'color:#34d399;font-weight:700' : a==='sell' ? 'color:#f87171;font-weight:700' : 'color:var(--muted)';
+    body.innerHTML = positions.length === 0
+      ? '<div style="color:var(--muted);font-size:12px;padding:12px">No holdings in this group.</div>'
+      : `<table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted)">
+            <th style="text-align:left;padding:4px 6px">Ticker</th>
+            <th style="text-align:right;padding:4px 6px">Target%</th>
+            <th style="text-align:right;padding:4px 6px">Actual%</th>
+            <th style="text-align:right;padding:4px 6px">Drift%</th>
+            <th style="text-align:center;padding:4px 6px">Action</th>
+            <th style="text-align:right;padding:4px 6px">Δ Qty</th>
+            <th style="text-align:right;padding:4px 6px">Δ USD</th>
+          </tr></thead>
+          <tbody>${positions.map(p => {
+            const rowBg = p.action==='buy' ? 'rgba(52,211,153,.04)' : p.action==='sell' ? 'rgba(248,113,113,.04)' : '';
+            return `<tr style="border-bottom:1px solid var(--border)22;background:${rowBg}">
+              <td style="padding:5px 6px;font-weight:700">${p.ticker}</td>
+              <td style="text-align:right;padding:5px 6px">${fmtPct(p.target_pct)}</td>
+              <td style="text-align:right;padding:5px 6px">${fmtPct(p.actual_pct)}</td>
+              <td style="text-align:right;padding:5px 6px;color:${Math.abs(p.drift_pct||0)>3?'#fbbf24':'var(--muted)'}">${fmtPct(p.drift_pct)}</td>
+              <td style="text-align:center;padding:5px 6px;${actionStyle(p.action)}">${p.action.toUpperCase()}</td>
+              <td style="text-align:right;padding:5px 6px">${p.delta_qty||0}</td>
+              <td style="text-align:right;padding:5px 6px">${fmt$(p.delta_usd)}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>`;
+
+    if (_pgRebOrders.length > 0) execBtn.style.display = '';
+  } catch(e) {
+    body.innerHTML = `<div style="color:#f87171;font-size:12px;padding:12px">Error: ${e.message||e}</div>`;
+  }
+}
+
+async function _pgRebalanceExecute() {
+  if (!_pgActionGroupId) return;
+  if (!confirm(`Execute rebalance with ${_pgRebOrders.length} order(s)? This will place live orders.`)) return;
+  const btn = document.getElementById('pg-reb-exec-btn');
+  btn.disabled = true;
+  btn.textContent = 'Placing orders…';
+  try {
+    const d = await apiFetch(`/api/portfolio-groups/${_pgActionGroupId}/rebalance?token=${encodeURIComponent(token)}`, {method:'POST',body:'{}',headers:{'Content-Type':'application/json'}});
+    _showToast(`Rebalance queued: ${d.queued} order(s) sent to broker`, 'success');
+    document.getElementById('pg-reb-modal').style.display = 'none';
+  } catch(e) {
+    _showToast(`Rebalance failed: ${e.message||e}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Execute Rebalance';
+  }
+}
+
+async function _pgDca(groupId) {
+  _pgActionGroupId = groupId;
+  const modal = document.getElementById('pg-dca-modal');
+  document.getElementById('pg-dca-title').textContent = 'DCA Schedule';
+  document.getElementById('pg-dca-last-run').textContent = '';
+  document.getElementById('pg-dca-del-btn').style.display = 'none';
+
+  try {
+    const d = await apiFetch(`/api/portfolio-groups/${groupId}/dca?token=${encodeURIComponent(token)}`);
+    const s = d.schedule;
+    if (s) {
+      document.getElementById('pg-dca-amount').value  = s.amount_usd;
+      document.getElementById('pg-dca-freq').value    = s.frequency || 'weekly';
+      document.getElementById('pg-dca-active').checked = s.is_active !== false;
+      if (s.day_of_week != null) document.getElementById('pg-dca-dow').value = s.day_of_week;
+      if (s.day_of_month != null) document.getElementById('pg-dca-dom').value = s.day_of_month;
+      document.getElementById('pg-dca-hour').value = s.hour_et ?? 10;
+      document.getElementById('pg-dca-min').value  = s.minute_et ?? 0;
+      document.getElementById('pg-dca-del-btn').style.display = '';
+      if (s.last_run_at)
+        document.getElementById('pg-dca-last-run').textContent = `Last run: ${new Date(s.last_run_at).toLocaleString()}`;
+    } else {
+      document.getElementById('pg-dca-amount').value = '';
+      document.getElementById('pg-dca-freq').value   = 'weekly';
+      document.getElementById('pg-dca-active').checked = true;
+    }
+    _pgDcaFreqChange();
+  } catch(e) {}
+  modal.style.display = '';
+}
+
+function _pgDcaFreqChange() {
+  const freq = document.getElementById('pg-dca-freq').value;
+  document.getElementById('pg-dca-dow-row').style.display = freq === 'weekly'  ? '' : 'none';
+  document.getElementById('pg-dca-dom-row').style.display = freq === 'monthly' ? '' : 'none';
+}
+
+async function _pgDcaSave() {
+  if (!_pgActionGroupId) return;
+  const payload = {
+    amount_usd:   parseFloat(document.getElementById('pg-dca-amount').value) || 0,
+    frequency:    document.getElementById('pg-dca-freq').value,
+    day_of_week:  parseInt(document.getElementById('pg-dca-dow').value),
+    day_of_month: parseInt(document.getElementById('pg-dca-dom').value),
+    hour_et:      parseInt(document.getElementById('pg-dca-hour').value),
+    minute_et:    parseInt(document.getElementById('pg-dca-min').value),
+    is_active:    document.getElementById('pg-dca-active').checked,
+  };
+  if (!payload.amount_usd || payload.amount_usd <= 0) { _showToast('Enter a valid amount', 'error'); return; }
+  try {
+    const d = await apiFetch(`/api/portfolio-groups/${_pgActionGroupId}/dca?token=${encodeURIComponent(token)}`,
+      {method:'POST',body:JSON.stringify(payload),headers:{'Content-Type':'application/json'}});
+    _showToast('DCA schedule saved', 'success');
+    document.getElementById('pg-dca-del-btn').style.display = '';
+  } catch(e) { _showToast(`Save failed: ${e.message||e}`, 'error'); }
+}
+
+async function _pgDcaRunNow() {
+  if (!_pgActionGroupId) return;
+  const amount = parseFloat(document.getElementById('pg-dca-amount').value) || 0;
+  try {
+    const payload = amount > 0 ? {amount_usd: amount} : {};
+    const d = await apiFetch(`/api/portfolio-groups/${_pgActionGroupId}/dca/run?token=${encodeURIComponent(token)}`,
+      {method:'POST',body:JSON.stringify(payload),headers:{'Content-Type':'application/json'}});
+    if (d.error) { _showToast(`DCA error: ${d.error}`, 'error'); return; }
+    _showToast(`DCA run: ${d.executed} order(s) placed, ${d.skipped||0} skipped`, 'success');
+    document.getElementById('pg-dca-last-run').textContent = `Last run: ${new Date().toLocaleString()}`;
+  } catch(e) { _showToast(`DCA run failed: ${e.message||e}`, 'error'); }
+}
+
+async function _pgDcaDelete() {
+  if (!_pgActionGroupId || !confirm('Delete this DCA schedule?')) return;
+  try {
+    await apiFetch(`/api/portfolio-groups/${_pgActionGroupId}/dca?token=${encodeURIComponent(token)}`,
+      {method:'DELETE'});
+    _showToast('DCA schedule deleted', 'success');
+    document.getElementById('pg-dca-modal').style.display = 'none';
+  } catch(e) { _showToast(`Delete failed: ${e.message||e}`, 'error'); }
+}
+</script>
 
 </body>
 </html>

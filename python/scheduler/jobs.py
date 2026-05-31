@@ -526,3 +526,28 @@ async def job_market_data_probe(redis: aioredis.Redis):
                 log.info("scheduler.market_data_probe", changes=len(body.get("changes", {})))
     except Exception as e:
         log.error("scheduler.market_data_probe_error", error=str(e))
+
+
+@tracked
+async def job_dca_run(redis: aioredis.Redis):
+    """Fires at 09:45 ET on trading days — executes any DCA schedules due today."""
+    if not is_trading_day():
+        log.debug("scheduler.skip", job="dca_run", reason="not_trading_day")
+        return
+    import os as _os, aiohttp as _aiohttp
+    webui_url = _os.getenv("WEBUI_INTERNAL_URL", "http://ot-webui:8080")
+    token     = _os.getenv("WEBUI_TOKEN", "opentrader")
+    try:
+        async with _aiohttp.ClientSession() as s:
+            async with s.post(
+                f"{webui_url}/api/portfolio-groups/dca/run-all?token={token}",
+                timeout=_aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                body = await resp.json(content_type=None)
+                if resp.status == 200:
+                    log.info("scheduler.dca_run", executed_groups=body.get("executed_groups", 0))
+                else:
+                    log.error("scheduler.dca_run_failed", status=resp.status,
+                              detail=body.get("detail"))
+    except Exception as e:
+        log.error("scheduler.dca_run_error", error=str(e))

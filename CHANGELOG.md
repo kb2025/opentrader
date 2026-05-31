@@ -3,6 +3,15 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.64] - 2026-05-31
+
+### Added
+- **Portfolio Group Cost Basis**: `GET /api/portfolio-groups/{id}/cost-basis` — per-ticker broker-reported cost basis, market value, unrealized P&L and P&L% aggregated across all accounts assigned to the group; totals row; "Cost Basis" button on every group card opens a table modal
+- **Portfolio Group Rebalancing**: `GET /api/portfolio-groups/{id}/rebalance-preview` — drift analysis comparing target allocation% vs actual broker market values; shows action (buy/sell/hold), Δ qty, Δ USD per ticker; `POST /api/portfolio-groups/{id}/rebalance` places market orders for each drifted holding (>1% drift, qty≥1) via broker gateway; logged to `portfolio_group_rebalance_log`; "Rebalance" button on group card opens preview modal with colour-coded rows and Execute button
+- **Portfolio Group DCA**: full schedule CRUD (`GET/POST/DELETE /api/portfolio-groups/{id}/dca`); manual trigger (`POST /api/portfolio-groups/{id}/dca/run`) buys proportional slices of investment amount across holdings; `POST /api/portfolio-groups/dca/run-all` runs all active due schedules (called by scheduler); "DCA" button opens form modal with frequency (daily/weekly/monthly), day, time, active toggle, Run Now, Save, Delete; logged to `portfolio_group_dca_log`; DB: `portfolio_group_dca_schedules`, `portfolio_group_dca_log`
+- **DCA scheduler job**: `job_dca_run` fires daily at 09:45 ET on trading days; calls `/api/portfolio-groups/dca/run-all` via internal HTTP (same pattern as `job_eod_nav_snapshot`)
+- **DB schema**: `portfolio_group_rebalance_log`, `portfolio_group_dca_schedules`, `portfolio_group_dca_log` tables
+
 ## [4.0.63] - 2026-05-31
 
 ### Added

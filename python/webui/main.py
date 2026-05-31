@@ -3975,6 +3975,493 @@ async def list_strategies_for_groups(token: str = ""):
         return {"strategies": [], "error": str(e)}
 
 
+# ── Portfolio Groups: Cost Basis ─────────────────────────────────────────────
+
+@app.get("/api/portfolio-groups/{group_id}/cost-basis")
+async def pg_cost_basis(group_id: str, token: str = ""):
+    """Return broker-reported cost basis and unrealized P&L for every holding in a group."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+
+    groups = await _pg_load_full(pool, group_id)
+    if not groups:
+        raise HTTPException(status_code=404, detail="Group not found")
+    group = groups[0]
+
+    acct_labels = {a["account_label"] for a in group.get("accounts", [])}
+    target_map  = {h["ticker"]: h.get("effective_pct") for h in group.get("holdings", [])}
+
+    broker_data = await get_broker_positions()
+    pos_by_ticker: dict = {}
+    for acct in broker_data.get("accounts", []):
+        if acct.get("label") not in acct_labels:
+            continue
+        for p in acct.get("positions", []):
+            sym  = (p.get("symbol") or "").upper()
+            qty  = float(p.get("qty") or 0)
+            cb   = float(p.get("cost_basis") or 0)
+            mv   = float(p.get("market_value") or 0)
+            px   = float(p.get("current_price") or 0)
+            if sym not in pos_by_ticker:
+                pos_by_ticker[sym] = {"qty": 0, "cost_basis": 0, "market_value": 0, "current_price": px}
+            pos_by_ticker[sym]["qty"]          += qty
+            pos_by_ticker[sym]["cost_basis"]   += cb
+            pos_by_ticker[sym]["market_value"] += mv
+            if px:
+                pos_by_ticker[sym]["current_price"] = px
+
+    holdings_out = []
+    for ticker, tgt_pct in target_map.items():
+        p = pos_by_ticker.get(ticker, {})
+        qty  = p.get("qty", 0)
+        cb   = p.get("cost_basis", 0)
+        mv   = p.get("market_value", 0)
+        px   = p.get("current_price", 0)
+        pnl  = round(mv - cb, 2)
+        pnl_pct = round(pnl / cb * 100, 2) if cb else 0.0
+        holdings_out.append({
+            "ticker":           ticker,
+            "qty":              qty,
+            "cost_basis":       round(cb, 2),
+            "market_value":     round(mv, 2),
+            "unrealized_pnl":   pnl,
+            "unrealized_pnl_pct": pnl_pct,
+            "current_price":    round(px, 4),
+            "alloc_pct":        tgt_pct,
+        })
+
+    total_cb = sum(h["cost_basis"]   for h in holdings_out)
+    total_mv = sum(h["market_value"] for h in holdings_out)
+    total_pnl = round(total_mv - total_cb, 2)
+    return {
+        "group_id": group_id,
+        "group_name": group["name"],
+        "holdings": holdings_out,
+        "totals": {
+            "cost_basis":         round(total_cb,  2),
+            "market_value":       round(total_mv,  2),
+            "unrealized_pnl":     total_pnl,
+            "unrealized_pnl_pct": round(total_pnl / total_cb * 100, 2) if total_cb else 0.0,
+        },
+    }
+
+
+# ── Portfolio Groups: Rebalancing ─────────────────────────────────────────────
+
+async def _pg_rebalance_preview(group: dict) -> dict:
+    """Shared logic for preview + execute: compute drift and order list."""
+    import math as _math
+    import uuid as _uuid
+
+    acct_labels = {a["account_label"] for a in group.get("accounts", [])}
+    broker_data = await get_broker_positions()
+
+    pos_by_ticker: dict = {}
+    for acct in broker_data.get("accounts", []):
+        if acct.get("label") not in acct_labels:
+            continue
+        for p in acct.get("positions", []):
+            sym  = (p.get("symbol") or "").upper()
+            mv   = float(p.get("market_value") or 0)
+            px   = float(p.get("current_price") or 0)
+            if sym not in pos_by_ticker:
+                pos_by_ticker[sym] = {"market_value": 0, "current_price": px}
+            pos_by_ticker[sym]["market_value"] += mv
+            if px:
+                pos_by_ticker[sym]["current_price"] = px
+
+    total_value = sum(p["market_value"] for p in pos_by_ticker.values())
+    positions = []
+    for h in group.get("holdings", []):
+        ticker   = h["ticker"]
+        tgt_pct  = h.get("effective_pct") or 0.0
+        pos      = pos_by_ticker.get(ticker, {})
+        act_val  = pos.get("market_value", 0.0)
+        act_pct  = round(act_val / total_value * 100, 2) if total_value else 0.0
+        tgt_val  = total_value * tgt_pct / 100.0
+        delta    = tgt_val - act_val
+        drift    = abs(delta / total_value * 100) if total_value else 0.0
+
+        px = pos.get("current_price", 0.0)
+        if not px and abs(delta) > 0.01:
+            try:
+                q  = await get_broker_quote(ticker)
+                px = q.get("ask") or q.get("last") or 0.0
+            except Exception:
+                px = 0.0
+
+        if px and drift >= 1.0:
+            delta_qty = _math.floor(abs(delta) / px)
+            action    = "buy" if delta > 0 else "sell"
+        else:
+            delta_qty = 0
+            action    = "hold"
+
+        positions.append({
+            "ticker":       ticker,
+            "target_pct":   round(tgt_pct, 4),
+            "actual_pct":   act_pct,
+            "target_value": round(tgt_val, 2),
+            "actual_value": round(act_val, 2),
+            "drift_pct":    round(drift, 2),
+            "action":       action,
+            "delta_usd":    round(delta, 2),
+            "delta_qty":    delta_qty,
+            "current_price": round(px, 4),
+        })
+
+    orders = [p for p in positions if p["action"] != "hold" and p["delta_qty"] >= 1]
+    return {
+        "group_id":    group["id"],
+        "group_name":  group["name"],
+        "total_value": round(total_value, 2),
+        "positions":   positions,
+        "orders_count": len(orders),
+        "orders":      orders,
+    }
+
+
+@app.get("/api/portfolio-groups/{group_id}/rebalance-preview")
+async def pg_rebalance_preview(group_id: str, token: str = ""):
+    """Preview what orders a rebalance would generate without executing them."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    groups = await _pg_load_full(pool, group_id)
+    if not groups:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return await _pg_rebalance_preview(groups[0])
+
+
+@app.post("/api/portfolio-groups/{group_id}/rebalance")
+async def pg_rebalance_execute(group_id: str, token: str = ""):
+    """Execute a rebalance: place buy/sell orders for each drifted holding."""
+    import uuid as _uuid, json as _json
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    groups = await _pg_load_full(pool, group_id)
+    if not groups:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    preview = await _pg_rebalance_preview(groups[0])
+    orders  = preview["orders"]
+    if not orders:
+        return {"queued": 0, "orders": [], "message": "Portfolio is within 1% of target — no rebalance needed"}
+
+    acct_labels = [a["account_label"] for a in groups[0].get("accounts", [])]
+    if not acct_labels:
+        raise HTTPException(status_code=400, detail="No accounts assigned to this group")
+
+    try:
+        import redis.asyncio as _aioredis
+        _REDIS_URL = os.getenv("REDIS_URL", "redis://ot-redis:6379/0")
+        r = await _aioredis.from_url(_REDIS_URL, encoding="utf-8", decode_responses=True,
+                                     socket_connect_timeout=5, socket_timeout=15)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Redis unavailable: {e}")
+
+    placed = []
+    try:
+        for o in orders:
+            for acct in acct_labels:
+                req_id = str(_uuid.uuid4())
+                cmd = {
+                    "command":       "place_order",
+                    "request_id":    req_id,
+                    "asset_class":   "equity",
+                    "account_label": acct,
+                    "symbol":        o["ticker"],
+                    "side":          "buy" if o["action"] == "buy" else "sell_short",
+                    "quantity":      str(o["delta_qty"]),
+                    "order_type":    "market",
+                    "duration":      "day",
+                    "strategy_tag":  "Rebalance",
+                    "tag":           f"reb-{group_id[:8]}",
+                    "issued_by":     "webui-rebalance",
+                }
+                await r.xadd(STREAMS["broker_commands"], cmd, maxlen=10_000)
+                placed.append({"ticker": o["ticker"], "action": o["action"],
+                               "qty": o["delta_qty"], "request_id": req_id, "account": acct})
+                await pool.execute(
+                    """INSERT INTO portfolio_group_rebalance_log
+                       (group_id, ticker, action, qty, price, delta_usd, request_id)
+                       VALUES ($1::uuid,$2,$3,$4,$5,$6,$7)""",
+                    group_id, o["ticker"], o["action"], o["delta_qty"],
+                    o["current_price"], o["delta_usd"], req_id,
+                )
+    finally:
+        await r.aclose()
+
+    return {"queued": len(placed), "orders": placed}
+
+
+# ── Portfolio Groups: DCA ─────────────────────────────────────────────────────
+
+def _dca_is_due_today(schedule: dict) -> bool:
+    """Return True if this DCA schedule should run today (ET date)."""
+    from scheduler.calendar import now_et
+    today = now_et().date()
+    freq  = schedule.get("frequency", "weekly")
+    if freq == "daily":
+        return True
+    if freq == "weekly":
+        dow = schedule.get("day_of_week")
+        if dow is None:
+            return today.weekday() == 0   # default Monday
+        return today.weekday() == int(dow)
+    if freq == "monthly":
+        dom = schedule.get("day_of_month") or 1
+        return today.day == int(dom)
+    return False
+
+
+async def _pg_dca_execute(group_id: str, amount_usd: float,
+                           schedule_id: str | None, pool) -> dict:
+    """Core DCA execution: buy proportional slices across group holdings."""
+    import math as _math, uuid as _uuid
+    groups = await _pg_load_full(pool, group_id)
+    if not groups:
+        return {"executed": 0, "skipped": 0, "orders": [], "error": "Group not found"}
+    group = groups[0]
+
+    acct_labels = [a["account_label"] for a in group.get("accounts", [])]
+    if not acct_labels:
+        return {"executed": 0, "skipped": 0, "orders": [], "error": "No accounts assigned"}
+
+    broker_data = await get_broker_positions()
+    price_map: dict = {}
+    for acct in broker_data.get("accounts", []):
+        for p in acct.get("positions", []):
+            sym = (p.get("symbol") or "").upper()
+            px  = float(p.get("current_price") or 0)
+            if px and sym not in price_map:
+                price_map[sym] = px
+
+    try:
+        import redis.asyncio as _aioredis
+        _REDIS_URL = os.getenv("REDIS_URL", "redis://ot-redis:6379/0")
+        r = await _aioredis.from_url(_REDIS_URL, encoding="utf-8", decode_responses=True,
+                                     socket_connect_timeout=5, socket_timeout=15)
+    except Exception as e:
+        return {"executed": 0, "skipped": 0, "orders": [], "error": f"Redis: {e}"}
+
+    placed, skipped = [], []
+    try:
+        for h in group.get("holdings", []):
+            ticker   = h["ticker"]
+            eff_pct  = h.get("effective_pct") or 0.0
+            alloc    = amount_usd * eff_pct / 100.0
+
+            px = price_map.get(ticker)
+            if not px:
+                try:
+                    q  = await get_broker_quote(ticker)
+                    px = q.get("ask") or q.get("last") or 0.0
+                except Exception:
+                    px = 0.0
+
+            if not px or alloc < 0.01:
+                skipped.append({"ticker": ticker, "reason": "no_price" if not px else "zero_alloc"})
+                continue
+
+            qty = _math.floor(alloc / px)
+            if qty < 1:
+                skipped.append({"ticker": ticker, "reason": "qty_too_small",
+                                "alloc_usd": round(alloc, 2), "price": px})
+                continue
+
+            for acct in acct_labels:
+                req_id = str(_uuid.uuid4())
+                cmd = {
+                    "command":       "place_order",
+                    "request_id":    req_id,
+                    "asset_class":   "equity",
+                    "account_label": acct,
+                    "symbol":        ticker,
+                    "side":          "buy",
+                    "quantity":      str(qty),
+                    "order_type":    "market",
+                    "duration":      "day",
+                    "strategy_tag":  "DCA",
+                    "tag":           f"dca-{ticker.lower()}",
+                    "issued_by":     "webui-dca",
+                }
+                await r.xadd(STREAMS["broker_commands"], cmd, maxlen=10_000)
+                placed.append({"ticker": ticker, "qty": qty, "price": px,
+                               "alloc_usd": round(alloc, 2), "account": acct,
+                               "request_id": req_id})
+                await pool.execute(
+                    """INSERT INTO portfolio_group_dca_log
+                       (schedule_id, group_id, ticker, qty, price, amount_usd, request_id)
+                       VALUES ($1,$2::uuid,$3,$4,$5,$6,$7)""",
+                    schedule_id, group_id, ticker, qty, px, round(alloc, 2), req_id,
+                )
+    finally:
+        await r.aclose()
+
+    if schedule_id:
+        try:
+            await pool.execute(
+                "UPDATE portfolio_group_dca_schedules SET last_run_at=NOW() WHERE id=$1",
+                schedule_id,
+            )
+        except Exception:
+            pass
+
+    return {"executed": len(placed), "skipped": len(skipped), "orders": placed, "skipped_detail": skipped}
+
+
+@app.get("/api/portfolio-groups/{group_id}/dca")
+async def pg_dca_get(group_id: str, token: str = ""):
+    """Return the DCA schedule for a portfolio group."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    row = await pool.fetchrow(
+        "SELECT * FROM portfolio_group_dca_schedules WHERE group_id=$1::uuid", group_id
+    )
+    if not row:
+        return {"schedule": None}
+    return {"schedule": {
+        "id":           str(row["id"]),
+        "group_id":     str(row["group_id"]),
+        "amount_usd":   float(row["amount_usd"]),
+        "frequency":    row["frequency"],
+        "day_of_week":  row["day_of_week"],
+        "day_of_month": row["day_of_month"],
+        "hour_et":      row["hour_et"],
+        "minute_et":    row["minute_et"],
+        "is_active":    row["is_active"],
+        "last_run_at":  row["last_run_at"].isoformat() if row["last_run_at"] else None,
+        "created_at":   row["created_at"].isoformat(),
+    }}
+
+
+@app.post("/api/portfolio-groups/{group_id}/dca")
+async def pg_dca_upsert(group_id: str, body: dict, token: str = ""):
+    """Create or update the DCA schedule for a portfolio group."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+
+    amount    = float(body.get("amount_usd") or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="amount_usd must be > 0")
+    freq      = body.get("frequency", "weekly")
+    if freq not in ("daily", "weekly", "monthly"):
+        raise HTTPException(status_code=400, detail="frequency must be daily, weekly, or monthly")
+    dow       = body.get("day_of_week")
+    dom       = body.get("day_of_month")
+    hour_et   = int(body.get("hour_et", 10))
+    minute_et = int(body.get("minute_et", 0))
+    is_active = bool(body.get("is_active", True))
+
+    await pool.execute(
+        """INSERT INTO portfolio_group_dca_schedules
+           (group_id, amount_usd, frequency, day_of_week, day_of_month,
+            hour_et, minute_et, is_active)
+           VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8)
+           ON CONFLICT (group_id) DO UPDATE SET
+               amount_usd=$2, frequency=$3, day_of_week=$4, day_of_month=$5,
+               hour_et=$6, minute_et=$7, is_active=$8""",
+        group_id, amount, freq, dow, dom, hour_et, minute_et, is_active,
+    )
+    row = await pool.fetchrow(
+        "SELECT * FROM portfolio_group_dca_schedules WHERE group_id=$1::uuid", group_id
+    )
+    return {"schedule": {
+        "id":           str(row["id"]),
+        "group_id":     str(row["group_id"]),
+        "amount_usd":   float(row["amount_usd"]),
+        "frequency":    row["frequency"],
+        "day_of_week":  row["day_of_week"],
+        "day_of_month": row["day_of_month"],
+        "hour_et":      row["hour_et"],
+        "minute_et":    row["minute_et"],
+        "is_active":    row["is_active"],
+        "last_run_at":  row["last_run_at"].isoformat() if row["last_run_at"] else None,
+        "created_at":   row["created_at"].isoformat(),
+    }}
+
+
+@app.delete("/api/portfolio-groups/{group_id}/dca")
+async def pg_dca_delete(group_id: str, token: str = ""):
+    """Delete the DCA schedule for a portfolio group."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    await pool.execute(
+        "DELETE FROM portfolio_group_dca_schedules WHERE group_id=$1::uuid", group_id
+    )
+    return {"deleted": True}
+
+
+@app.post("/api/portfolio-groups/{group_id}/dca/run")
+async def pg_dca_run(group_id: str, body: dict = None, token: str = ""):
+    """Manually trigger a DCA buy for a portfolio group."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+
+    body = body or {}
+    # Prefer body amount, fall back to stored schedule amount
+    amount = float(body.get("amount_usd") or 0)
+    schedule_id = None
+    if not amount:
+        row = await pool.fetchrow(
+            "SELECT id, amount_usd FROM portfolio_group_dca_schedules WHERE group_id=$1::uuid",
+            group_id,
+        )
+        if row:
+            amount      = float(row["amount_usd"])
+            schedule_id = str(row["id"])
+
+    if not amount:
+        raise HTTPException(status_code=400, detail="No amount_usd provided and no DCA schedule exists")
+
+    result = await _pg_dca_execute(group_id, amount, schedule_id, pool)
+    return result
+
+
+@app.post("/api/portfolio-groups/dca/run-all")
+async def pg_dca_run_all(token: str = ""):
+    """Run all active DCA schedules that are due today. Called by the scheduler."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+
+    rows = await pool.fetch(
+        "SELECT * FROM portfolio_group_dca_schedules WHERE is_active=TRUE"
+    )
+    executed_groups = 0
+    for row in rows:
+        sched = dict(row)
+        sched["group_id"] = str(sched["group_id"])
+        sched["id"]       = str(sched["id"])
+        if not _dca_is_due_today(sched):
+            continue
+        try:
+            result = await _pg_dca_execute(
+                sched["group_id"], float(sched["amount_usd"]), sched["id"], pool
+            )
+            if result.get("executed", 0) > 0:
+                executed_groups += 1
+        except Exception as e:
+            log.warning("pg_dca_run_all.error", group_id=sched["group_id"], error=str(e))
+
+    return {"executed_groups": executed_groups}
+
+
 @app.get("/api/risk-clusters/latest")
 async def get_risk_clusters_latest(token: str = ""):
     """Return the most recent cluster assignments for all tickers."""

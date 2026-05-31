@@ -44,6 +44,7 @@ from .jobs import (
     job_market_data_warmup,
     job_market_data_eod_refresh,
     job_market_data_probe,
+    job_dca_run,
 )
 from .calendar import TZ
 
@@ -176,6 +177,14 @@ class Scheduler(BaseAgent):
             CronTrigger(day_of_week="mon", hour=7, minute=30, timezone=TZ),
             args=[r], id="risk_clustering",
             name="Weekly stock risk clustering (Monday 7:30 AM ET)",
+            replace_existing=True,
+        )
+
+        self.apscheduler.add_job(
+            job_dca_run,
+            CronTrigger(hour=9, minute=45, day_of_week="mon-fri", timezone=TZ),
+            args=[r], id="dca_run",
+            name="Portfolio group DCA scheduled buys (9:45 AM ET)",
             replace_existing=True,
         )
 

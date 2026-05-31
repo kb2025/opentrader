@@ -379,6 +379,49 @@ CREATE TABLE IF NOT EXISTS portfolio_group_accounts (
     PRIMARY KEY (group_id, account_label)
 );
 
+CREATE TABLE IF NOT EXISTS portfolio_group_rebalance_log (
+    id          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    group_id    UUID        REFERENCES portfolio_groups(id) ON DELETE CASCADE,
+    ticker      TEXT        NOT NULL,
+    action      TEXT        NOT NULL CHECK (action IN ('buy','sell')),
+    qty         NUMERIC     NOT NULL,
+    price       NUMERIC,
+    delta_usd   NUMERIC,
+    request_id  TEXT,
+    status      TEXT        NOT NULL DEFAULT 'queued'
+);
+CREATE INDEX IF NOT EXISTS pgrl_group_ts ON portfolio_group_rebalance_log (group_id, ts DESC);
+
+CREATE TABLE IF NOT EXISTS portfolio_group_dca_schedules (
+    id              UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    group_id        UUID        UNIQUE REFERENCES portfolio_groups(id) ON DELETE CASCADE,
+    amount_usd      NUMERIC     NOT NULL CHECK (amount_usd > 0),
+    frequency       TEXT        NOT NULL DEFAULT 'weekly'
+                                    CHECK (frequency IN ('daily','weekly','monthly')),
+    day_of_week     INTEGER,    -- 0=Mon … 6=Sun (weekly only)
+    day_of_month    INTEGER,    -- 1–28 (monthly only)
+    hour_et         INTEGER     NOT NULL DEFAULT 10,
+    minute_et       INTEGER     NOT NULL DEFAULT 0,
+    is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+    last_run_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_group_dca_log (
+    id          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    schedule_id UUID        REFERENCES portfolio_group_dca_schedules(id) ON DELETE SET NULL,
+    group_id    UUID        REFERENCES portfolio_groups(id) ON DELETE CASCADE,
+    ticker      TEXT        NOT NULL,
+    qty         NUMERIC     NOT NULL,
+    price       NUMERIC,
+    amount_usd  NUMERIC,
+    request_id  TEXT,
+    status      TEXT        NOT NULL DEFAULT 'queued'
+);
+CREATE INDEX IF NOT EXISTS pgdl_group_ts ON portfolio_group_dca_log (group_id, ts DESC);
+
 -- ── Shadow Account: Counterfactual P&L Runs ──────────────────────────────────
 -- Each row is one analysis run. trades_detail JSONB holds the full scored list.
 CREATE TABLE IF NOT EXISTS shadow_runs (
