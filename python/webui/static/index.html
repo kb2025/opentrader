@@ -3684,6 +3684,14 @@ select option{background:var(--surface2)}
               <div id="ot-order-legs-chips" style="display:flex;flex-wrap:wrap;gap:5px;flex:1"></div>
               <button onclick="_otClearOrderLegs()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer">Clear</button>
             </div>
+            <!-- Spread Greeks panel (shown when 2+ legs selected) -->
+            <div id="ot-spread-greeks-panel" style="display:none;padding:8px 14px;border-bottom:1px solid var(--border);background:rgba(168,85,247,.05)">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#a855f7;white-space:nowrap">Net Greeks</span>
+                <div id="ot-spread-greeks-chips" style="display:flex;flex-wrap:wrap;gap:6px;flex:1"></div>
+                <span id="ot-spread-greeks-premium" style="font-size:11px;font-weight:700;white-space:nowrap"></span>
+              </div>
+            </div>
             <!-- Guided leg selection bar -->
             <div id="ot-guided-bar" style="display:none;padding:8px 14px;border-bottom:1px solid var(--border);background:rgba(96,165,250,.06)">
               <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -22847,7 +22855,7 @@ function _otFilterChain() {
             // All legs filled — free-add in normal mode
             const midCell = tr.querySelectorAll('td')[2];
             const mid = midCell ? (parseFloat(midCell.textContent) || 0) : 0;
-            _otOrderLegs.set(key, {exp, strike, side: hasPos ? 'sell' : 'buy', mid, option_type: optType, contract});
+            _otOrderLegs.set(key, {exp, strike, side: hasPos ? 'sell' : 'buy', mid, option_type: optType, contract, ..._otGreeksFromChain(optType, exp, strike)});
           } else if (optType !== guidedLeg.type) {
             // Wrong option type — flash inline warning
             const stepEl = document.getElementById('ot-guided-step-lbl');
@@ -22866,7 +22874,7 @@ function _otFilterChain() {
               _otOrderLegs.clear();
               _otGuidedLegIdx = 0;
             }
-            _otOrderLegs.set(key, {exp, strike, side: guidedLeg.side, mid, option_type: optType, contract, guidedIdx: _otGuidedLegIdx});
+            _otOrderLegs.set(key, {exp, strike, side: guidedLeg.side, mid, option_type: optType, contract, guidedIdx: _otGuidedLegIdx, ..._otGreeksFromChain(optType, exp, strike)});
             _otGuidedLegIdx++;
             if (_otGuidedLegIdx >= _otSelectedStrategy.legDefs.length) {
               toast('success', _otSelectedStrategy.name + ' Ready', 'All legs selected — set contracts and click Place Order');
@@ -22879,7 +22887,7 @@ function _otFilterChain() {
         if (!cur) {
           const midCell = tr.querySelectorAll('td')[2];
           const mid = midCell ? (parseFloat(midCell.textContent) || 0) : 0;
-          _otOrderLegs.set(key, {exp, strike, side: hasPos ? 'sell' : 'buy', mid, option_type: optType, contract});
+          _otOrderLegs.set(key, {exp, strike, side: hasPos ? 'sell' : 'buy', mid, option_type: optType, contract, ..._otGreeksFromChain(optType, exp, strike)});
         } else if (cur.side === 'buy') {
           _otOrderLegs.set(key, {...cur, side: 'sell'});
         } else {
@@ -22980,6 +22988,91 @@ function _otUpdateOrderBar() {
     btn.onmouseenter = () => btn.style.background = hov;
     btn.onmouseleave = () => btn.style.background = bg;
   }
+  _otUpdateSpreadGreeks();
+}
+
+async function _otUpdateSpreadGreeks() {
+  const panel = document.getElementById('ot-spread-greeks-panel');
+  if (!panel) return;
+  if (_otOrderLegs.size < 1) { panel.style.display = 'none'; return; }
+
+  const legs = [..._otOrderLegs.values()].map(l => ({
+    contract:    l.contract   || '',
+    underlying:  _otActiveTicker || '',
+    option_type: l.option_type || 'call',
+    strike:      l.strike,
+    expiry:      l.exp || '',
+    side:        l.side || 'buy',
+    qty:         1,
+    mid:         l.mid || 0,
+    delta:       l.delta  ?? null,
+    gamma:       l.gamma  ?? null,
+    theta:       l.theta  ?? null,
+    vega:        l.vega   ?? null,
+    rho:         l.rho    ?? null,
+    iv:          l.iv     ?? null,
+  }));
+
+  const spot = parseFloat(document.getElementById('ot-chain-price')?.textContent?.replace(/[^0-9.]/g,'')) || 0;
+
+  try {
+    const d = await apiFetch('/api/options/spread-greeks', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ legs, spot, token: getToken() }),
+    });
+
+    const net = d.net || {};
+    const fmt4 = v => v == null ? '—' : (v > 0 ? '+' : '') + v.toFixed(4);
+    const fmt2 = v => v == null ? '—' : (v > 0 ? '+' : '') + v.toFixed(2);
+
+    const chips = [
+      { label: 'Δ Delta',  val: fmt4(net.delta),  color: net.delta  > 0 ? '#4ade80' : net.delta  < 0 ? '#f87171' : 'var(--muted)' },
+      { label: 'Γ Gamma',  val: fmt4(net.gamma),  color: '#a78bfa' },
+      { label: 'Θ Theta',  val: fmt4(net.theta),  color: net.theta  < 0 ? '#f87171' : '#4ade80' },
+      { label: 'ν Vega',   val: fmt4(net.vega),   color: '#60a5fa' },
+    ];
+
+    const prem = d.net_premium;
+    const premLabel = prem == null ? '' : prem > 0
+      ? `<span style="color:#4ade80;font-size:11px;font-weight:700">+$${prem.toFixed(2)} credit</span>`
+      : `<span style="color:#f87171;font-size:11px;font-weight:700">-$${Math.abs(prem).toFixed(2)} debit</span>`;
+
+    const beLine = d.break_evens?.length
+      ? `<span style="font-size:10px;color:var(--muted)">BE: $${d.break_evens.map(v=>v.toFixed(2)).join(' / ')}</span>`
+      : '';
+    const ddLine = d.delta_dollars != null && spot
+      ? `<span style="font-size:10px;color:var(--muted)">$Δ ${d.delta_dollars > 0 ? '+' : ''}$${d.delta_dollars.toFixed(0)}</span>`
+      : '';
+
+    document.getElementById('ot-spread-greeks-chips').innerHTML =
+      chips.map(c => `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:4px;background:var(--card-header);border:1px solid var(--border);font-size:10px">
+        <span style="color:var(--muted)">${c.label}</span>
+        <span style="color:${c.color};font-weight:700">${c.val}</span>
+      </span>`).join('') +
+      (beLine ? ' ' + beLine : '') +
+      (ddLine ? ' ' + ddLine : '');
+
+    document.getElementById('ot-spread-greeks-premium').innerHTML = premLabel;
+    panel.style.display = '';
+  } catch(_) {
+    panel.style.display = 'none';
+  }
+}
+
+function _otGreeksFromChain(optType, exp, strike) {
+  if (!_otChainData) return {};
+  const arr = optType === 'put' ? (_otChainData.puts || []) : (_otChainData.calls || []);
+  const c = arr.find(x => x.expiration === exp && Math.abs(parseFloat(x.strike) - strike) < 0.01);
+  if (!c) return {};
+  const g = {};
+  if (c.delta != null) g.delta = c.delta;
+  if (c.gamma != null) g.gamma = c.gamma;
+  if (c.theta != null) g.theta = c.theta;
+  if (c.vega  != null) g.vega  = c.vega;
+  if (c.rho   != null) g.rho   = c.rho;
+  if (c.iv    != null) g.iv    = c.iv;
+  return g;
 }
 
 function _otRemoveOrderLeg(key) {

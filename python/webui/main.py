@@ -18783,6 +18783,128 @@ async def screener_pmcc(
     return {"ticker": ticker.upper(), "spot": spot, "candidates": results[:20]}
 
 
+@app.post("/api/options/spread-greeks")
+async def spread_greeks(request: Request):
+    """
+    Compute net Greeks for a multi-leg spread.
+
+    Body:
+      legs: [{contract, underlying, option_type, strike, expiry, side, qty,
+               mid, delta, gamma, theta, vega, rho, iv}]
+      spot: float (optional — underlying price for dollar-delta calc)
+
+    Greeks lookup priority per leg:
+      1. Values supplied in the leg dict
+      2. Active option_positions row (lookup by contract symbol)
+    """
+    body = await request.json()
+    check_token(body.get("token", ""))
+
+    legs_in  = body.get("legs", [])
+    spot     = float(body.get("spot") or 0)
+    pool     = await _get_db_pool()
+
+    _GREEKS = ("delta", "gamma", "theta", "vega", "rho")
+    net     = {g: 0.0 for g in _GREEKS}
+    legs_out = []
+
+    for leg in legs_in:
+        side   = str(leg.get("side", "buy")).lower()
+        qty    = float(leg.get("qty") or 1)
+        mid    = float(leg.get("mid") or 0)
+        sign   = 1.0 if side.startswith("buy") else -1.0
+        mult   = sign * qty * 100   # 1 contract = 100 shares
+
+        # Resolve Greeks
+        greeks       = {}
+        greeks_src   = "none"
+
+        # Priority 1 — caller-supplied
+        for g in _GREEKS:
+            v = leg.get(g)
+            if v is not None:
+                greeks[g] = float(v)
+        if len(greeks) == len(_GREEKS):
+            greeks_src = "chain"
+
+        # Priority 2 — DB lookup by contract symbol
+        if greeks_src == "none" and leg.get("contract") and pool:
+            try:
+                row = await pool.fetchrow(
+                    """SELECT delta, gamma, theta, vega, rho
+                       FROM option_positions
+                       WHERE contract_symbol = $1 AND status = 'active'
+                       LIMIT 1""",
+                    leg["contract"],
+                )
+                if row:
+                    for g in _GREEKS:
+                        if row[g] is not None:
+                            greeks[g] = float(row[g])
+                    if greeks:
+                        greeks_src = "db"
+            except Exception:
+                pass
+
+        # Compute this leg's scaled contribution
+        contrib = {}
+        for g in _GREEKS:
+            v = greeks.get(g)
+            if v is not None:
+                c = round(v * mult, 4)
+                contrib[g] = c
+                net[g] = round(net[g] + c, 4)
+
+        legs_out.append({
+            "contract":    leg.get("contract", ""),
+            "underlying":  leg.get("underlying", ""),
+            "option_type": leg.get("option_type", ""),
+            "strike":      leg.get("strike"),
+            "expiry":      leg.get("expiry", ""),
+            "side":        side,
+            "qty":         qty,
+            "mid":         mid,
+            "greeks":      greeks,
+            "greeks_src":  greeks_src,
+            "contribution": contrib,
+        })
+
+    # Net premium: positive = credit received, negative = debit paid
+    net_premium = round(sum(
+        (1.0 if l["side"].startswith("buy") else -1.0) * l["mid"] * l["qty"] * 100
+        for l in legs_out
+    ), 2)
+
+    # Dollar delta (directional $ exposure per $1 move in underlying)
+    delta_dollars = round(net["delta"] * spot, 2) if spot else None
+
+    # Theta per day in dollars
+    theta_day = round(net["theta"], 2) if net.get("theta") else None
+
+    # Break-even estimates for simple 2-leg vertical spreads
+    break_evens: list[float] = []
+    if len(legs_out) == 2:
+        buy_legs  = [l for l in legs_out if l["side"].startswith("buy")]
+        sell_legs = [l for l in legs_out if not l["side"].startswith("buy")]
+        if buy_legs and sell_legs:
+            debit = abs(net_premium) / 100  # per share
+            bl = buy_legs[0]
+            if bl["option_type"] == "call" and bl["strike"] is not None:
+                break_evens.append(round(float(bl["strike"]) + debit, 2))
+            elif bl["option_type"] == "put" and bl["strike"] is not None:
+                break_evens.append(round(float(bl["strike"]) - debit, 2))
+
+    return {
+        "legs":         legs_out,
+        "net":          {k: round(v, 4) for k, v in net.items()},
+        "net_premium":  net_premium,
+        "delta_dollars": delta_dollars,
+        "theta_day":    theta_day,
+        "break_evens":  break_evens,
+        "legs_count":   len(legs_out),
+    }
+
+
 @app.post("/api/options/spreads/place")
 async def place_spread_order(request: Request):
     """

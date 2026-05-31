@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.53] - 2026-05-31
+
+### Added
+- **Spread Greeks aggregation**: `POST /api/options/spread-greeks` computes net delta/gamma/theta/vega/rho for any multi-leg spread; Greeks sourced from chain data (passed by frontend) with DB fallback by contract symbol; returns net premium (debit/credit), dollar delta, and break-even estimates for 2-leg verticals; live Spread Greeks bar appears in Options Trader below the order legs bar as soon as a leg is selected, updating on every add/remove
+
 ## [4.0.52] - 2026-05-30
 
 ### Added
