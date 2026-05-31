@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.66] - 2026-05-31
+
+### Fixed
+- **Portfolio group rebalance/cost-basis/DCA ignore sub-portfolios**: `_pg_load_full(pool, group_id)` only fetches the requested row — sub-portfolios were never attached when acting on a parent group; added `_pg_load_with_subs()` helper that fetches the parent then attaches all sub-group dicts; added `_pg_flatten_holdings()` that merges parent + sub holdings with investment-amount weighting (sub holdings weighted by `sub.investment_amount / parent.investment_amount`); all three action endpoints (cost-basis, rebalance-preview/execute, DCA run) now use these helpers so parent rebalancing correctly includes sub-portfolio tickers; per-holding account routing so sub holdings go to sub-assigned accounts
+
 ## [4.0.65] - 2026-05-31
 
 ### Fixed

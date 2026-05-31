@@ -3774,6 +3774,62 @@ async def _pg_load_full(pool, group_id: str = None) -> list[dict]:
     return result
 
 
+async def _pg_load_with_subs(pool, group_id: str) -> dict | None:
+    """Load a single group and, if it is a parent, attach its sub-portfolio dicts."""
+    groups = await _pg_load_full(pool, group_id)
+    if not groups:
+        return None
+    group = groups[0]
+    if group["type"] == "parent":
+        sub_id_rows = await pool.fetch(
+            "SELECT id FROM portfolio_groups WHERE parent_id=$1::uuid AND type='sub'",
+            group_id,
+        )
+        subs = []
+        for row in sub_id_rows:
+            sub_data = await _pg_load_full(pool, str(row["id"]))
+            if sub_data:
+                subs.append(sub_data[0])
+        group["subs"] = subs
+    else:
+        group["subs"] = []
+    return group
+
+
+def _pg_flatten_holdings(group: dict) -> list[dict]:
+    """
+    Return a flat list of {ticker, target_pct, accounts} covering the group's
+    direct holdings AND every sub-portfolio's holdings.
+
+    Sub holdings are weighted by (sub.investment_amount / parent.investment_amount)
+    so target_pct is expressed as a fraction of the parent's total capital.
+    When investment_amount is not set the sub's effective_pct is used as-is.
+    """
+    parent_inv = float(group.get("investment_amount") or 0)
+    flat: list[dict] = []
+
+    for h in group.get("holdings") or []:
+        flat.append({
+            "ticker":     h["ticker"],
+            "target_pct": float(h.get("effective_pct") or 0),
+            "accounts":   group.get("accounts", []),
+        })
+
+    for sub in group.get("subs") or []:
+        sub_inv = float(sub.get("investment_amount") or 0)
+        weight  = (sub_inv / parent_inv) if (parent_inv > 0 and sub_inv > 0) else 1.0
+        sub_accts = sub.get("accounts") or group.get("accounts", [])
+        for h in sub.get("holdings") or []:
+            eff = float(h.get("effective_pct") or 0)
+            flat.append({
+                "ticker":     h["ticker"],
+                "target_pct": round(eff * weight, 4),
+                "accounts":   sub_accts,
+            })
+
+    return flat
+
+
 @app.get("/api/portfolio-groups")
 async def list_portfolio_groups(token: str = ""):
     """List all portfolio groups with holdings and account assignments."""
@@ -3985,13 +4041,13 @@ async def pg_cost_basis(group_id: str, token: str = ""):
     if not pool:
         raise HTTPException(status_code=503, detail="DB unavailable")
 
-    groups = await _pg_load_full(pool, group_id)
-    if not groups:
+    group = await _pg_load_with_subs(pool, group_id)
+    if not group:
         raise HTTPException(status_code=404, detail="Group not found")
-    group = groups[0]
 
-    acct_labels = {a["account_label"] for a in group.get("accounts", [])}
-    target_map  = {h["ticker"]: h.get("effective_pct") for h in group.get("holdings", [])}
+    flat        = _pg_flatten_holdings(group)
+    acct_labels = {a["account_label"] for h in flat for a in h["accounts"]}
+    target_map  = {h["ticker"]: h["target_pct"] for h in flat}
 
     broker_data = await get_broker_positions()
     pos_by_ticker: dict = {}
@@ -4051,16 +4107,18 @@ async def pg_cost_basis(group_id: str, token: str = ""):
 # ── Portfolio Groups: Rebalancing ─────────────────────────────────────────────
 
 async def _pg_rebalance_preview(group: dict) -> dict:
-    """Shared logic for preview + execute: compute drift and order list."""
+    """Shared logic for preview + execute: compute drift and order list.
+    Handles parent groups by flattening sub-portfolio holdings with weighting.
+    """
     import math as _math
-    import uuid as _uuid
 
-    acct_labels = {a["account_label"] for a in group.get("accounts", [])}
+    flat        = _pg_flatten_holdings(group)
+    all_accts   = {a["account_label"] for h in flat for a in h["accounts"]}
     broker_data = await get_broker_positions()
 
     pos_by_ticker: dict = {}
     for acct in broker_data.get("accounts", []):
-        if acct.get("label") not in acct_labels:
+        if acct.get("label") not in all_accts:
             continue
         for p in acct.get("positions", []):
             sym  = (p.get("symbol") or "").upper()
@@ -4074,9 +4132,9 @@ async def _pg_rebalance_preview(group: dict) -> dict:
 
     total_value = sum(p["market_value"] for p in pos_by_ticker.values())
     positions = []
-    for h in group.get("holdings", []):
+    for h in flat:
         ticker   = h["ticker"]
-        tgt_pct  = h.get("effective_pct") or 0.0
+        tgt_pct  = h["target_pct"]
         pos      = pos_by_ticker.get(ticker, {})
         act_val  = pos.get("market_value", 0.0)
         act_pct  = round(act_val / total_value * 100, 2) if total_value else 0.0
@@ -4100,26 +4158,29 @@ async def _pg_rebalance_preview(group: dict) -> dict:
             action    = "hold"
 
         positions.append({
-            "ticker":       ticker,
-            "target_pct":   round(tgt_pct, 4),
-            "actual_pct":   act_pct,
-            "target_value": round(tgt_val, 2),
-            "actual_value": round(act_val, 2),
-            "drift_pct":    round(drift, 2),
-            "action":       action,
-            "delta_usd":    round(delta, 2),
-            "delta_qty":    delta_qty,
+            "ticker":        ticker,
+            "target_pct":    round(tgt_pct, 4),
+            "actual_pct":    act_pct,
+            "target_value":  round(tgt_val, 2),
+            "actual_value":  round(act_val, 2),
+            "drift_pct":     round(drift, 2),
+            "action":        action,
+            "delta_usd":     round(delta, 2),
+            "delta_qty":     delta_qty,
             "current_price": round(px, 4),
+            "_accounts":     [a["account_label"] for a in h["accounts"]],
         })
 
     orders = [p for p in positions if p["action"] != "hold" and p["delta_qty"] >= 1]
+    pub_positions = [{k: v for k, v in p.items() if k != "_accounts"} for p in positions]
+    pub_orders    = [{k: v for k, v in p.items() if k != "_accounts"} for p in orders]
     return {
-        "group_id":    group["id"],
-        "group_name":  group["name"],
-        "total_value": round(total_value, 2),
-        "positions":   positions,
-        "orders_count": len(orders),
-        "orders":      orders,
+        "group_id":     group["id"],
+        "group_name":   group["name"],
+        "total_value":  round(total_value, 2),
+        "positions":    pub_positions,
+        "orders_count": len(pub_orders),
+        "orders":       pub_orders,
     }
 
 
@@ -4130,10 +4191,10 @@ async def pg_rebalance_preview(group_id: str, token: str = ""):
     pool = await _get_db_pool()
     if not pool:
         raise HTTPException(status_code=503, detail="DB unavailable")
-    groups = await _pg_load_full(pool, group_id)
-    if not groups:
+    group = await _pg_load_with_subs(pool, group_id)
+    if not group:
         raise HTTPException(status_code=404, detail="Group not found")
-    return await _pg_rebalance_preview(groups[0])
+    return await _pg_rebalance_preview(group)
 
 
 @app.post("/api/portfolio-groups/{group_id}/rebalance")
@@ -4144,17 +4205,18 @@ async def pg_rebalance_execute(group_id: str, token: str = ""):
     pool = await _get_db_pool()
     if not pool:
         raise HTTPException(status_code=503, detail="DB unavailable")
-    groups = await _pg_load_full(pool, group_id)
-    if not groups:
+    group = await _pg_load_with_subs(pool, group_id)
+    if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    preview = await _pg_rebalance_preview(groups[0])
+    preview = await _pg_rebalance_preview(group)
     orders  = preview["orders"]
     if not orders:
         return {"queued": 0, "orders": [], "message": "Portfolio is within 1% of target — no rebalance needed"}
 
-    acct_labels = [a["account_label"] for a in groups[0].get("accounts", [])]
-    if not acct_labels:
+    # Validate at least one account is assigned somewhere in the group
+    all_accts = list({a for o in orders for a in o.get("_accounts", [])})
+    if not all_accts:
         raise HTTPException(status_code=400, detail="No accounts assigned to this group")
 
     try:
@@ -4168,6 +4230,7 @@ async def pg_rebalance_execute(group_id: str, token: str = ""):
     placed = []
     try:
         for o in orders:
+            acct_labels = o.get("_accounts") or all_accts
             for acct in acct_labels:
                 req_id = str(_uuid.uuid4())
                 cmd = {
@@ -4197,7 +4260,8 @@ async def pg_rebalance_execute(group_id: str, token: str = ""):
     finally:
         await r.aclose()
 
-    return {"queued": len(placed), "orders": placed}
+    clean = [{k: v for k, v in p.items() if k != "_accounts"} for p in placed]
+    return {"queued": len(clean), "orders": clean}
 
 
 # ── Portfolio Groups: DCA ─────────────────────────────────────────────────────
@@ -4224,13 +4288,15 @@ async def _pg_dca_execute(group_id: str, amount_usd: float,
                            schedule_id: str | None, pool) -> dict:
     """Core DCA execution: buy proportional slices across group holdings."""
     import math as _math, uuid as _uuid
-    groups = await _pg_load_full(pool, group_id)
-    if not groups:
+    group = await _pg_load_with_subs(pool, group_id)
+    if not group:
         return {"executed": 0, "skipped": 0, "orders": [], "error": "Group not found"}
-    group = groups[0]
 
-    acct_labels = [a["account_label"] for a in group.get("accounts", [])]
-    if not acct_labels:
+    flat = _pg_flatten_holdings(group)
+    if not flat:
+        return {"executed": 0, "skipped": 0, "orders": [], "error": "No holdings in group"}
+    all_accts = list({a["account_label"] for h in flat for a in h["accounts"]})
+    if not all_accts:
         return {"executed": 0, "skipped": 0, "orders": [], "error": "No accounts assigned"}
 
     broker_data = await get_broker_positions()
@@ -4252,10 +4318,11 @@ async def _pg_dca_execute(group_id: str, amount_usd: float,
 
     placed, skipped = [], []
     try:
-        for h in group.get("holdings", []):
+        for h in flat:
             ticker   = h["ticker"]
-            eff_pct  = h.get("effective_pct") or 0.0
+            eff_pct  = h["target_pct"]
             alloc    = amount_usd * eff_pct / 100.0
+            acct_labels = [a["account_label"] for a in h["accounts"]] or all_accts
 
             px = price_map.get(ticker)
             if not px:
