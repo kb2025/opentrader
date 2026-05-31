@@ -619,3 +619,6 @@ CREATE TABLE IF NOT EXISTS stock_risk_clusters (
 );
 CREATE INDEX IF NOT EXISTS src_ticker_date ON stock_risk_clusters (ticker, run_date DESC);
 CREATE INDEX IF NOT EXISTS src_run_tier    ON stock_risk_clusters (run_date DESC, risk_tier);
+
+-- investment_amount on portfolio_groups (added for sub-portfolio capital allocation)
+ALTER TABLE portfolio_groups ADD COLUMN IF NOT EXISTS investment_amount NUMERIC;

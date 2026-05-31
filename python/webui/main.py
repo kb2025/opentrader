@@ -3765,6 +3765,7 @@ async def _pg_load_full(pool, group_id: str = None) -> list[dict]:
             "strategy_family_id": r["strategy_family_id"],
             "strategy_name":      r["strategy_name"],
             "color":              r["color"],
+            "investment_amount":  float(r["investment_amount"]) if r["investment_amount"] is not None else None,
             "created_at":         r["created_at"].isoformat(),
             "updated_at":         r["updated_at"].isoformat(),
             "holdings":           holdings,
@@ -3817,8 +3818,8 @@ async def create_portfolio_group(body: dict, token: str = ""):
 
     row = await pool.fetchrow(
         """INSERT INTO portfolio_groups
-               (name, type, parent_id, max_stocks, alloc_mode, strategy_family_id, strategy_name, color)
-           VALUES ($1,$2,$3::uuid,$4,$5,$6,$7,$8)
+               (name, type, parent_id, max_stocks, alloc_mode, strategy_family_id, strategy_name, color, investment_amount)
+           VALUES ($1,$2,$3::uuid,$4,$5,$6,$7,$8,$9)
            RETURNING id""",
         str(body.get("name", "New Portfolio")),
         grp_type,
@@ -3828,6 +3829,7 @@ async def create_portfolio_group(body: dict, token: str = ""):
         body.get("strategy_family_id") or None,
         body.get("strategy_name")      or None,
         str(body.get("color", "#60a5fa")),
+        float(body["investment_amount"]) if body.get("investment_amount") else None,
     )
     groups = await _pg_load_full(pool, str(row["id"]))
     return {"group": groups[0] if groups else {}}
@@ -3842,7 +3844,7 @@ async def update_portfolio_group(group_id: str, body: dict, token: str = ""):
         from fastapi import HTTPException
         raise HTTPException(status_code=503, detail="DB unavailable")
     fields, vals, idx = [], [], 1
-    for field in ("name", "alloc_mode", "strategy_family_id", "strategy_name", "color"):
+    for field in ("name", "alloc_mode", "strategy_family_id", "strategy_name", "color", "investment_amount"):
         if field in body:
             fields.append(f"{field}=${idx}")
             vals.append(body[field])

@@ -2205,6 +2205,18 @@ select option{background:var(--surface2)}
             </div>
           </div>
 
+          <!-- Investment amount -->
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Total Investment Amount (optional)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:13px;color:var(--muted)">$</span>
+              <input id="pg-investment" type="number" min="0" step="100" placeholder="e.g. 10000"
+                style="flex:1;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px"
+                oninput="_pgRefreshHoldingsEditor()">
+              <span style="font-size:11px;color:var(--muted)">→ shows $ per ticker</span>
+            </div>
+          </div>
+
           <!-- Strategy picker -->
           <div>
             <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Trading Strategy (optional)</label>
@@ -7284,11 +7296,12 @@ async function _pgEdit(groupId) {
   _pgEditType = g.type;
   _pgHoldings = (g.holdings || []).map(h => ({...h}));
   _pgSubs     = (g.subs || []).map(s => ({
-    id:         s.id,
-    name:       s.name,
-    color:      s.color || '#a78bfa',
-    alloc_mode: s.alloc_mode || 'equal',
-    holdings:   (s.holdings || []).map(h => ({...h})),
+    id:                s.id,
+    name:              s.name,
+    color:             s.color || '#a78bfa',
+    alloc_mode:        s.alloc_mode || 'equal',
+    investment_amount: s.investment_amount ?? null,
+    holdings:          (s.holdings || []).map(h => ({...h})),
   }));
   await _pgOpenModal(g);
 }
@@ -7303,8 +7316,10 @@ async function _pgOpenModal(g) {
 
   document.getElementById('pg-modal-title').textContent =
     _pgEditId ? `Edit — ${g.name}` : (g.type === 'sub' ? 'New Sub-Portfolio' : 'New Parent Portfolio');
-  document.getElementById('pg-name').value  = g.name || '';
-  document.getElementById('pg-color').value = g.color || '#60a5fa';
+  document.getElementById('pg-name').value       = g.name || '';
+  document.getElementById('pg-color').value      = g.color || '#60a5fa';
+  const invEl = document.getElementById('pg-investment');
+  if (invEl) invEl.value = g.investment_amount != null ? g.investment_amount : '';
 
   const maxS = g.max_stocks || (g.type === 'sub' ? 10 : 25);
   document.getElementById('pg-type-info').innerHTML =
@@ -7379,13 +7394,18 @@ function _pgRefreshHoldingsEditor() {
     document.getElementById('pg-alloc-total').textContent = '';
     return;
   }
-  const eqPct = parseFloat((100 / _pgHoldings.length).toFixed(2));
+  const eqPct    = parseFloat((100 / _pgHoldings.length).toFixed(2));
+  const totalInv = parseFloat(document.getElementById('pg-investment')?.value || 0) || 0;
   let totalCustom = 0;
   el.innerHTML = _pgHoldings.map((h,i) => {
-    const displayPct = mode === 'custom' ? (h.alloc_pct ?? eqPct) : eqPct;
+    const displayPct  = mode === 'custom' ? (h.alloc_pct ?? eqPct) : eqPct;
+    const dollarAmt   = totalInv > 0 ? (displayPct / 100 * totalInv) : null;
+    const dollarTag   = dollarAmt != null
+      ? `<span style="font-size:10px;color:var(--muted);min-width:52px;text-align:right">$${dollarAmt.toLocaleString(undefined,{maximumFractionDigits:0})}</span>`
+      : '';
     const pct = mode === 'custom'
       ? `<input type="number" min="0.1" max="100" step="0.1" value="${displayPct}"
-           style="width:64px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:11px;text-align:right"
+           style="width:60px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:11px;text-align:right"
            oninput="_pgUpdateAlloc(${i},this.value)">`
       : `<span style="font-size:11px;color:var(--muted)">${eqPct}%</span>`;
     if (mode === 'custom') totalCustom += parseFloat(h.alloc_pct ?? eqPct);
@@ -7393,9 +7413,10 @@ function _pgRefreshHoldingsEditor() {
       <span style="font-size:11px;font-weight:700;color:var(--fg);flex:1">${h.ticker}</span>
       <label style="font-size:11px;color:var(--muted)">Lot</label>
       <input type="number" min="1" value="${h.lot_size||1}"
-        style="width:50px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:3px 5px;font-size:11px;text-align:right"
+        style="width:46px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:3px 4px;font-size:11px;text-align:right"
         oninput="_pgUpdateLot(${i},this.value)">
       ${pct}
+      ${dollarTag}
       <button onclick="_pgRemoveTicker(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 2px">✕</button>
     </div>`;
   }).join('');
@@ -7452,12 +7473,17 @@ function _pgRenderSubsEditor() {
     const palette  = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9'];
     let   totalPct = 0;
 
-    const subEq = sub.holdings.length ? parseFloat((100/sub.holdings.length).toFixed(2)) : 0;
+    const subEq  = sub.holdings.length ? parseFloat((100/sub.holdings.length).toFixed(2)) : 0;
+    const subInv = sub.investment_amount || 0;
     const holdRows = sub.holdings.map((h, ti) => {
       const displayPct = mode === 'custom' ? (h.alloc_pct ?? subEq) : subEq;
+      const dollarAmt  = subInv > 0 ? (displayPct / 100 * subInv) : null;
+      const dollarTag  = dollarAmt != null
+        ? `<span style="font-size:9px;color:var(--muted);min-width:44px;text-align:right">$${dollarAmt.toLocaleString(undefined,{maximumFractionDigits:0})}</span>`
+        : '';
       const pct = mode === 'custom'
         ? `<input type="number" min="0.1" max="100" step="0.1" value="${displayPct}"
-             style="width:58px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:10px;text-align:right"
+             style="width:54px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:10px;text-align:right"
              oninput="_pgSubUpdateAlloc(${si},${ti},this.value)">`
         : `<span style="font-size:10px;color:var(--muted)">${subEq}%</span>`;
       if (mode === 'custom') totalPct += parseFloat(h.alloc_pct ?? subEq);
@@ -7467,9 +7493,10 @@ function _pgRenderSubsEditor() {
         <span style="font-size:11px;font-weight:700;color:var(--fg);flex:1">${h.ticker}</span>
         <label style="font-size:10px;color:var(--muted)">Lot</label>
         <input type="number" min="1" value="${h.lot_size||1}"
-          style="width:44px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:10px;text-align:right"
+          style="width:40px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:10px;text-align:right"
           oninput="_pgSubUpdateLot(${si},${ti},this.value)">
         ${pct}
+        ${dollarTag}
         <button onclick="_pgSubRemoveTicker(${si},${ti})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 1px">✕</button>
       </div>`;
     }).join('');
@@ -7497,6 +7524,13 @@ function _pgRenderSubsEditor() {
           <input type="radio" name="pg-sub-alloc-${si}" value="custom" ${mode==='custom'?'checked':''} onchange="_pgSubSwitchMode(${si},'custom')"> Custom %
         </label>
         <span style="font-size:10px;color:var(--muted)">${sub.holdings.length}/10</span>
+        <div style="display:flex;align-items:center;gap:3px">
+          <span style="font-size:10px;color:var(--muted)">$</span>
+          <input type="number" min="0" step="100" placeholder="Investment $"
+            value="${sub.investment_amount != null ? sub.investment_amount : ''}"
+            style="width:90px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:10px"
+            oninput="_pgSubs[${si}].investment_amount=parseFloat(this.value)||null;_pgRenderSubsEditor()">
+        </div>
         <button onclick="_pgSubRemove(${si})" style="background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.3);border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer">Remove</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:3px;max-height:160px;overflow-y:auto;margin-bottom:6px">
@@ -7532,7 +7566,7 @@ function _pgSubEqualise(si) {
 
 function _pgSubAdd() {
   if (_pgSubs.length >= 3) { toast('error', 'Limit', 'Maximum 3 sub-portfolios per parent'); return; }
-  _pgSubs.push({ id: null, name: `Sub ${_pgSubs.length+1}`, color: '#a78bfa', alloc_mode: 'equal', holdings: [] });
+  _pgSubs.push({ id: null, name: `Sub ${_pgSubs.length+1}`, color: '#a78bfa', alloc_mode: 'equal', investment_amount: null, holdings: [] });
   _pgRenderSubsEditor();
 }
 
@@ -7595,10 +7629,11 @@ async function _pgSave() {
     }
   }
 
-  const selStrat  = document.getElementById('pg-strategy');
-  const stratFid  = selStrat.value || null;
-  const stratName = stratFid ? selStrat.options[selStrat.selectedIndex].text.replace(/ \(.*\)$/,'') : null;
-  const color     = document.getElementById('pg-color').value;
+  const selStrat     = document.getElementById('pg-strategy');
+  const stratFid     = selStrat.value || null;
+  const stratName    = stratFid ? selStrat.options[selStrat.selectedIndex].text.replace(/ \(.*\)$/,'') : null;
+  const color        = document.getElementById('pg-color').value;
+  const investAmount = parseFloat(document.getElementById('pg-investment')?.value) || null;
   const assignedAccounts = [...document.querySelectorAll('#pg-accounts-list input[type=checkbox]:checked')]
     .map(cb => ({ account_label: cb.value, broker: cb.dataset.broker || '' }));
 
@@ -7609,13 +7644,13 @@ async function _pgSave() {
     if (_pgEditId) {
       const r = await apiFetch(`/api/portfolio-groups/${_pgEditId}?token=${encodeURIComponent(token)}`, {
         method: 'PATCH', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ name, alloc_mode: mode, strategy_family_id: stratFid, strategy_name: stratName, color }),
+        body: JSON.stringify({ name, alloc_mode: mode, strategy_family_id: stratFid, strategy_name: stratName, color, investment_amount: investAmount }),
       });
       group = r.group;
     } else {
       const r = await apiFetch(`/api/portfolio-groups?token=${encodeURIComponent(token)}`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ name, type: _pgEditType, alloc_mode: mode, strategy_family_id: stratFid, strategy_name: stratName, color, max_stocks: 25 }),
+        body: JSON.stringify({ name, type: _pgEditType, alloc_mode: mode, strategy_family_id: stratFid, strategy_name: stratName, color, max_stocks: 25, investment_amount: investAmount }),
       });
       group = r.group;
     }
@@ -7643,13 +7678,14 @@ async function _pgSave() {
           body: JSON.stringify({
             name: sub.name, type: 'sub', parent_id: gid,
             alloc_mode: sub.alloc_mode, color: sub.color, max_stocks: 10,
+            investment_amount: sub.investment_amount || null,
           }),
         });
         subId = r.group?.id;
       } else {
         await apiFetch(`/api/portfolio-groups/${subId}?token=${encodeURIComponent(token)}`, {
           method: 'PATCH', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ name: sub.name, alloc_mode: sub.alloc_mode, color: sub.color }),
+          body: JSON.stringify({ name: sub.name, alloc_mode: sub.alloc_mode, color: sub.color, investment_amount: sub.investment_amount || null }),
         });
       }
       if (subId) {
