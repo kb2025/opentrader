@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.67] - 2026-05-31
+
+### Added
+- **Portfolio groups on equity dashboard account cards**: when a portfolio group (or sub-portfolio) has a trading account assigned, it now appears as a colour-coded chip in a "Groups" row below the Sectors row in that account's heatmap section; clicking a chip opens the Rebalance modal for that group
+
 ## [4.0.66] - 2026-05-31
 
 ### Fixed

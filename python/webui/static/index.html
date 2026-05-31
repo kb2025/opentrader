@@ -9696,8 +9696,9 @@ const _CO_NAMES = {
   ARKK:'ARK Innov.',ARKG:'ARK Genomics',
 };
 
-function _renderAccountHeatmap(positions, acctKey) {
+function _renderAccountHeatmap(positions, acctKey, acctGroups) {
   if (!positions.length) return '';
+  acctGroups = acctGroups || [];
 
   // Aggregate market value, P&L, and qty per ticker
   const tickerMv = {}, tickerPl = {}, tickerQty = {}, sectorMv = {};
@@ -9778,6 +9779,19 @@ function _renderAccountHeatmap(positions, acctKey) {
     onmouseleave="_hmScrollStop('${elemId}');this.style.opacity='.55'">&#9670;</span>`;
   const tkElem = `hm-ticker-scroll-${acctKey}`;
   const scElem = `hm-sector-scroll-${acctKey}`;
+  const groupsRow = acctGroups.length ? `
+    <div style="display:flex;align-items:center;gap:4px;min-width:0;margin-top:5px">
+      <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Groups</span>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;padding-left:6px">
+        ${acctGroups.map(g => {
+          const col = g.color || '#60a5fa';
+          const typeTag = g.type === 'sub' ? ' <span style="opacity:.55;font-size:8px">(sub)</span>' : '';
+          return `<span style="font-size:9px;font-weight:600;padding:2px 8px;border-radius:4px;background:${col}22;border:1px solid ${col}55;color:${col};cursor:pointer;white-space:nowrap"
+            onclick="_pgRebalance('${g.id}')" title="Rebalance ${g.name}">${g.name}${typeTag}</span>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+
   return `<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
     <div style="display:flex;align-items:center;gap:4px;margin-bottom:5px;min-width:0">
       <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Tickers</span>
@@ -9797,6 +9811,7 @@ function _renderAccountHeatmap(positions, acctKey) {
         ${dBtn(scElem,1)}
       </div>
     </div>
+    ${groupsRow}
   </div>`;
 }
 
@@ -9813,9 +9828,13 @@ function _isEquityPosition(p) {
   return true;
 }
 
-function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap) {
+function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap, portfolioGroups) {
   journalMap = journalMap || {};
   sectorMap = sectorMap || {};
+  portfolioGroups = portfolioGroups || [];
+  const acctGroups = portfolioGroups.filter(g =>
+    (g.accounts || []).some(a => a.account_label === acct.label)
+  );
   const brokerColors = { tradier:'#1da462', alpaca:'#ffa500', webull:'#e82f3e' };
   const bal     = acct.balances || {};
   const broker  = acct.broker || '';
@@ -9941,7 +9960,7 @@ function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap) {
     </tr>`;
   }).join('') || `<tr><td colspan="18" class="empty-state" style="padding:12px">No open positions</td></tr>`;
 
-  const heatmap = _renderAccountHeatmap(equityPositions, acctKey);
+  const heatmap = _renderAccountHeatmap(equityPositions, acctKey, acctGroups);
   const bodyId = `unified-card-${acctKey}`;
 
   // Mentor icon — show if account has mentor or ai_enabled in broker settings
@@ -10268,7 +10287,7 @@ async function loadUnifiedPositions(force = false) {
     _buildRiskCharts(_unifiedLastData);
 
     // Render tables (always show all accounts regardless of paper filter)
-    container.innerHTML = accounts.map(a => _renderUnifiedCard(a, signalMap, sentData, sectorMap, journalMaps[a.label] || {})).join('');
+    container.innerHTML = accounts.map(a => _renderUnifiedCard(a, signalMap, sentData, sectorMap, journalMaps[a.label] || {}, portfolioGroups)).join('');
     if (refreshBtn) refreshBtn.disabled = false;
 
   } catch(e) {
@@ -22694,7 +22713,8 @@ async function _eqJournalSave() {
       if (container) {
         container.innerHTML = (_unifiedLastData.accounts || []).map(a =>
           _renderUnifiedCard(a, _unifiedLastData.signalMap, _unifiedLastData.sentData,
-                             _unifiedLastData.sectorMap, (journalMaps[a.label] || {}))
+                             _unifiedLastData.sectorMap, (journalMaps[a.label] || {}),
+                             _unifiedLastData.portfolioGroups || [])
         ).join('');
       }
     }
