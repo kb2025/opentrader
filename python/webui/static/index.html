@@ -9747,9 +9747,11 @@ function _renderAccountHeatmap(positions, acctKey, acctGroups) {
         </div>`;
       }).join('');
       groupsRow = `<div style="display:flex;align-items:center;gap:4px;min-width:0;margin-top:5px">
-        <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Groups</span>
+        <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Portfolio Allocation</span>
         <div style="display:flex;align-items:center;flex:1;min-width:0;padding-left:6px">
-          <div id="${pgElem}" style="display:flex;gap:2px;flex:1;min-width:0;overflow:hidden">${groupBlocks}</div>
+          ${dBtn(pgElem,-1)}
+          <div id="${pgElem}" style="display:flex;gap:2px;flex:1;min-width:0;overflow:hidden;scroll-behavior:auto">${groupBlocks}</div>
+          ${dBtn(pgElem,1)}
         </div>
       </div>`;
     }
