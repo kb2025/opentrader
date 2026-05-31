@@ -9519,13 +9519,12 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData, portfolioG
   // even when the account has no open positions.
   const allPg = (portfolioGroups || []);
 
-  // Standalone portfolio groups section — only parent groups; subs nested inside
+  // Standalone portfolio groups section — one card per group (parent + sub separately)
   const pgStandaloneEl = document.getElementById('risk-portfolio-groups');
   if (pgStandaloneEl) {
-    // Show parent groups only (subs appear nested inside their parent card)
-    const pgParents = allPg.filter(g => g.type !== 'sub' &&
-      ((g.holdings && g.holdings.length) || (g.subs && g.subs.some(s => s.holdings && s.holdings.length))));
-    if (pgParents.length) {
+    // Show ALL groups with holdings as individual cards — parents first, then subs labelled
+    const pgWithHoldings = allPg.filter(g => g.holdings && g.holdings.length);
+    if (pgWithHoldings.length) {
       const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9',
                        '#4ade80','#f472b6','#818cf8','#a3e635','#38bdf8','#fb7185','#c084fc','#fdba74'];
       pgStandaloneEl.style.display = '';
@@ -9535,11 +9534,11 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData, portfolioG
           <div style="flex:1;height:1px;background:var(--border)"></div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">
-        ${pgParents.map(g => {
-          const color = g.color || '#60a5fa';
+        ${pgWithHoldings.map(g => {
+          const color    = g.color || '#60a5fa';
           const holdings = g.holdings || [];
-          const total = holdings.reduce((s,h) => s+(h.effective_pct||0),0) || 100;
-          const segs  = holdings.map((h,i) => {
+          const total    = holdings.reduce((s,h) => s+(h.effective_pct||0),0) || 100;
+          const segs     = holdings.map((h,i) => {
             const pct = ((h.effective_pct||0)/total*100).toFixed(2);
             const col = palette[i % palette.length];
             return `<div style="flex:${pct};background:${col};min-width:2px;position:relative" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%">
@@ -9549,44 +9548,18 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData, portfolioG
           const acctChips = (g.accounts||[]).map(a =>
             `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">${a.account_label}</span>`
           ).join('');
-          const stratTag = g.strategy_name ? `<span style="font-size:9px;color:var(--muted)">${g.strategy_name}</span>` : '';
-          // Sub-portfolio nested sections
-          const subsHtml = (g.subs||[]).filter(s => s.holdings && s.holdings.length).map(s => {
-            const sColor = s.color || '#a78bfa';
-            const sTotal = s.holdings.reduce((t,h) => t+(h.effective_pct||0),0) || 100;
-            const sSegs  = s.holdings.map((h,i) => {
-              const pct = ((h.effective_pct||0)/sTotal*100).toFixed(2);
-              const col = palette[(holdings.length + i) % palette.length];
-              return `<div style="flex:${pct};background:${col};min-width:2px;position:relative" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%">
-                <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;overflow:hidden;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?h.ticker:''}</span>
-              </div>`;
-            }).join('');
-            const sChips = s.holdings.map((h,i) => {
-              const col = palette[(holdings.length + i) % palette.length];
-              return `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${col}22;border:1px solid ${col}55;color:${col}">${h.ticker}</span>`;
-            }).join('');
-            return `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)33">
-              <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
-                <span style="width:6px;height:6px;border-radius:50%;background:${sColor};flex-shrink:0"></span>
-                <span style="font-size:9px;font-weight:600;color:var(--muted)">${s.name}</span>
-                <span style="font-size:8px;color:var(--dim);opacity:.7">(sub)</span>
-              </div>
-              <div style="display:flex;height:16px;border-radius:3px;overflow:hidden;border:1px solid var(--border)">${sSegs}</div>
-              <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:4px">${sChips}</div>
-            </div>`;
-          }).join('');
+          const stratTag  = g.strategy_name ? `<span style="font-size:9px;color:var(--muted)">${g.strategy_name}</span>` : '';
+          const typeTag   = g.type === 'sub' ? `<span style="font-size:9px;color:var(--muted);opacity:.6">(sub)</span>` : '';
           return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${color};border-radius:8px;padding:10px 12px">
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-              <span style="font-size:11px;font-weight:700;color:var(--fg)">${g.name}</span>
+              <span style="font-size:11px;font-weight:700;color:var(--fg)">${g.name}</span>${typeTag}
               ${stratTag}
               <div style="margin-left:auto;display:flex;gap:3px;flex-wrap:wrap">${acctChips}</div>
             </div>
-            ${holdings.length ? `
             <div style="display:flex;height:22px;border-radius:4px;overflow:hidden;border:1px solid var(--border)">${segs}</div>
             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">
               ${holdings.map((h,i) => `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${palette[i%palette.length]}22;border:1px solid ${palette[i%palette.length]}55;color:${palette[i%palette.length]}">${h.ticker}</span>`).join('')}
-            </div>` : ''}
-            ${subsHtml}
+            </div>
             <div style="display:flex;gap:4px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)33">
               <button onclick="_pgCostBasis('${g.id}')" style="flex:1;font-size:9px;font-weight:600;padding:3px 0;background:rgba(96,165,250,.1);color:#60a5fa;border:1px solid rgba(96,165,250,.3);border-radius:4px;cursor:pointer">Cost Basis</button>
               <button onclick="_pgRebalance('${g.id}')" style="flex:1;font-size:9px;font-weight:600;padding:3px 0;background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.3);border-radius:4px;cursor:pointer">Rebalance</button>
@@ -9659,13 +9632,11 @@ function _pgBrokerBar(groups) {
   const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9',
                    '#4ade80','#f472b6','#818cf8','#a3e635','#38bdf8','#fb7185','#c084fc','#fdba74'];
 
-  // Only render parent groups; subs are nested inside their parent
-  const parentGroups = groups.filter(g => g.type !== 'sub');
-  const rows = parentGroups.map(g => {
+  // Each group (parent or sub) gets its own bar showing only its own holdings
+  const rows = groups.map(g => {
     const color    = g.color || '#60a5fa';
     const holdings = g.holdings || [];
-    const hasSubs  = (g.subs || []).some(s => s.holdings && s.holdings.length);
-    if (!holdings.length && !hasSubs) return '';
+    if (!holdings.length) return '';
     const total = holdings.reduce((s,h) => s+(h.effective_pct||0),0) || 100;
     const segs = holdings.map((h,i) => {
       const pct = ((h.effective_pct||0)/total*100).toFixed(2);
@@ -9677,31 +9648,16 @@ function _pgBrokerBar(groups) {
     const stratTag = g.strategy_name
       ? `<span style="font-size:9px;color:var(--muted);margin-left:4px">${g.strategy_name}</span>`
       : '';
-    // Sub-portfolio rows nested under parent
-    const subRows = (g.subs||[]).filter(s => s.holdings && s.holdings.length).map(s => {
-      const sColor = s.color || '#a78bfa';
-      const sTotal = s.holdings.reduce((t,h) => t+(h.effective_pct||0),0) || 100;
-      const sSegs  = s.holdings.map((h,i) => {
-        const pct = ((h.effective_pct||0)/sTotal*100).toFixed(2);
-        const col  = palette[(holdings.length + i) % palette.length];
-        return `<div style="flex:${pct};background:${col};min-width:2px;position:relative" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%">
-          <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;overflow:hidden;text-overflow:clip;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?h.ticker:''}</span>
-        </div>`;
-      }).join('');
-      return `<div style="margin-top:4px;padding-left:10px;border-left:2px solid ${sColor}44">
-        <div style="font-size:8px;color:var(--dim);margin-bottom:2px">${s.name} <span style="opacity:.6">(sub)</span></div>
-        <div style="display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid var(--border)">${sSegs}</div>
-      </div>`;
-    }).join('');
+    const typeTag = g.type === 'sub'
+      ? `<span style="font-size:9px;color:var(--muted);opacity:.7"> (sub)</span>` : '';
     return `<div style="margin-top:6px">
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
         <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>
-        <span style="font-size:10px;font-weight:600;color:var(--fg)">${g.name}</span>
+        <span style="font-size:10px;font-weight:600;color:var(--fg)">${g.name}${typeTag}</span>
         ${stratTag}
         <span style="font-size:9px;color:var(--dim);margin-left:auto">${holdings.length} stocks</span>
       </div>
-      ${holdings.length ? `<div style="display:flex;height:20px;border-radius:4px;overflow:hidden;border:1px solid var(--border)">${segs}</div>` : ''}
-      ${subRows}
+      <div style="display:flex;height:20px;border-radius:4px;overflow:hidden;border:1px solid var(--border)">${segs}</div>
     </div>`;
   }).filter(Boolean).join('');
 

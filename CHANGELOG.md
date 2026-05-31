@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.70] - 2026-05-31
+
+### Fixed
+- **Portfolio group cards each show only their own holdings**: parent cards show only parent direct holdings in their bar; sub-portfolio cards show only their own holdings; both appear as separate cards in the grid — sub-portfolio hierarchy detail remains in the Portfolio Groups management page
+
 ## [4.0.69] - 2026-05-31
 
 ### Fixed
