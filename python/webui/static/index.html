@@ -9852,34 +9852,97 @@ function _renderAccountHeatmap(positions, acctKey, acctGroups) {
   try {
     if (acctGroups.length) {
       const pgElem = `hm-pg-scroll-${acctKey}`;
-      // Flatten all tickers from parent direct holdings + subs into individual segments
-      const _pgAllTickers = [];
+
+      // ── Compute TARGET allocation % per ticker ────────────────────────────
+      // Uses investment_amount for parent/sub split; falls back to equal slots.
+      const _pgTarget = {};   // ticker → target %
+      const _pgColor  = {};   // ticker → group color
+      const _pgGid    = {};   // ticker → group id (for rebalance click)
       for (const g of acctGroups) {
-        const col = g.color || '#60a5fa';
-        for (const h of (g.holdings || [])) {
-          const mv = tickerMv[(h.ticker||'').toUpperCase()] || 0;
-          _pgAllTickers.push({ ticker: h.ticker, mv, col, groupId: g.id });
-        }
-        for (const sub of (g.subs || [])) {
-          const sCol = sub.color || '#a78bfa';
-          for (const sh of (sub.holdings || [])) {
-            const mv = tickerMv[(sh.ticker||'').toUpperCase()] || 0;
-            _pgAllTickers.push({ ticker: sh.ticker, mv, col: sCol, groupId: g.id });
-          }
+        const col      = g.color || '#60a5fa';
+        const gid      = g.id;
+        const parentInv = parseFloat(g.investment_amount || 0);
+        const activeSubs = (g.subs || []).filter(s => s.holdings && s.holdings.length);
+        const totalSubInv = activeSubs.reduce((s, sub) => s + parseFloat(sub.investment_amount || 0), 0);
+        const holdings  = g.holdings || [];
+
+        if (parentInv > 0) {
+          // Investment-amount weighted
+          const directFlex = Math.max(parentInv - totalSubInv, 0);
+          const hTotal = holdings.reduce((s, h) => s + (h.effective_pct || 0), 0) || 100;
+          holdings.forEach(h => {
+            _pgTarget[h.ticker] = directFlex / parentInv * ((h.effective_pct || 0) / hTotal) * 100;
+            _pgColor[h.ticker]  = col;  _pgGid[h.ticker] = gid;
+          });
+          activeSubs.forEach(sub => {
+            const subInv = parseFloat(sub.investment_amount || 0);
+            const sCol   = sub.color || '#a78bfa';
+            const sTotal = (sub.holdings || []).reduce((s, sh) => s + (sh.effective_pct || 0), 0) || 100;
+            (sub.holdings || []).forEach(sh => {
+              _pgTarget[sh.ticker] = subInv / parentInv * ((sh.effective_pct || 0) / sTotal) * 100;
+              _pgColor[sh.ticker]  = sCol;  _pgGid[sh.ticker] = gid;
+            });
+          });
+        } else {
+          // Equal-slot fallback
+          const totalSlots = holdings.length + activeSubs.reduce((s, sub) => s + sub.holdings.length, 0) || 1;
+          holdings.forEach(h => {
+            _pgTarget[h.ticker] = 100 / totalSlots;
+            _pgColor[h.ticker]  = col;  _pgGid[h.ticker] = gid;
+          });
+          activeSubs.forEach(sub => {
+            const sCol   = sub.color || '#a78bfa';
+            const sTotal = (sub.holdings || []).reduce((s, sh) => s + (sh.effective_pct || 0), 0) || 100;
+            (sub.holdings || []).forEach(sh => {
+              _pgTarget[sh.ticker] = (sub.holdings.length / totalSlots) * ((sh.effective_pct || 0) / sTotal) * 100;
+              _pgColor[sh.ticker]  = sCol;  _pgGid[sh.ticker] = gid;
+            });
+          });
         }
       }
-      const _pgTotalMv = _pgAllTickers.reduce((s, t) => s + t.mv, 0) || 1;
-      const groupBlocks = _pgAllTickers.map(t => {
-        const pct = (_pgTotalMv > 0 ? t.mv / _pgTotalMv * 100 : 0).toFixed(1);
-        const label = parseFloat(pct) >= 8 ? `${t.ticker} ${pct}%` : parseFloat(pct) >= 4 ? t.ticker : '';
-        const tip  = `${t.ticker}: ${_fmtUsd(t.mv)} (${pct}%)`.replace(/'/g, "&#39;");
-        return `<div style="flex:${t.mv||1};min-width:2px;height:28px;background:${t.col}28;border:1px solid ${t.col}55;border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer"
-          onclick="_pgRebalance('${t.groupId}')"
-          onmousemove="_pieSliceHover(event,'${tip}','${t.col}')" onmouseleave="_pieSliceLeave()"
+
+      // ── Actual % from live market values ─────────────────────────────────
+      const _pgActualTotal = Object.keys(_pgTarget).reduce((s, tk) => s + (tickerMv[tk] || 0), 0) || 1;
+
+      // ── Build segments — sized by TARGET, coloured by deviation ──────────
+      const DELTA_THRESHOLD = 3;   // % — below this, considered on-target
+      const groupBlocks = Object.entries(_pgTarget).map(([ticker, tgtPct]) => {
+        const col     = _pgColor[ticker] || '#60a5fa';
+        const gid     = _pgGid[ticker]   || '';
+        const mv      = tickerMv[ticker] || 0;
+        const actPct  = mv / _pgActualTotal * 100;
+        const delta   = actPct - tgtPct;          // + overage, - shortage
+        const absDelta = Math.abs(delta);
+        const isOff   = absDelta > DELTA_THRESHOLD;
+
+        // Segment appearance
+        const bg     = isOff ? 'rgba(234,179,8,0.18)'  : `${col}28`;
+        const border = isOff ? 'rgba(234,179,8,0.65)'  : `${col}55`;
+
+        // Labels (only if segment wide enough)
+        const wide    = tgtPct >= 9;
+        const medium  = tgtPct >= 5;
+        const deltaStr = isOff
+          ? (delta > 0 ? `▲+${absDelta.toFixed(1)}%` : `▼-${absDelta.toFixed(1)}%`)
+          : '';
+        const deltaColor = isOff ? '#eab308' : col;
+
+        const line1 = medium ? ticker : '';
+        const line2 = wide
+          ? `${tgtPct.toFixed(1)}%${deltaStr ? ' ' + deltaStr : ''}`
+          : (medium && isOff ? deltaStr : '');
+
+        const tip = `${ticker} — Target: ${tgtPct.toFixed(1)}%  Actual: ${actPct.toFixed(1)}%${isOff ? '  ' + (delta > 0 ? 'Overage' : 'Shortage') + ': ' + (delta > 0 ? '+' : '-') + absDelta.toFixed(1) + '%' : '  On target'}`.replace(/'/g, "&#39;");
+
+        return `<div style="flex:${tgtPct||1};min-width:2px;height:36px;background:${bg};border:1px solid ${border};border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;gap:1px"
+          onclick="_pgRebalance('${gid}')"
+          onmousemove="_pieSliceHover(event,'${tip}','${col}')" onmouseleave="_pieSliceLeave()"
           onmouseenter="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
-          <span style="font-size:9px;font-weight:600;color:${t.col};pointer-events:none;padding:0 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
+          <span style="font-size:9px;font-weight:700;color:${col};pointer-events:none;white-space:nowrap;padding:0 2px">${line1}</span>
+          <span style="font-size:8px;font-weight:600;color:${deltaColor};pointer-events:none;white-space:nowrap;padding:0 2px">${line2}</span>
         </div>`;
       }).join('');
+
       groupsRow = `<div style="display:flex;align-items:center;gap:4px;min-width:0;margin-top:5px">
         <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Portfolio</span>
         <div style="display:flex;align-items:center;flex:1;min-width:0;padding-left:6px">

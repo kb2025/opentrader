@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.82] - 2026-05-31
+
+### Changed
+- **Portfolio row — target vs actual with shortage/overage**: segments now sized by DEFINED target allocation (from investment_amount split or equal-slot fallback); actual live % computed from market values; segments ≥3% off-target shown in yellow with ▲/▼ delta indicator (e.g. "HOOW 40% ▲+29%"); on-target segments stay group color; hover tooltip shows full detail (target%, actual%, shortage/overage label)
+
 ## [4.0.81] - 2026-05-31
 
 ### Changed
