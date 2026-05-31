@@ -7311,7 +7311,11 @@ async function _pgOpenModal(g) {
   try {
     const token = getToken();
     const pos = await apiFetch(`/api/broker/positions?token=${encodeURIComponent(token)}`);
-    _pgAccounts = (pos.accounts || []).map(a => ({ account_label: a.label, broker: a.broker }));
+    _pgAccounts = (pos.accounts || []).map(a => ({
+      account_label: a.label,
+      broker:        a.broker,
+      display_name:  a.display_name || a.label,
+    }));
   } catch(_) { _pgAccounts = []; }
 
   document.getElementById('pg-modal-title').textContent =
@@ -7345,7 +7349,7 @@ async function _pgOpenModal(g) {
   acEl.innerHTML = _pgAccounts.length
     ? _pgAccounts.map(a => `<label style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:5px;cursor:pointer;font-size:12px;hover:background:var(--surface)">
         <input type="checkbox" value="${a.account_label}" data-broker="${a.broker}" ${assigned.has(a.account_label)?'checked':''}>
-        <span>${a.account_label}</span>
+        <span>${a.display_name}</span>
         <span style="font-size:10px;color:var(--muted);margin-left:auto">${a.broker}</span>
       </label>`).join('')
     : '<div style="font-size:11px;color:var(--dim);padding:6px">No broker accounts configured</div>';
