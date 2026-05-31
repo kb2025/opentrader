@@ -9784,20 +9784,39 @@ function _renderAccountHeatmap(positions, acctKey, acctGroups) {
   try {
     if (acctGroups.length) {
       const pgElem = `hm-pg-scroll-${acctKey}`;
-      const groupBlocks = acctGroups.map(g => {
-        const col   = g.color || '#60a5fa';
-        // Size each group by the sum of market values for its holdings held in this account
-        const groupMv = (g.holdings || []).reduce((s, h) => s + (tickerMv[(h.ticker||'').toUpperCase()] || 0), 0);
-        const flexVal = groupMv || 1;   // fall back to equal weight if no MV data
-        const safeName = (g.name || '').replace(/'/g, "&#39;");
-        const abbr = (g.name || '').split(' ').map(w => w[0]).join('').toUpperCase() || '?';
-        const tip  = `${g.name}${groupMv ? ': ' + _fmtUsd(groupMv) : ''}`.replace(/'/g, "&#39;");
-        return `<div style="flex:${flexVal};min-width:0;height:28px;background:${col}28;border:1px solid ${col}55;border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer"
-          onclick="_pgRebalance('${g.id}')"
-          onmousemove="_pieSliceHover(event,'${tip}','${col}')" onmouseleave="_pieSliceLeave()"
-          onmouseenter="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
-          <span style="font-size:9px;font-weight:600;color:${col};pointer-events:none;padding:0 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${abbr}</span>
-        </div>`;
+      const groupBlocks = acctGroups.flatMap(g => {
+        const col    = g.color || '#60a5fa';
+        const blocks = [];
+
+        // Block for the parent's direct holdings (sized by their actual MV in this account)
+        const directMv = (g.holdings || []).reduce((s, h) => s + (tickerMv[(h.ticker||'').toUpperCase()] || 0), 0);
+        if ((g.holdings && g.holdings.length) || directMv > 0) {
+          const abbr = (g.name || '').split(' ').map(w => w[0]).join('').toUpperCase() || '?';
+          const tip  = `${g.name}${directMv ? ': ' + _fmtUsd(directMv) : ''}`.replace(/'/g, "&#39;");
+          blocks.push(`<div style="flex:${directMv||1};min-width:0;height:28px;background:${col}28;border:1px solid ${col}55;border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer"
+            onclick="_pgRebalance('${g.id}')"
+            onmousemove="_pieSliceHover(event,'${tip}','${col}')" onmouseleave="_pieSliceLeave()"
+            onmouseenter="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
+            <span style="font-size:9px;font-weight:600;color:${col};pointer-events:none;padding:0 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${abbr}</span>
+          </div>`);
+        }
+
+        // One block per sub-portfolio (sized by the sub's holdings' actual MV in this account)
+        for (const sub of (g.subs || [])) {
+          if (!sub.holdings || !sub.holdings.length) continue;
+          const subMv  = sub.holdings.reduce((s, h) => s + (tickerMv[(h.ticker||'').toUpperCase()] || 0), 0);
+          const sCol   = sub.color || '#a78bfa';
+          const sAbbr  = (sub.name || '').split(' ').map(w => w[0]).join('').toUpperCase() || '?';
+          const sTip   = `${sub.name}${subMv ? ': ' + _fmtUsd(subMv) : ''}`.replace(/'/g, "&#39;");
+          blocks.push(`<div style="flex:${subMv||1};min-width:0;height:28px;background:${sCol}44;border-left:2px solid ${sCol};border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer"
+            onclick="_pgRebalance('${g.id}')"
+            onmousemove="_pieSliceHover(event,'${sTip}','${sCol}')" onmouseleave="_pieSliceLeave()"
+            onmouseenter="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
+            <span style="font-size:9px;font-weight:600;color:${sCol};pointer-events:none;padding:0 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sAbbr}</span>
+          </div>`);
+        }
+
+        return blocks;
       }).join('');
       groupsRow = `<div style="display:flex;align-items:center;gap:4px;min-width:0;margin-top:5px">
         <span style="font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;width:46px">Portfolio</span>

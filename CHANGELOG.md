@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.79] - 2026-05-31
+
+### Fixed
+- **Portfolio row in account heatmap**: parent group now renders a block for its direct holdings AND a separate tinted block for each sub-portfolio (sized by actual market values held in this account); sub blocks use the sub's color with a left border
+
 ## [4.0.78] - 2026-05-31
 
 ### Changed
