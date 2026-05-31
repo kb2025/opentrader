@@ -2042,6 +2042,8 @@ select option{background:var(--surface2)}
           </div>
           <!-- Row 2: per-broker breakdowns -->
           <div id="risk-broker-pies" style="display:grid;gap:14px"></div>
+          <!-- Row 3: portfolio groups (standalone, shown when any group exists) -->
+          <div id="risk-portfolio-groups" style="display:none;margin-top:14px"></div>
         </div>
       </div>
 
@@ -9517,19 +9519,83 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData, portfolioG
   if (!brokerList.length) { brokerEl.innerHTML = ''; return; }
   const cols = Math.min(brokerList.length, 3);
   brokerEl.style.gridTemplateColumns = Array(cols).fill('1fr').join(' ');
-  // Build a map of account_label → broker for group matching
+
+  // Map account_label → broker (from live positions data — authoritative)
   const acctBrokerMap = {};
-  for (const a of (accounts||[])) acctBrokerMap[a.label] = a.broker || '';
+  for (const a of (accounts||[])) acctBrokerMap[a.label] = (a.broker || '').toLowerCase();
+
+  // For each broker, find the set of account_labels belonging to it
+  const brokerAcctSets = {};
+  for (const [label, bkr] of Object.entries(acctBrokerMap)) {
+    if (!brokerAcctSets[bkr]) brokerAcctSets[bkr] = new Set();
+    brokerAcctSets[bkr].add(label);
+  }
+
+  // All portfolio groups (flat list of parents + subs with holdings)
+  const allPg = (portfolioGroups || []);
+
+  // Standalone portfolio groups section (always shown when groups have holdings)
+  const pgStandaloneEl = document.getElementById('risk-portfolio-groups');
+  if (pgStandaloneEl) {
+    const pgWithHoldings = allPg.filter(g => g.holdings && g.holdings.length);
+    if (pgWithHoldings.length) {
+      const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9',
+                       '#4ade80','#f472b6','#818cf8','#a3e635','#38bdf8','#fb7185','#c084fc','#fdba74'];
+      pgStandaloneEl.style.display = '';
+      pgStandaloneEl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Portfolio Groups</span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">
+        ${pgWithHoldings.map(g => {
+          const color = g.color || '#60a5fa';
+          const total = g.holdings.reduce((s,h) => s+(h.effective_pct||0),0) || 100;
+          const segs  = g.holdings.map((h,i) => {
+            const pct = ((h.effective_pct||0)/total*100).toFixed(2);
+            const col = palette[i % palette.length];
+            return `<div style="flex:${pct};background:${col};min-width:2px;position:relative" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%">
+              <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;overflow:hidden;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?h.ticker:''}</span>
+            </div>`;
+          }).join('');
+          const acctChips = (g.accounts||[]).map(a =>
+            `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">${a.account_label}</span>`
+          ).join('');
+          const stratTag = g.strategy_name ? `<span style="font-size:9px;color:var(--muted)">${g.strategy_name}</span>` : '';
+          const typeTag  = g.type==='sub' ? `<span style="font-size:9px;color:var(--muted);opacity:.6">(sub)</span>` : '';
+          return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${color};border-radius:8px;padding:10px 12px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+              <span style="font-size:11px;font-weight:700;color:var(--fg)">${g.name}</span>${typeTag}
+              ${stratTag}
+              <div style="margin-left:auto;display:flex;gap:3px;flex-wrap:wrap">${acctChips}</div>
+            </div>
+            <div style="display:flex;height:22px;border-radius:4px;overflow:hidden;border:1px solid var(--border)">${segs}</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">
+              ${g.holdings.map((h,i) => `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${palette[i%palette.length]}22;border:1px solid ${palette[i%palette.length]}55;color:${palette[i%palette.length]}">${h.ticker}</span>`).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+        </div>`;
+    } else {
+      pgStandaloneEl.style.display = 'none';
+    }
+  }
 
   brokerEl.innerHTML = brokerList.map(broker => {
+    const bKey   = broker.toLowerCase();
     const bColor = brokerColors[broker] || 'var(--blue)';
     const tSlices = Object.entries(brokerTicker[broker]).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>({ label:k, value:v, color:_PIE_PALETTE[i%_PIE_PALETTE.length] }));
     const sSlices = Object.entries(brokerSector[broker]).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>({ label:k, value:v, color:_PIE_PALETTE[i%_PIE_PALETTE.length] }));
 
-    // Portfolio groups assigned to this broker
-    const brokerGroups = (portfolioGroups||[]).filter(g =>
-      (g.accounts||[]).some(a => (a.broker||acctBrokerMap[a.account_label]||'') === broker
-                               || acctBrokerMap[a.account_label] === broker)
+    // Portfolio groups for this broker:
+    // match if any assigned account_label maps to this broker,
+    // OR if the stored broker field directly matches (fallback)
+    const acctSet = brokerAcctSets[bKey] || new Set();
+    const brokerGroups = allPg.filter(g =>
+      (g.accounts || []).some(a =>
+        acctSet.has(a.account_label) ||
+        (a.broker || '').toLowerCase() === bKey
+      )
     );
     const pgBar = brokerGroups.length ? _pgBrokerBar(brokerGroups) : '';
 
@@ -9583,7 +9649,7 @@ function _pgBrokerBar(groups) {
     </div>`;
   }).filter(Boolean).join('');
 
-  if (!rows) return '';
+  if (!rows.length) return '';
   return `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px">Portfolio Groups</div>
     ${rows}
