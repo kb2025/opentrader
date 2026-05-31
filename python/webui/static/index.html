@@ -9840,7 +9840,6 @@ function _toggleUnifiedCard(btn, acctKey) {
   const collapsed = body.style.display === 'none';
   body.style.display = collapsed ? '' : 'none';
   btn.textContent   = collapsed ? '▲' : '▼';
-  try { localStorage.setItem('ot_card_collapsed_' + acctKey, collapsed ? '0' : '1'); } catch(_) {}
 }
 
 function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap, portfolioGroups) {
@@ -10307,17 +10306,12 @@ async function loadUnifiedPositions(force = false) {
 
     // Render tables (always show all accounts regardless of paper filter)
     container.innerHTML = accounts.map(a => _renderUnifiedCard(a, signalMap, sentData, sectorMap, journalMaps[a.label] || {}, portfolioGroups)).join('');
-    // Restore any previously collapsed card bodies
+    // Clear any stale collapse states so all cards start expanded
     try {
-      container.querySelectorAll('[data-acct-key]').forEach(card => {
-        const k = card.dataset.acctKey;
-        if (localStorage.getItem('ot_card_collapsed_' + k) === '1') {
-          const body = card.querySelector('.unified-card-body');
-          if (body) body.style.display = 'none';
-          const btn = card.querySelector('[data-collapse-btn]');
-          if (btn) btn.textContent = '▼';
-        }
-      });
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('ot_card_collapsed_')) localStorage.removeItem(k);
+      }
     } catch(_) {}
     if (refreshBtn) refreshBtn.disabled = false;
 

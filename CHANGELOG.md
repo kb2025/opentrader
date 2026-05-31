@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.72] - 2026-05-31
+
+### Fixed
+- **Webull Margin Account card showing no positions**: localStorage collapse state introduced in v4.0.71 was persistently hiding the card body after a single accidental ▲ click — every page reload restored the collapsed state; removed localStorage persistence so cards always reset to expanded on navigation (same behaviour as before v4.0.71); also clears any stale collapse keys on load
+
 ## [4.0.71] - 2026-05-31
 
 ### Fixed
