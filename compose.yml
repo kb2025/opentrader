@@ -315,6 +315,27 @@ services:
       redis:
         condition: service_healthy
 
+  risk-clustering:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    container_name: ot-risk-clustering
+    restart: unless-stopped
+    command: python -m risk_clustering.main
+    environment:
+      REDIS_URL: redis://ot-redis:6379
+      SERVICE_NAME: risk-clustering
+      MARKET_DATA_URL: http://ot-market-data:8090
+    env_file: [.env]
+    volumes:
+      - ./logs/python:/app/logs
+    networks: [trading-net]
+    depends_on:
+      redis:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+
   mcp-alpaca:
     build:
       context: ./mcp/alpaca-mcp-server

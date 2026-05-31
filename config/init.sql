@@ -545,3 +545,37 @@ CREATE TABLE IF NOT EXISTS greeks_history (
 SELECT create_hypertable('greeks_history', 'ts', if_not_exists => TRUE);
 SELECT add_retention_policy('greeks_history', INTERVAL '6 months', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS greeks_history_position ON greeks_history (position_id, ts DESC);
+
+-- ── Stock risk clustering (added for portfolio risk segmentation) ─────────────
+-- One row per clustering run (metadata / audit trail).
+CREATE TABLE IF NOT EXISTS stock_cluster_runs (
+    id          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    run_date    DATE        NOT NULL UNIQUE,
+    n_tickers   INTEGER     NOT NULL,
+    n_clusters  INTEGER     NOT NULL DEFAULT 4,
+    features    TEXT[]      NOT NULL DEFAULT '{}',
+    silhouette  NUMERIC,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- One row per ticker per run — stores cluster assignment + raw feature values.
+CREATE TABLE IF NOT EXISTS stock_risk_clusters (
+    run_date        DATE    NOT NULL,
+    ticker          TEXT    NOT NULL,
+    cluster_id      INTEGER NOT NULL,
+    risk_tier       TEXT    NOT NULL CHECK (risk_tier IN ('very_low','low','medium','high')),
+    volatility      NUMERIC,
+    price_change    NUMERIC,
+    beta            NUMERIC,
+    pe_ratio        NUMERIC,
+    pb_ratio        NUMERIC,
+    roe             NUMERIC,
+    roa             NUMERIC,
+    fcf_yield       NUMERIC,
+    earnings_yield  NUMERIC,
+    features        JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (run_date, ticker)
+);
+CREATE INDEX IF NOT EXISTS src_ticker_date ON stock_risk_clusters (ticker, run_date DESC);
+CREATE INDEX IF NOT EXISTS src_run_tier    ON stock_risk_clusters (run_date DESC, risk_tier);

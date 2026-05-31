@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.54] - 2026-05-31
+
+### Added
+- **Stock risk clustering**: new `ot-risk-clustering` agent runs K-Means (k=4) weekly on the active ticker universe; 9 features: 13-week volatility + price change, beta, P/E, P/B, ROE, ROA, FCF yield, earnings yield (from FMP); assigns very_low/low/medium/high tiers by cluster volatility rank; results in `stock_risk_clusters` TimescaleDB table; scheduler job every Monday 7:30 AM ET; new Agents page panel with tier cards, ticker grid, and feature table
+
 ## [4.0.53] - 2026-05-31
 
 ### Added

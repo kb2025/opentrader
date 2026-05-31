@@ -45,6 +45,8 @@ GROUPS = {
     # Broker gateway
     "broker_gateway":     "broker-gateway-group",
     "broker_fills":       "broker-fills-group",
+    # Risk clustering
+    "risk-clustering":    "risk-clustering-group",
 }
 
 

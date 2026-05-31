@@ -3702,6 +3702,87 @@ async def resume_system(token: str = ""):
     return {"resumed": True}
 
 
+@app.get("/api/risk-clusters/latest")
+async def get_risk_clusters_latest(token: str = ""):
+    """Return the most recent cluster assignments for all tickers."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        return {"error": "DB unavailable", "tickers": [], "run_date": None}
+    try:
+        run_row = await pool.fetchrow(
+            "SELECT run_date, n_tickers, n_clusters, silhouette FROM stock_cluster_runs ORDER BY run_date DESC LIMIT 1"
+        )
+        if not run_row:
+            return {"run_date": None, "tickers": [], "tier_counts": {}}
+        run_date = run_row["run_date"]
+        rows = await pool.fetch(
+            """SELECT ticker, cluster_id, risk_tier,
+                      volatility, price_change, beta, pe_ratio, pb_ratio,
+                      roe, roa, fcf_yield, earnings_yield
+               FROM stock_risk_clusters
+               WHERE run_date = $1
+               ORDER BY risk_tier, ticker""",
+            run_date,
+        )
+        tickers = [dict(r) for r in rows]
+        tier_counts: dict = {}
+        for r in tickers:
+            tier_counts[r["risk_tier"]] = tier_counts.get(r["risk_tier"], 0) + 1
+        return {
+            "run_date":    run_date.isoformat(),
+            "n_tickers":   run_row["n_tickers"],
+            "n_clusters":  run_row["n_clusters"],
+            "silhouette":  float(run_row["silhouette"]) if run_row["silhouette"] else None,
+            "tier_counts": tier_counts,
+            "tickers":     tickers,
+        }
+    except Exception as e:
+        log.error("risk_clusters.latest_error", error=str(e))
+        return {"error": str(e), "tickers": []}
+
+
+@app.get("/api/risk-clusters/ticker/{ticker}")
+async def get_risk_cluster_history(ticker: str, token: str = ""):
+    """Return cluster assignment history for a single ticker."""
+    check_token(token)
+    pool = await _get_db_pool()
+    if not pool:
+        return {"error": "DB unavailable", "rows": []}
+    try:
+        rows = await pool.fetch(
+            """SELECT run_date, cluster_id, risk_tier, volatility, price_change,
+                      beta, pe_ratio, roe
+               FROM stock_risk_clusters
+               WHERE ticker = $1
+               ORDER BY run_date DESC
+               LIMIT 52""",
+            ticker.upper(),
+        )
+        return {
+            "ticker": ticker.upper(),
+            "rows": [
+                {**dict(r), "run_date": r["run_date"].isoformat()}
+                for r in rows
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e), "rows": []}
+
+
+@app.post("/api/risk-clusters/run")
+async def trigger_risk_clustering(token: str = ""):
+    """Manually trigger a risk clustering run."""
+    check_token(token)
+    redis = await get_redis()
+    await redis.xadd(
+        "system.commands",
+        {"command": "trigger", "job": "run_risk_clustering", "issued_by": "webui"},
+        maxlen=500,
+    )
+    return {"triggered": True}
+
+
 @app.get("/api/system/trading-mode")
 async def get_trading_mode(token: str = ""):
     """Return the current global trading mode (live | paper_only)."""

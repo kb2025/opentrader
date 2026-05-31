@@ -37,6 +37,7 @@ from .jobs import (
     job_scrape_etf_flows,
     job_scrape_macro_regime,
     job_scrape_news_sentiment,
+    job_risk_clustering,
     job_scrape_eodhd_news,
     job_scrape_finnhub_insider,
     job_update_trending_symbols,
@@ -167,6 +168,14 @@ class Scheduler(BaseAgent):
             CronTrigger(hour=16, minute=20, timezone=TZ),
             args=[r], id="score_ticker_sentiment",
             name="F&G sentiment scoring (positions + signals)",
+            replace_existing=True,
+        )
+
+        self.apscheduler.add_job(
+            job_risk_clustering,
+            CronTrigger(day_of_week="mon", hour=7, minute=30, timezone=TZ),
+            args=[r], id="risk_clustering",
+            name="Weekly stock risk clustering (Monday 7:30 AM ET)",
             replace_existing=True,
         )
 

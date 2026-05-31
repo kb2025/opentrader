@@ -706,6 +706,21 @@ select option{background:var(--surface2)}
           </div>
         </div>
       </div>
+
+      <!-- Stock Risk Clusters -->
+      <div class="card" id="risk-clusters-card">
+        <div class="card-header">
+          <span class="card-title">Stock Risk Clusters</span>
+          <span id="risk-clusters-meta" style="font-size:11px;color:var(--muted)"></span>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+            <button onclick="_riskClusterRun()" style="background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.4);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">↻ Run Now</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadRiskClusters()">Refresh</button>
+          </div>
+        </div>
+        <div id="risk-clusters-body" class="card-body">
+          <div class="empty-state">Loading…</div>
+        </div>
+      </div>
     </div>
 
     <!-- ════════════════════════════════════════
@@ -6920,6 +6935,108 @@ async function loadAgentsPage() {
     document.getElementById('agents-grid').innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
   }
   loadConnectorHealth();
+  loadRiskClusters();
+}
+
+const _TIER_COLORS = {
+  very_low: { bg: 'rgba(34,197,94,.15)',  border: 'rgba(34,197,94,.4)',  text: '#22c55e', label: 'Very Low' },
+  low:      { bg: 'rgba(96,165,250,.15)', border: 'rgba(96,165,250,.4)', text: '#60a5fa', label: 'Low' },
+  medium:   { bg: 'rgba(251,191,36,.15)', border: 'rgba(251,191,36,.4)', text: '#fbbf24', label: 'Medium' },
+  high:     { bg: 'rgba(248,113,113,.15)',border: 'rgba(248,113,113,.4)',text: '#f87171', label: 'High' },
+};
+
+async function loadRiskClusters() {
+  const el   = document.getElementById('risk-clusters-body');
+  const meta = document.getElementById('risk-clusters-meta');
+  if (!el) return;
+  el.innerHTML = '<div class="empty-state">Loading…</div>';
+  try {
+    const token = getToken();
+    const d = await apiFetch(`/api/risk-clusters/latest?token=${encodeURIComponent(token)}`);
+    if (!d.run_date) {
+      el.innerHTML = '<div class="empty-state">No cluster data yet — click Run Now or wait for Monday\'s scheduled run.</div>';
+      return;
+    }
+    if (meta) meta.textContent = `${d.run_date} · ${d.n_tickers} tickers · silhouette ${d.silhouette != null ? d.silhouette.toFixed(3) : '—'}`;
+
+    // ── Tier summary cards ────────────────────────────────────────────────────
+    const tiers = ['very_low','low','medium','high'];
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:16px">';
+    for (const tier of tiers) {
+      const c = _TIER_COLORS[tier];
+      const n = d.tier_counts[tier] || 0;
+      const pct = d.n_tickers ? Math.round(n / d.n_tickers * 100) : 0;
+      html += `<div style="background:${c.bg};border:1px solid ${c.border};border-radius:8px;padding:10px 12px;text-align:center">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:${c.text};margin-bottom:4px">${c.label} Risk</div>
+        <div style="font-size:24px;font-weight:800;color:${c.text}">${n}</div>
+        <div style="font-size:10px;color:var(--muted)">${pct}% of universe</div>
+      </div>`;
+    }
+    html += '</div>';
+
+    // ── Ticker grid by tier ───────────────────────────────────────────────────
+    for (const tier of tiers) {
+      const c = _TIER_COLORS[tier];
+      const group = d.tickers.filter(t => t.risk_tier === tier);
+      if (!group.length) continue;
+      html += `<div style="margin-bottom:14px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${c.text};margin-bottom:6px">${c.label} Risk (${group.length})</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">`;
+      for (const t of group) {
+        const vol  = t.volatility  != null ? ` vol=${(t.volatility*100).toFixed(0)}%`   : '';
+        const chg  = t.price_change!= null ? ` 13w=${t.price_change>=0?'+':''}${t.price_change.toFixed(1)}%` : '';
+        const beta = t.beta        != null ? ` β=${t.beta.toFixed(2)}`  : '';
+        html += `<span title="${t.ticker}${vol}${chg}${beta}"
+          style="padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;
+                 background:${c.bg};border:1px solid ${c.border};color:${c.text};
+                 cursor:default;white-space:nowrap">
+          ${t.ticker}
+        </span>`;
+      }
+      html += '</div></div>';
+    }
+
+    // ── Metrics table (top 20 by volatility) ─────────────────────────────────
+    const sorted = [...d.tickers].sort((a,b) => (b.volatility||0)-(a.volatility||0)).slice(0,25);
+    html += `<details style="margin-top:8px"><summary style="font-size:11px;color:var(--muted);cursor:pointer;user-select:none">Top 25 by Volatility (feature table)</summary>
+    <div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr style="background:var(--card-header);color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.05em">
+      <th style="padding:5px 8px;text-align:left">Ticker</th>
+      <th style="padding:5px 8px;text-align:center">Tier</th>
+      <th style="padding:5px 8px;text-align:right">Volatility</th>
+      <th style="padding:5px 8px;text-align:right">13W Chg</th>
+      <th style="padding:5px 8px;text-align:right">Beta</th>
+      <th style="padding:5px 8px;text-align:right">P/E</th>
+      <th style="padding:5px 8px;text-align:right">ROE</th>
+      <th style="padding:5px 8px;text-align:right">ROA</th>
+    </tr></thead><tbody>`;
+    for (const t of sorted) {
+      const c = _TIER_COLORS[t.risk_tier] || _TIER_COLORS.medium;
+      const fmt = (v, dec=2, pct=false) => v == null ? '—' : (v*(pct?100:1)).toFixed(dec)+(pct?'%':'');
+      html += `<tr style="border-top:1px solid var(--border)">
+        <td style="padding:4px 8px;font-weight:700">${t.ticker}</td>
+        <td style="padding:4px 8px;text-align:center"><span style="padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:${c.bg};border:1px solid ${c.border};color:${c.text}">${c.label}</span></td>
+        <td style="padding:4px 8px;text-align:right">${fmt(t.volatility,1,true)}</td>
+        <td style="padding:4px 8px;text-align:right;color:${(t.price_change||0)>=0?'var(--green)':'var(--red)'}">${t.price_change!=null?(t.price_change>=0?'+':'')+t.price_change.toFixed(1)+'%':'—'}</td>
+        <td style="padding:4px 8px;text-align:right">${fmt(t.beta)}</td>
+        <td style="padding:4px 8px;text-align:right">${fmt(t.pe_ratio,1)}</td>
+        <td style="padding:4px 8px;text-align:right">${fmt(t.roe,1,true)}</td>
+        <td style="padding:4px 8px;text-align:right">${fmt(t.roa,1,true)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div></details>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state" style="color:var(--red)">Failed: ${e.message}</div>`;
+  }
+}
+
+async function _riskClusterRun() {
+  try {
+    const token = getToken();
+    await apiFetch(`/api/risk-clusters/run?token=${encodeURIComponent(token)}`, { method: 'POST' });
+    toast('success', 'Clustering Triggered', 'Risk clustering job queued — results will appear in ~2 min once complete.');
+  } catch(e) { toast('error', 'Error', e.message); }
 }
 
 async function loadConnectorHealth() {

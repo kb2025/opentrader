@@ -430,6 +430,12 @@ async def job_scrape_macro_regime(redis: aioredis.Redis):
 # ── Feature 5: Alpha Vantage news sentiment ───────────────────────────────────
 
 @tracked
+async def job_risk_clustering(redis: aioredis.Redis):
+    """Trigger weekly stock risk clustering — Monday pre-market."""
+    await trigger(redis, "run_risk_clustering", {})
+
+
+@tracked
 async def job_scrape_news_sentiment(redis: aioredis.Redis):
     """Trigger Alpha Vantage news sentiment scraper — every 30m during active session."""
     if not is_active_session():
