@@ -278,7 +278,7 @@ select option{background:var(--surface2)}
       OpenTrader
       <div class="brand-logo"><img src="/static/logo-opentrader.png" alt="OpenTrader"></div>
     </div>
-    <span>Command Center <span id="sidebar-version">v2</span></span>
+    <span>Command Center <span id="sidebar-version">—</span></span>
   </div>
   <nav id="main-nav">
     <div class="nav-group" data-group="trading">
@@ -5984,6 +5984,8 @@ function renderPlatformDashboard(data) {
   if (data.app_version) {
     const vEl = document.getElementById('stat-version');
     if (vEl) { vEl.textContent = 'v' + data.app_version; vEl.style.color = 'var(--blue)'; }
+    const svEl = document.getElementById('sidebar-version');
+    if (svEl) svEl.textContent = 'v' + data.app_version;
   }
 
   // ── Total trades ──────────────────────────────────────────────────────────

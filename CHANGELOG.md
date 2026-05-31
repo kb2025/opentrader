@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.65] - 2026-05-31
+
+### Fixed
+- **Sidebar version display**: was stuck on hardcoded "v2" fallback; now also updated from `data.app_version` in the dashboard API callback, so it always reflects the live server version regardless of meta-tag injection timing
+
 ## [4.0.64] - 2026-05-31
 
 ### Added
