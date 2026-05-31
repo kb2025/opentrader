@@ -9512,26 +9512,9 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData, portfolioG
     ? _svgDonut(sectorSlices, 220, 44) + _pieLegend(sectorSlices, sectorTotal)
     : '<span style="font-size:11px;color:var(--dim)">No positions</span>';
 
-  // Per-broker breakdowns
-  const brokerEl = document.getElementById('risk-broker-pies');
-  if (!brokerEl) return;
-  const brokerList = Object.keys(brokerTicker);
-  if (!brokerList.length) { brokerEl.innerHTML = ''; return; }
-  const cols = Math.min(brokerList.length, 3);
-  brokerEl.style.gridTemplateColumns = Array(cols).fill('1fr').join(' ');
-
-  // Map account_label → broker (from live positions data — authoritative)
-  const acctBrokerMap = {};
-  for (const a of (accounts||[])) acctBrokerMap[a.label] = (a.broker || '').toLowerCase();
-
-  // For each broker, find the set of account_labels belonging to it
-  const brokerAcctSets = {};
-  for (const [label, bkr] of Object.entries(acctBrokerMap)) {
-    if (!brokerAcctSets[bkr]) brokerAcctSets[bkr] = new Set();
-    brokerAcctSets[bkr].add(label);
-  }
-
-  // All portfolio groups (flat list of parents + subs with holdings)
+  // ── Portfolio Groups standalone section ──────────────────────────────────────
+  // Rendered BEFORE the broker-positions early-return so it always shows,
+  // even when the account has no open positions.
   const allPg = (portfolioGroups || []);
 
   // Standalone portfolio groups section (always shown when groups have holdings)
@@ -9579,6 +9562,25 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData, portfolioG
     } else {
       pgStandaloneEl.style.display = 'none';
     }
+  }
+
+  // Per-broker breakdowns
+  const brokerEl = document.getElementById('risk-broker-pies');
+  if (!brokerEl) return;
+  const brokerList = Object.keys(brokerTicker);
+  if (!brokerList.length) { brokerEl.innerHTML = ''; return; }
+  const cols = Math.min(brokerList.length, 3);
+  brokerEl.style.gridTemplateColumns = Array(cols).fill('1fr').join(' ');
+
+  // Map account_label → broker (authoritative, from live positions data)
+  const acctBrokerMap = {};
+  for (const a of (accounts||[])) acctBrokerMap[a.label] = (a.broker || '').toLowerCase();
+
+  // Per-broker sets of account_labels for group matching
+  const brokerAcctSets = {};
+  for (const [label, bkr] of Object.entries(acctBrokerMap)) {
+    if (!brokerAcctSets[bkr]) brokerAcctSets[bkr] = new Set();
+    brokerAcctSets[bkr].add(label);
   }
 
   brokerEl.innerHTML = brokerList.map(broker => {
