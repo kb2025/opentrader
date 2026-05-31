@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.69] - 2026-05-31
+
+### Fixed
+- **Portfolio group sub-portfolios no longer appear as separate sibling cards**: standalone Portfolio Groups section and per-broker bar now only render parent groups at the top level; sub-portfolios are nested inside their parent card with a labeled indented allocation bar and ticker chips; account heatmap Groups row also filters to parent groups only
+
 ## [4.0.68] - 2026-05-31
 
 ### Fixed
