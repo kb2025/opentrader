@@ -7313,10 +7313,8 @@ async function _pgOpenModal(g) {
       : `<b>Sub-Portfolio</b> — up to ${maxS} stocks, nested under parent`;
 
   document.querySelectorAll('input[name="pg-alloc"]').forEach(r => {
-    r.checked = r.value === (g.alloc_mode || 'equal');
-  });
-  document.querySelectorAll('input[name="pg-alloc"]').forEach(r => {
-    r.onchange = () => _pgRefreshHoldingsEditor();
+    r.checked   = r.value === (g.alloc_mode || 'equal');
+    r.onchange  = () => _pgSwitchParentAllocMode(r.value);
   });
 
   // Strategy picker
@@ -7356,27 +7354,44 @@ function _pgGetAllocMode() {
   return document.querySelector('input[name="pg-alloc"]:checked')?.value || 'equal';
 }
 
+function _pgSwitchParentAllocMode(mode) {
+  if (mode === 'custom' && _pgHoldings.length) {
+    // Pre-fill equal distribution so inputs aren't blank
+    const eq = parseFloat((100 / _pgHoldings.length).toFixed(2));
+    _pgHoldings.forEach(h => { if (h.alloc_pct == null) h.alloc_pct = eq; });
+  }
+  _pgRefreshHoldingsEditor();
+}
+
+function _pgEqualiseParent() {
+  if (!_pgHoldings.length) return;
+  const eq = parseFloat((100 / _pgHoldings.length).toFixed(2));
+  _pgHoldings.forEach(h => { h.alloc_pct = eq; });
+  _pgRefreshHoldingsEditor();
+}
+
 function _pgRefreshHoldingsEditor() {
   const mode = _pgGetAllocMode();
-  const maxS = _pgEditType === 'sub' ? 10 : 25;
-  document.getElementById('pg-holdings-count').textContent = `(${_pgHoldings.length}/${maxS})`;
+  document.getElementById('pg-holdings-count').textContent = `(${_pgHoldings.length}/25)`;
   const el = document.getElementById('pg-holdings-editor');
   if (!_pgHoldings.length) {
-    el.innerHTML = '<div style="font-size:11px;color:var(--dim);padding:8px">No holdings yet.</div>';
+    el.innerHTML = '<div style="font-size:11px;color:var(--dim);padding:8px">No holdings yet — add tickers above.</div>';
     document.getElementById('pg-alloc-total').textContent = '';
     return;
   }
+  const eqPct = parseFloat((100 / _pgHoldings.length).toFixed(2));
   let totalCustom = 0;
   el.innerHTML = _pgHoldings.map((h,i) => {
+    const displayPct = mode === 'custom' ? (h.alloc_pct ?? eqPct) : eqPct;
     const pct = mode === 'custom'
-      ? `<input type="number" min="0.1" max="100" step="0.1" value="${h.alloc_pct||''}" placeholder="%"
+      ? `<input type="number" min="0.1" max="100" step="0.1" value="${displayPct}"
            style="width:64px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:11px;text-align:right"
            oninput="_pgUpdateAlloc(${i},this.value)">`
-      : `<span style="font-size:11px;color:var(--muted)">${(100/_pgHoldings.length).toFixed(1)}%</span>`;
-    if (mode === 'custom') totalCustom += parseFloat(h.alloc_pct||0);
+      : `<span style="font-size:11px;color:var(--muted)">${eqPct}%</span>`;
+    if (mode === 'custom') totalCustom += parseFloat(h.alloc_pct ?? eqPct);
     return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:5px;background:var(--surface2);border:1px solid var(--border)">
       <span style="font-size:11px;font-weight:700;color:var(--fg);flex:1">${h.ticker}</span>
-      <label style="font-size:11px;color:var(--muted)">Lot:</label>
+      <label style="font-size:11px;color:var(--muted)">Lot</label>
       <input type="number" min="1" value="${h.lot_size||1}"
         style="width:50px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:3px 5px;font-size:11px;text-align:right"
         oninput="_pgUpdateLot(${i},this.value)">
@@ -7387,19 +7402,23 @@ function _pgRefreshHoldingsEditor() {
   if (mode === 'custom') {
     const ok = Math.abs(totalCustom - 100) < 0.5;
     document.getElementById('pg-alloc-total').innerHTML =
-      `<span style="color:${ok?'var(--green)':'var(--red)'}">Total: ${totalCustom.toFixed(1)}% ${ok?'✓':'(must equal 100%)'}</span>`;
+      `<span style="color:${ok?'var(--green)':'var(--red)'}">Total: ${totalCustom.toFixed(1)}% ${ok?'✓':'(must equal 100%)'}</span>
+       <button onclick="_pgEqualiseParent()" style="margin-left:8px;font-size:10px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer">↺ Equal</button>`;
   } else {
     document.getElementById('pg-alloc-total').textContent = '';
   }
 }
 
 function _pgUpdateAlloc(i, v) {
-  _pgHoldings[i].alloc_pct = parseFloat(v) || null;
-  // Update only the total display — no full re-render (would steal focus)
-  const total = _pgHoldings.reduce((s,h) => s + (parseFloat(h.alloc_pct)||0), 0);
+  // Use nullish check — don't coerce empty string to null mid-typing
+  const parsed = v === '' ? null : parseFloat(v);
+  _pgHoldings[i].alloc_pct = (parsed == null || isNaN(parsed)) ? null : parsed;
+  const total = _pgHoldings.reduce((s,h) => s + (h.alloc_pct ?? (100/_pgHoldings.length)), 0);
   const ok    = Math.abs(total - 100) < 0.5;
   const el    = document.getElementById('pg-alloc-total');
-  if (el) el.innerHTML = `<span style="color:${ok?'var(--green)':'var(--red)'}">Total: ${total.toFixed(1)}% ${ok?'✓':'(must equal 100%)'}</span>`;
+  if (el) el.innerHTML =
+    `<span style="color:${ok?'var(--green)':'var(--red)'}">Total: ${total.toFixed(1)}% ${ok?'✓':'(must equal 100%)'}</span>
+     <button onclick="_pgEqualiseParent()" style="margin-left:8px;font-size:10px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer">↺ Equal</button>`;
 }
 function _pgUpdateLot(i, v)   { _pgHoldings[i].lot_size = parseInt(v) || 1; }
 function _pgRemoveTicker(i)   { _pgHoldings.splice(i,1); _pgRefreshHoldingsEditor(); }
@@ -7433,13 +7452,15 @@ function _pgRenderSubsEditor() {
     const palette  = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9'];
     let   totalPct = 0;
 
+    const subEq = sub.holdings.length ? parseFloat((100/sub.holdings.length).toFixed(2)) : 0;
     const holdRows = sub.holdings.map((h, ti) => {
+      const displayPct = mode === 'custom' ? (h.alloc_pct ?? subEq) : subEq;
       const pct = mode === 'custom'
-        ? `<input type="number" min="0.1" max="100" step="0.1" value="${h.alloc_pct||''}" placeholder="%"
+        ? `<input type="number" min="0.1" max="100" step="0.1" value="${displayPct}"
              style="width:58px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:10px;text-align:right"
              oninput="_pgSubUpdateAlloc(${si},${ti},this.value)">`
-        : `<span style="font-size:10px;color:var(--muted)">${(100/sub.holdings.length).toFixed(1)}%</span>`;
-      if (mode === 'custom') totalPct += parseFloat(h.alloc_pct||0);
+        : `<span style="font-size:10px;color:var(--muted)">${subEq}%</span>`;
+      if (mode === 'custom') totalPct += parseFloat(h.alloc_pct ?? subEq);
       const col = palette[ti % palette.length];
       return `<div style="display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:4px;background:var(--bg);border:1px solid var(--border)">
         <span style="width:6px;height:6px;border-radius:50%;background:${col};flex-shrink:0"></span>
@@ -7453,8 +7474,12 @@ function _pgRenderSubsEditor() {
       </div>`;
     }).join('');
 
+    const subOk = Math.abs(totalPct-100) < 0.5;
     const allocTotal = mode === 'custom'
-      ? `<div id="pg-sub-total-${si}" style="font-size:9px;margin-top:3px;color:${Math.abs(totalPct-100)<0.5?'var(--green)':'var(--red)'}">Total: ${totalPct.toFixed(1)}% ${Math.abs(totalPct-100)<0.5?'✓':'(must = 100%)'}</div>`
+      ? `<div id="pg-sub-total-${si}" style="font-size:9px;margin-top:3px;display:flex;align-items:center;gap:6px">
+           <span style="color:${subOk?'var(--green)':'var(--red)'}">Total: ${totalPct.toFixed(1)}% ${subOk?'✓':'(must = 100%)'}</span>
+           <button onclick="_pgSubEqualise(${si})" style="font-size:9px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:3px;padding:0px 5px;cursor:pointer">↺ Equal</button>
+         </div>`
       : `<div id="pg-sub-total-${si}"></div>`;
 
     return `<div style="border:1px solid ${sub.color||'#a78bfa'};border-radius:8px;padding:10px 12px;background:var(--surface2)">
@@ -7466,10 +7491,10 @@ function _pgRenderSubsEditor() {
           style="width:30px;height:28px;border-radius:4px;border:1px solid var(--border);cursor:pointer;padding:1px"
           oninput="_pgSubs[${si}].color=this.value;_pgRenderSubsEditor()">
         <label style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer">
-          <input type="radio" name="pg-sub-alloc-${si}" value="equal" ${mode==='equal'?'checked':''} onchange="_pgSubs[${si}].alloc_mode='equal';_pgRenderSubsEditor()"> Equal
+          <input type="radio" name="pg-sub-alloc-${si}" value="equal" ${mode==='equal'?'checked':''} onchange="_pgSubSwitchMode(${si},'equal')"> Equal
         </label>
         <label style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer">
-          <input type="radio" name="pg-sub-alloc-${si}" value="custom" ${mode==='custom'?'checked':''} onchange="_pgSubs[${si}].alloc_mode='custom';_pgRenderSubsEditor()"> Custom %
+          <input type="radio" name="pg-sub-alloc-${si}" value="custom" ${mode==='custom'?'checked':''} onchange="_pgSubSwitchMode(${si},'custom')"> Custom %
         </label>
         <span style="font-size:10px;color:var(--muted)">${sub.holdings.length}/10</span>
         <button onclick="_pgSubRemove(${si})" style="background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.3);border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer">Remove</button>
@@ -7486,6 +7511,23 @@ function _pgRenderSubsEditor() {
       </div>
     </div>`;
   }).join('');
+}
+
+function _pgSubSwitchMode(si, mode) {
+  _pgSubs[si].alloc_mode = mode;
+  if (mode === 'custom' && _pgSubs[si].holdings.length) {
+    // Pre-fill equal distribution so inputs start with values, not blank
+    const eq = parseFloat((100 / _pgSubs[si].holdings.length).toFixed(2));
+    _pgSubs[si].holdings.forEach(h => { if (h.alloc_pct == null) h.alloc_pct = eq; });
+  }
+  _pgRenderSubsEditor();
+}
+
+function _pgSubEqualise(si) {
+  if (!_pgSubs[si].holdings.length) return;
+  const eq = parseFloat((100 / _pgSubs[si].holdings.length).toFixed(2));
+  _pgSubs[si].holdings.forEach(h => { h.alloc_pct = eq; });
+  _pgRenderSubsEditor();
 }
 
 function _pgSubAdd() {
@@ -7514,17 +7556,16 @@ function _pgSubAddTicker(si) {
 function _pgSubRemoveTicker(si, ti) { _pgSubs[si].holdings.splice(ti,1); _pgRenderSubsEditor(); }
 
 function _pgSubUpdateAlloc(si, ti, v) {
-  _pgSubs[si].holdings[ti].alloc_pct = parseFloat(v) || null;
-  // Update only the running total for this sub — no full re-render
-  const sub   = _pgSubs[si];
-  const total = sub.holdings.reduce((s,h) => s + (parseFloat(h.alloc_pct)||0), 0);
-  const ok    = Math.abs(total - 100) < 0.5;
-  const el    = document.getElementById(`pg-sub-total-${si}`);
-  if (el) {
-    el.style.color = ok ? 'var(--green)' : 'var(--red)';
-    el.textContent = sub.alloc_mode === 'custom'
-      ? `Total: ${total.toFixed(1)}% ${ok?'✓':'(must = 100%)'}`
-      : '';
+  const parsed = v === '' ? null : parseFloat(v);
+  _pgSubs[si].holdings[ti].alloc_pct = (parsed == null || isNaN(parsed)) ? null : parsed;
+  const sub    = _pgSubs[si];
+  const subEq  = sub.holdings.length ? 100 / sub.holdings.length : 0;
+  const total  = sub.holdings.reduce((s,h) => s + (h.alloc_pct ?? subEq), 0);
+  const ok     = Math.abs(total - 100) < 0.5;
+  const el     = document.getElementById(`pg-sub-total-${si}`);
+  if (el && sub.alloc_mode === 'custom') {
+    el.innerHTML = `<span style="color:${ok?'var(--green)':'var(--red)'}">Total: ${total.toFixed(1)}% ${ok?'✓':'(must = 100%)'}</span>
+      <button onclick="_pgSubEqualise(${si})" style="font-size:9px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:3px;padding:0px 5px;cursor:pointer">↺ Equal</button>`;
   }
 }
 
@@ -7537,15 +7578,20 @@ async function _pgSave() {
 
   // Validate parent custom allocations
   if (mode === 'custom' && _pgHoldings.length) {
-    const total = _pgHoldings.reduce((s,h) => s+(parseFloat(h.alloc_pct)||0), 0);
+    const eqP  = 100 / _pgHoldings.length;
+    const total = _pgHoldings.reduce((s,h) => s + (h.alloc_pct ?? eqP), 0);
     if (Math.abs(total - 100) > 0.5) { toast('error', 'Allocation error', `Parent custom % must sum to 100 (got ${total.toFixed(1)}%)`); return; }
+    // Ensure alloc_pct is populated before saving (handles the null-fallback case)
+    _pgHoldings.forEach(h => { if (h.alloc_pct == null) h.alloc_pct = parseFloat(eqP.toFixed(2)); });
   }
   // Validate sub custom allocations
   for (const [si, sub] of _pgSubs.entries()) {
     if (!sub.name.trim()) { toast('error', 'Sub name required', `Sub-portfolio ${si+1} needs a name`); return; }
     if (sub.alloc_mode === 'custom' && sub.holdings.length) {
-      const total = sub.holdings.reduce((s,h) => s+(parseFloat(h.alloc_pct)||0), 0);
+      const eqS   = 100 / sub.holdings.length;
+      const total = sub.holdings.reduce((s,h) => s + (h.alloc_pct ?? eqS), 0);
       if (Math.abs(total - 100) > 0.5) { toast('error', 'Sub allocation error', `"${sub.name}" custom % must sum to 100 (got ${total.toFixed(1)}%)`); return; }
+      sub.holdings.forEach(h => { if (h.alloc_pct == null) h.alloc_pct = parseFloat(eqS.toFixed(2)); });
     }
   }
 
