@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.74] - 2026-05-31
+
+### Changed
+- **Equity Dashboard**: removed standalone Portfolio Groups card grid from the Portfolio Risk section at the top; groups are now visible only in the Groups row within each account card heatmap
+
 ## [4.0.73] - 2026-05-31
 
 ### Changed

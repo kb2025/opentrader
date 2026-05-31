@@ -2042,8 +2042,6 @@ select option{background:var(--surface2)}
           </div>
           <!-- Row 2: per-broker breakdowns -->
           <div id="risk-broker-pies" style="display:grid;gap:14px"></div>
-          <!-- Row 3: portfolio groups (standalone, shown when any group exists) -->
-          <div id="risk-portfolio-groups" style="display:none;margin-top:14px"></div>
         </div>
       </div>
 
@@ -9519,59 +9517,6 @@ function _buildRiskCharts({ accounts, signalMap, sectorMap, sentData, portfolioG
   // even when the account has no open positions.
   const allPg = (portfolioGroups || []);
 
-  // Standalone portfolio groups section — one card per group (parent + sub separately)
-  const pgStandaloneEl = document.getElementById('risk-portfolio-groups');
-  if (pgStandaloneEl) {
-    // Show ALL groups with holdings as individual cards — parents first, then subs labelled
-    const pgWithHoldings = allPg.filter(g => g.holdings && g.holdings.length);
-    if (pgWithHoldings.length) {
-      const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9',
-                       '#4ade80','#f472b6','#818cf8','#a3e635','#38bdf8','#fb7185','#c084fc','#fdba74'];
-      pgStandaloneEl.style.display = '';
-      pgStandaloneEl.innerHTML = `
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Portfolio Groups</span>
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">
-        ${pgWithHoldings.map(g => {
-          const color    = g.color || '#60a5fa';
-          const holdings = g.holdings || [];
-          const total    = holdings.reduce((s,h) => s+(h.effective_pct||0),0) || 100;
-          const segs     = holdings.map((h,i) => {
-            const pct = ((h.effective_pct||0)/total*100).toFixed(2);
-            const col = palette[i % palette.length];
-            return `<div style="flex:${pct};background:${col};min-width:2px;position:relative" title="${h.ticker}: ${h.effective_pct?.toFixed(1)||'?'}%">
-              <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;overflow:hidden;white-space:nowrap;padding:0 1px">${parseFloat(pct)>5?h.ticker:''}</span>
-            </div>`;
-          }).join('');
-          const acctChips = (g.accounts||[]).map(a =>
-            `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">${a.account_label}</span>`
-          ).join('');
-          const stratTag  = g.strategy_name ? `<span style="font-size:9px;color:var(--muted)">${g.strategy_name}</span>` : '';
-          const typeTag   = g.type === 'sub' ? `<span style="font-size:9px;color:var(--muted);opacity:.6">(sub)</span>` : '';
-          return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${color};border-radius:8px;padding:10px 12px">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-              <span style="font-size:11px;font-weight:700;color:var(--fg)">${g.name}</span>${typeTag}
-              ${stratTag}
-              <div style="margin-left:auto;display:flex;gap:3px;flex-wrap:wrap">${acctChips}</div>
-            </div>
-            <div style="display:flex;height:22px;border-radius:4px;overflow:hidden;border:1px solid var(--border)">${segs}</div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">
-              ${holdings.map((h,i) => `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${palette[i%palette.length]}22;border:1px solid ${palette[i%palette.length]}55;color:${palette[i%palette.length]}">${h.ticker}</span>`).join('')}
-            </div>
-            <div style="display:flex;gap:4px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)33">
-              <button onclick="_pgCostBasis('${g.id}')" style="flex:1;font-size:9px;font-weight:600;padding:3px 0;background:rgba(96,165,250,.1);color:#60a5fa;border:1px solid rgba(96,165,250,.3);border-radius:4px;cursor:pointer">Cost Basis</button>
-              <button onclick="_pgRebalance('${g.id}')" style="flex:1;font-size:9px;font-weight:600;padding:3px 0;background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.3);border-radius:4px;cursor:pointer">Rebalance</button>
-              <button onclick="_pgDca('${g.id}')" style="flex:1;font-size:9px;font-weight:600;padding:3px 0;background:rgba(52,211,153,.1);color:#34d399;border:1px solid rgba(52,211,153,.3);border-radius:4px;cursor:pointer">DCA</button>
-            </div>
-          </div>`;
-        }).join('')}
-        </div>`;
-    } else {
-      pgStandaloneEl.style.display = 'none';
-    }
-  }
 
   // Per-broker breakdowns
   const brokerEl = document.getElementById('risk-broker-pies');
