@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.80] - 2026-05-31
+
+### Added
+- **Portfolio Group modal — distribution editor**: sub-portfolio "Investment $" field replaced with "% of parent" input; setting the % auto-computes the dollar amount from the parent total; live allocation bar shows direct-holdings % vs each sub % updating in real time; overallocation warning shown when sub totals exceed parent
+
 ## [4.0.79] - 2026-05-31
 
 ### Fixed

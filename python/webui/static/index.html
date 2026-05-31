@@ -2212,8 +2212,14 @@ select option{background:var(--surface2)}
               <span style="font-size:13px;color:var(--muted)">$</span>
               <input id="pg-investment" type="number" min="0" step="100" placeholder="e.g. 10000"
                 style="flex:1;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px"
-                oninput="_pgRefreshHoldingsEditor()">
+                oninput="_pgRefreshHoldingsEditor();_pgRefreshDistributionBar()">
               <span style="font-size:11px;color:var(--muted)">→ shows $ per ticker</span>
+            </div>
+            <!-- Live distribution bar (shown when subs exist) -->
+            <div id="pg-dist-bar-wrap" style="display:none;margin-top:8px">
+              <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Allocation split</div>
+              <div id="pg-dist-bar" style="display:flex;height:20px;border-radius:4px;overflow:hidden;border:1px solid var(--border)"></div>
+              <div id="pg-dist-labels" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px"></div>
             </div>
           </div>
 
@@ -7369,6 +7375,7 @@ async function _pgOpenModal(g) {
   document.getElementById('pg-modal').style.display = '';
 
   _pgRefreshHoldingsEditor();
+  setTimeout(_pgRefreshDistributionBar, 50);
 }
 
 function _pgGetAllocMode() {
@@ -7530,12 +7537,14 @@ function _pgRenderSubsEditor() {
           <input type="radio" name="pg-sub-alloc-${si}" value="custom" ${mode==='custom'?'checked':''} onchange="_pgSubSwitchMode(${si},'custom')"> Custom %
         </label>
         <span style="font-size:10px;color:var(--muted)">${sub.holdings.length}/10</span>
-        <div style="display:flex;align-items:center;gap:3px">
-          <span style="font-size:10px;color:var(--muted)">$</span>
-          <input type="number" min="0" step="100" placeholder="Investment $"
-            value="${sub.investment_amount != null ? sub.investment_amount : ''}"
-            style="width:90px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:10px"
-            oninput="_pgSubs[${si}].investment_amount=parseFloat(this.value)||null;_pgRenderSubsEditor()">
+        <div style="display:flex;align-items:center;gap:3px" title="Percentage of parent total budget allocated to this sub-portfolio">
+          <input type="number" min="0" max="100" step="1"
+            placeholder="% of parent"
+            value="${(() => { const pi = parseFloat(document.getElementById('pg-investment')?.value||0); return pi > 0 && sub.investment_amount ? Math.round(sub.investment_amount/pi*100) : (sub.investment_amount ? '' : ''); })()}"
+            style="width:72px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:10px;text-align:right"
+            oninput="_pgSubSetPct(${si}, this.value)">
+          <span style="font-size:10px;color:var(--muted)">%</span>
+          <span style="font-size:9px;color:var(--dim);min-width:44px" id="pg-sub-dollar-${si}">${(() => { return sub.investment_amount ? '$'+sub.investment_amount.toLocaleString(undefined,{maximumFractionDigits:0}) : ''; })()}</span>
         </div>
         <button onclick="_pgSubRemove(${si})" style="background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.3);border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer">Remove</button>
       </div>
@@ -7551,6 +7560,65 @@ function _pgRenderSubsEditor() {
       </div>
     </div>`;
   }).join('');
+  // Refresh the distribution bar after re-render
+  setTimeout(_pgRefreshDistributionBar, 0);
+}
+
+function _pgSubSetPct(si, pctStr) {
+  const pct = parseFloat(pctStr) || 0;
+  const parentInv = parseFloat(document.getElementById('pg-investment')?.value || 0);
+  _pgSubs[si].investment_amount = parentInv > 0 ? Math.round(parentInv * pct / 100) : null;
+  // Update the $ display without full re-render
+  const dollarEl = document.getElementById(`pg-sub-dollar-${si}`);
+  if (dollarEl) dollarEl.textContent = _pgSubs[si].investment_amount
+    ? '$' + _pgSubs[si].investment_amount.toLocaleString(undefined, {maximumFractionDigits: 0})
+    : '';
+  _pgRefreshDistributionBar();
+}
+
+function _pgRefreshDistributionBar() {
+  const wrap    = document.getElementById('pg-dist-bar-wrap');
+  const bar     = document.getElementById('pg-dist-bar');
+  const labels  = document.getElementById('pg-dist-labels');
+  if (!wrap || !bar || !labels) return;
+
+  const parentInv = parseFloat(document.getElementById('pg-investment')?.value || 0);
+  if (!parentInv || !_pgSubs || !_pgSubs.length) { wrap.style.display = 'none'; return; }
+
+  const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9'];
+  const pgColor = document.getElementById('pg-color')?.value || '#60a5fa';
+
+  const totalSubInv = _pgSubs.reduce((s, sub) => s + (parseFloat(sub.investment_amount) || 0), 0);
+  const directInv   = Math.max(parentInv - totalSubInv, 0);
+  const directPct   = Math.round(directInv / parentInv * 100);
+
+  const segs = [];
+  const lbls = [];
+
+  // Direct holdings segment
+  if (directPct > 0) {
+    segs.push(`<div style="flex:${directInv};background:${pgColor};min-width:4px" title="Direct holdings: ${directPct}%"></div>`);
+    lbls.push(`<span style="font-size:9px;color:${pgColor}">Direct ${directPct}%</span>`);
+  }
+
+  // Sub segments
+  _pgSubs.forEach((sub, i) => {
+    const subInv = parseFloat(sub.investment_amount) || 0;
+    if (!subInv) return;
+    const pct = Math.round(subInv / parentInv * 100);
+    const col = sub.color || palette[i % palette.length];
+    segs.push(`<div style="flex:${subInv};background:${col};min-width:4px" title="${sub.name||'Sub'}: ${pct}%"></div>`);
+    lbls.push(`<span style="font-size:9px;color:${col}">${sub.name||'Sub'} ${pct}%</span>`);
+  });
+
+  const total = directInv + totalSubInv;
+  const overEl = total > parentInv + 1
+    ? `<span style="font-size:9px;color:var(--red);margin-left:auto">⚠ Sub total $${totalSubInv.toLocaleString()} exceeds parent $${parentInv.toLocaleString()}</span>`
+    : '';
+
+  wrap.style.display = segs.length ? '' : 'none';
+  bar.innerHTML = segs.join('');
+  labels.innerHTML = lbls.join('') + overEl;
 }
 
 function _pgSubSwitchMode(si, mode) {
