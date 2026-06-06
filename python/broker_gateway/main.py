@@ -330,34 +330,55 @@ class BrokerGatewayAgent(BaseAgent):
                                 }
                                 for p in raw_pos
                                 if p.get("symbol") and not _is_option_symbol(p["symbol"])
+                                   and float(p.get("qty") or 0) > 0
                             }
-                            prev_snap = known_pos_snap.get(rec.label)
-                            if prev_snap is not None:
-                                now_ts = datetime.now(timezone.utc).isoformat()
+
+                            now_ts = datetime.now(timezone.utc).isoformat()
+                            _ord_stream = STREAMS.get("orders", "orders.events")
+
+                            async def _emit_position_fill(sym, qty, price, direction):
+                                await self.redis.xadd(
+                                    _ord_stream,
+                                    {
+                                        "event_type":    "fill",
+                                        "account_id":    rec.label,
+                                        "account_label": rec.label,
+                                        "broker":        rec.broker,
+                                        "mode":          rec.mode,
+                                        "ticker":        sym,
+                                        "asset_class":   "equity",
+                                        "direction":     direction,
+                                        "order_id":      f"pos-{sym}-{rec.label}-{int(datetime.now(timezone.utc).timestamp())}",
+                                        "qty":           f"{qty:.6g}",
+                                        "price":         str(price) if price else "",
+                                        "ts_utc":        now_ts,
+                                        "source":        "position_poll",
+                                    },
+                                    maxlen=10_000,
+                                )
+
+                            # On first snapshot for this account, emit fills for all
+                            # current holdings so they show up in Completed Trades.
+                            # A Redis flag prevents re-importing on container restart.
+                            init_key = f"broker:pos_init:{rec.label}"
+                            if rec.label not in known_pos_snap:
+                                already_imported = bool(await self.redis.get(init_key))
+                                if not already_imported and curr_snap:
+                                    for sym, data in curr_snap.items():
+                                        await _emit_position_fill(sym, data["qty"], data["price"], "long")
+                                        log.info("broker-gateway.position_imported",
+                                                 account=rec.label, symbol=sym,
+                                                 qty=round(data["qty"], 6), price=data["price"])
+                                    await self.redis.set(init_key, "1")
+                                known_pos_snap[rec.label] = curr_snap
+                            else:
+                                prev_snap = known_pos_snap[rec.label]
                                 # Buys: new ticker or qty increase
                                 for sym, cur in curr_snap.items():
                                     prev_qty = prev_snap.get(sym, {}).get("qty", 0.0)
                                     delta = cur["qty"] - prev_qty
                                     if delta > 0.0001:
-                                        await self.redis.xadd(
-                                            STREAMS.get("orders", "orders.events"),
-                                            {
-                                                "event_type":    "fill",
-                                                "account_id":    rec.label,
-                                                "account_label": rec.label,
-                                                "broker":        rec.broker,
-                                                "mode":          rec.mode,
-                                                "ticker":        sym,
-                                                "asset_class":   "equity",
-                                                "direction":     "long",
-                                                "order_id":      f"pos-{sym}-{rec.label}-{int(datetime.now(timezone.utc).timestamp())}",
-                                                "qty":           f"{delta:.6g}",
-                                                "price":         str(cur["price"]) if cur["price"] else "",
-                                                "ts_utc":        now_ts,
-                                                "source":        "position_poll",
-                                            },
-                                            maxlen=10_000,
-                                        )
+                                        await _emit_position_fill(sym, delta, cur["price"], "long")
                                         log.info("broker-gateway.position_buy_detected",
                                                  account=rec.label, symbol=sym,
                                                  qty_delta=round(delta, 6), price=cur["price"])
@@ -366,29 +387,11 @@ class BrokerGatewayAgent(BaseAgent):
                                     curr_qty = curr_snap.get(sym, {}).get("qty", 0.0)
                                     delta = prev["qty"] - curr_qty
                                     if delta > 0.0001:
-                                        await self.redis.xadd(
-                                            STREAMS.get("orders", "orders.events"),
-                                            {
-                                                "event_type":    "fill",
-                                                "account_id":    rec.label,
-                                                "account_label": rec.label,
-                                                "broker":        rec.broker,
-                                                "mode":          rec.mode,
-                                                "ticker":        sym,
-                                                "asset_class":   "equity",
-                                                "direction":     "short",
-                                                "order_id":      f"pos-{sym}-{rec.label}-{int(datetime.now(timezone.utc).timestamp())}",
-                                                "qty":           f"{delta:.6g}",
-                                                "price":         "",
-                                                "ts_utc":        now_ts,
-                                                "source":        "position_poll",
-                                            },
-                                            maxlen=10_000,
-                                        )
+                                        await _emit_position_fill(sym, delta, 0, "short")
                                         log.info("broker-gateway.position_sell_detected",
                                                  account=rec.label, symbol=sym,
                                                  qty_delta=round(delta, 6))
-                            known_pos_snap[rec.label] = curr_snap
+                                known_pos_snap[rec.label] = curr_snap
                         except Exception as e:
                             log.warning("broker-gateway.position_poll_error",
                                         account=rec.label, error=str(e))

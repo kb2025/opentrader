@@ -3,6 +3,11 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.84] - 2026-06-06
+
+### Fixed
+- **Equity Trades — Webull existing holdings now imported on first run**: broker gateway emits fill events for all current Webull positions on initial startup (guarded by a Redis flag so it only fires once per account, not on every restart); subsequent new purchases/sales are detected via position-qty diff
+
 ## [4.0.83] - 2026-06-06
 
 ### Fixed
