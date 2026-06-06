@@ -26,6 +26,12 @@ from .router             import BrokerRouter
 
 log = structlog.get_logger("broker-gateway")
 
+import re as _re
+_OCC_RE = _re.compile(r'^[A-Z]{1,6}\d{6}[CP]\d{8}$')
+
+def _is_option_symbol(sym: str) -> bool:
+    return bool(_OCC_RE.match(sym.upper()))
+
 CONSUMER_NAME  = os.getenv("HOSTNAME", "broker-gateway-0")
 REPLY_TTL      = int(os.getenv("BROKER_REPLY_TTL_SEC", "60"))
 
@@ -203,12 +209,20 @@ class BrokerGatewayAgent(BaseAgent):
         1. Transition detection — order was open last poll, now filled.
         2. Today-fill detection — order filled today and not yet emitted (catches
            manually-placed trades and fills that occurred before gateway start).
+        3. Position-change detection — for brokers where the order-list API is
+           unavailable (e.g. Webull on restricted subscriptions), compare position
+           snapshots between polls and infer buys/sells from qty changes.
         """
         POLL_INTERVAL = int(os.getenv("ORDER_POLL_INTERVAL_SEC", "60"))
         # account_label → set of open order_ids (transition detection)
         known_open:   dict[str, set] = {}
         # account_label → set of order_ids already emitted (dedup for today-fill path)
         known_emitted: dict[str, set] = {}
+        # account_label → {ticker: {"qty": float, "price": float}} — position snapshots
+        # used as fallback when get_orders is unavailable
+        known_pos_snap: dict[str, dict] = {}
+        # Brokers that do not expose order history via get_orders
+        _POS_TRACK_BROKERS = frozenset({"webull"})
 
         # Broker-specific open statuses (lowercase)
         _OPEN_STATUSES = frozenset({
@@ -303,6 +317,81 @@ class BrokerGatewayAgent(BaseAgent):
                                      account=rec.label, order_id=o.get("id"), symbol=o.get("symbol"))
                         except Exception as e:
                             log.warning("broker-gateway.order_poll_emit_error", error=str(e))
+
+                    # ── Method 3: position-change detection for brokers without order history ──
+                    if rec.broker in _POS_TRACK_BROKERS:
+                        try:
+                            raw_pos = await rec.connector.get_positions()
+                            # Only equity — skip option symbols (OCC format)
+                            curr_snap = {
+                                p["symbol"]: {
+                                    "qty":   float(p.get("qty") or 0),
+                                    "price": float(p.get("avg_entry_price") or 0),
+                                }
+                                for p in raw_pos
+                                if p.get("symbol") and not _is_option_symbol(p["symbol"])
+                            }
+                            prev_snap = known_pos_snap.get(rec.label)
+                            if prev_snap is not None:
+                                now_ts = datetime.now(timezone.utc).isoformat()
+                                # Buys: new ticker or qty increase
+                                for sym, cur in curr_snap.items():
+                                    prev_qty = prev_snap.get(sym, {}).get("qty", 0.0)
+                                    delta = cur["qty"] - prev_qty
+                                    if delta > 0.0001:
+                                        await self.redis.xadd(
+                                            STREAMS.get("orders", "orders.events"),
+                                            {
+                                                "event_type":    "fill",
+                                                "account_id":    rec.label,
+                                                "account_label": rec.label,
+                                                "broker":        rec.broker,
+                                                "mode":          rec.mode,
+                                                "ticker":        sym,
+                                                "asset_class":   "equity",
+                                                "direction":     "long",
+                                                "order_id":      f"pos-{sym}-{rec.label}-{int(datetime.now(timezone.utc).timestamp())}",
+                                                "qty":           f"{delta:.6g}",
+                                                "price":         str(cur["price"]) if cur["price"] else "",
+                                                "ts_utc":        now_ts,
+                                                "source":        "position_poll",
+                                            },
+                                            maxlen=10_000,
+                                        )
+                                        log.info("broker-gateway.position_buy_detected",
+                                                 account=rec.label, symbol=sym,
+                                                 qty_delta=round(delta, 6), price=cur["price"])
+                                # Sells: qty decrease or position closed
+                                for sym, prev in prev_snap.items():
+                                    curr_qty = curr_snap.get(sym, {}).get("qty", 0.0)
+                                    delta = prev["qty"] - curr_qty
+                                    if delta > 0.0001:
+                                        await self.redis.xadd(
+                                            STREAMS.get("orders", "orders.events"),
+                                            {
+                                                "event_type":    "fill",
+                                                "account_id":    rec.label,
+                                                "account_label": rec.label,
+                                                "broker":        rec.broker,
+                                                "mode":          rec.mode,
+                                                "ticker":        sym,
+                                                "asset_class":   "equity",
+                                                "direction":     "short",
+                                                "order_id":      f"pos-{sym}-{rec.label}-{int(datetime.now(timezone.utc).timestamp())}",
+                                                "qty":           f"{delta:.6g}",
+                                                "price":         "",
+                                                "ts_utc":        now_ts,
+                                                "source":        "position_poll",
+                                            },
+                                            maxlen=10_000,
+                                        )
+                                        log.info("broker-gateway.position_sell_detected",
+                                                 account=rec.label, symbol=sym,
+                                                 qty_delta=round(delta, 6))
+                            known_pos_snap[rec.label] = curr_snap
+                        except Exception as e:
+                            log.warning("broker-gateway.position_poll_error",
+                                        account=rec.label, error=str(e))
 
             except asyncio.CancelledError:
                 break

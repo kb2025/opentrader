@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## [4.0.83] - 2026-06-06
+
+### Fixed
+- **Equity Trades — Webull completed trades missing**: broker gateway now uses position-change detection as fallback when Webull order-history API returns 404; buy/sell fills inferred from position qty changes between 60-second polls, written to `orders.events` with `source: position_poll`
+- **Portfolio allocation bar**: only the shortage/overage portion is highlighted yellow; the normal-colour section shows the actual (shortage) or base (overage) fill; yellow section displays deviation `%` and `$` value
+- **Boot startup**: removed invalid `--ignore-pull-failures` flag from systemd `ExecStartPre`; fixed `ot-mcp-yahoo` crash loop (`FastMCP.run()` host/port kwargs moved to `.settings`)
+- **Completed trades direction/price**: API now reads `side` as fallback for `direction`, and `fill_price` as fallback for `price`, for backward compat with older stream entries
+
 ## [4.0.82] - 2026-05-31
 
 ### Changed

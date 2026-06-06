@@ -9907,39 +9907,70 @@ function _renderAccountHeatmap(positions, acctKey, acctGroups) {
       // ── Build segments — sized by TARGET, coloured by deviation ──────────
       const DELTA_THRESHOLD = 3;   // % — below this, considered on-target
       const groupBlocks = Object.entries(_pgTarget).map(([ticker, tgtPct]) => {
-        const col     = _pgColor[ticker] || '#60a5fa';
-        const gid     = _pgGid[ticker]   || '';
-        const mv      = tickerMv[ticker] || 0;
-        const actPct  = mv / _pgActualTotal * 100;
-        const delta   = actPct - tgtPct;          // + overage, - shortage
+        const col      = _pgColor[ticker] || '#60a5fa';
+        const gid      = _pgGid[ticker]   || '';
+        const mv       = tickerMv[ticker] || 0;
+        const actPct   = mv / _pgActualTotal * 100;
+        const delta    = actPct - tgtPct;          // + overage, - shortage
         const absDelta = Math.abs(delta);
-        const isOff   = absDelta > DELTA_THRESHOLD;
+        const isOff    = absDelta > DELTA_THRESHOLD;
+        const isShort  = delta < -DELTA_THRESHOLD;
+        const isOver   = delta >  DELTA_THRESHOLD;
 
-        // Segment appearance
-        const bg     = isOff ? 'rgba(234,179,8,0.18)'  : `${col}28`;
-        const border = isOff ? 'rgba(234,179,8,0.65)'  : `${col}55`;
+        // Dollar value of the deviation
+        const dollarDelta = absDelta / 100 * _pgActualTotal;
+        const dollarStr   = dollarDelta >= 10000
+          ? `$${(dollarDelta / 1000).toFixed(0)}k`
+          : dollarDelta >= 1000
+            ? `$${(dollarDelta / 1000).toFixed(1)}k`
+            : `$${dollarDelta.toFixed(0)}`;
 
-        // Labels (only if segment wide enough)
-        const wide    = tgtPct >= 9;
-        const medium  = tgtPct >= 5;
-        const deltaStr = isOff
-          ? (delta > 0 ? `▲+${absDelta.toFixed(1)}%` : `▼-${absDelta.toFixed(1)}%`)
-          : '';
-        const deltaColor = isOff ? '#eab308' : col;
+        const arrow = isShort ? '▼' : '▲';
+        const sign  = isShort ? '-' : '+';
+        const tip   = `${ticker} — Target: ${tgtPct.toFixed(1)}%  Actual: ${actPct.toFixed(1)}%${
+          isOff
+            ? `  ${isOver ? 'Overage' : 'Shortage'}: ${sign}${absDelta.toFixed(1)}%  (${sign}${dollarStr})`
+            : '  On target'
+        }`.replace(/'/g, "&#39;");
 
-        const line1 = medium ? ticker : '';
-        const line2 = wide
-          ? `${tgtPct.toFixed(1)}%${deltaStr ? ' ' + deltaStr : ''}`
-          : (medium && isOff ? deltaStr : '');
+        const evts = `onclick="_pgRebalance('${gid}')" onmousemove="_pieSliceHover(event,'${tip}','${col}')" onmouseleave="_pieSliceLeave()" onmouseenter="this.style.opacity='.75'" onmouseout="this.style.opacity='1'"`;
 
-        const tip = `${ticker} — Target: ${tgtPct.toFixed(1)}%  Actual: ${actPct.toFixed(1)}%${isOff ? '  ' + (delta > 0 ? 'Overage' : 'Shortage') + ': ' + (delta > 0 ? '+' : '-') + absDelta.toFixed(1) + '%' : '  On target'}`.replace(/'/g, "&#39;");
+        if (!isOff) {
+          // On-target: single block, normal colour
+          const wide = tgtPct >= 9, medium = tgtPct >= 5;
+          return `<div style="flex:${tgtPct||1};min-width:2px;height:36px;background:${col}28;border:1px solid ${col}55;border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;gap:1px" ${evts}>
+            <span style="font-size:9px;font-weight:700;color:${col};pointer-events:none;white-space:nowrap;padding:0 2px">${medium ? ticker : ''}</span>
+            <span style="font-size:8px;font-weight:600;color:${col};pointer-events:none;white-space:nowrap;padding:0 2px">${wide ? tgtPct.toFixed(1)+'%' : ''}</span>
+          </div>`;
+        }
 
-        return `<div style="flex:${tgtPct||1};min-width:2px;height:36px;background:${bg};border:1px solid ${border};border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;gap:1px"
-          onclick="_pgRebalance('${gid}')"
-          onmousemove="_pieSliceHover(event,'${tip}','${col}')" onmouseleave="_pieSliceLeave()"
-          onmouseenter="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">
-          <span style="font-size:9px;font-weight:700;color:${col};pointer-events:none;white-space:nowrap;padding:0 2px">${line1}</span>
-          <span style="font-size:8px;font-weight:600;color:${deltaColor};pointer-events:none;white-space:nowrap;padding:0 2px">${line2}</span>
+        // Off-target: split into normal portion + yellow deviation portion.
+        // Shortage → normal left (actual filled) + yellow right (gap to reach target).
+        // Overage  → normal left (base) + yellow right (excess within target bar).
+        // Both portions sum to tgtPct so the outer flex width is unchanged.
+        const yellowFlex = isShort
+          ? Math.min(absDelta, tgtPct - 0.01)              // gap up to target width
+          : Math.min(absDelta, tgtPct - 0.01);             // excess capped at full bar
+        const normalFlex = Math.max(tgtPct - yellowFlex, 0.01);
+
+        // Yellow section text — only if portion is wide enough
+        const yWide   = yellowFlex >= 7;
+        const yMedium = yellowFlex >= 4;
+        const yLine1  = yMedium ? `${arrow}${sign}${absDelta.toFixed(1)}%` : '';
+        const yLine2  = yWide   ? `${sign}${dollarStr}` : '';
+
+        // Normal section text — ticker + target % if wide enough
+        const nMedium = normalFlex >= 5, nWide = normalFlex >= 9;
+
+        return `<div style="flex:${tgtPct||1};min-width:2px;height:36px;border:1px solid ${col}55;border-radius:4px;display:flex;flex-direction:row;overflow:hidden;cursor:pointer" ${evts}>
+          <div style="flex:${normalFlex};background:${col}28;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;overflow:hidden;min-width:0">
+            <span style="font-size:9px;font-weight:700;color:${col};pointer-events:none;white-space:nowrap;padding:0 2px">${nMedium ? ticker : ''}</span>
+            <span style="font-size:8px;font-weight:600;color:${col};pointer-events:none;white-space:nowrap;padding:0 2px">${nWide ? tgtPct.toFixed(1)+'%' : ''}</span>
+          </div>
+          <div style="flex:${yellowFlex};background:rgba(234,179,8,0.22);border-left:1px solid rgba(234,179,8,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;overflow:hidden;min-width:0">
+            <span style="font-size:8px;font-weight:700;color:#eab308;pointer-events:none;white-space:nowrap;padding:0 2px;line-height:1.3">${yLine1}</span>
+            <span style="font-size:7px;font-weight:600;color:#eab308;pointer-events:none;white-space:nowrap;padding:0 2px;line-height:1.3">${yLine2}</span>
+          </div>
         </div>`;
       }).join('');
 
