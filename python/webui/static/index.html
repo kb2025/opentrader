@@ -5740,6 +5740,7 @@ async function apiFetch(path, opts = {}) {
   }
   const r = await fetch(path, opts);
   if (!r.ok) {
+    if (r.status === 401) { window.location.href = '/login'; return; }
     let msg = `HTTP ${r.status}`;
     try {
       const body = await r.json();

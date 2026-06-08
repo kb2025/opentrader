@@ -331,7 +331,7 @@ async def auth_login(request: Request, body: dict):
     # Load stored secrets into env so API keys are immediately available
     await _load_user_secrets_to_env(user["id"])
 
-    token    = _make_jwt(user["id"], user["username"])
+    token    = _make_jwt(user["id"], user["username"], exp_hours=168)
     is_https = request.headers.get("x-forwarded-proto", "http") == "https"
 
     response = JSONResponse({"ok": True, "username": user["username"]})
@@ -340,7 +340,7 @@ async def auth_login(request: Request, body: dict):
         httponly=True,
         secure=is_https,
         samesite="strict",
-        max_age=86400,
+        max_age=604800,
         path="/",
     )
     log.info("auth.login", username=username)
