@@ -885,6 +885,26 @@ select option{background:var(--surface2)}
                 </label>
               </div>
             </div>
+            <!-- Watchlist alerts -->
+            <div style="border-top:1px solid var(--border);padding-top:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <div style="font-size:11px;color:var(--muted);font-weight:600">Watchlist Alerts</div>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <span style="font-size:11px;color:var(--muted)">Alert</span>
+                  <input type="number" id="rpt-alert-days" min="1" max="30" value="1"
+                    style="width:42px;padding:2px 5px;font-size:11px;background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:4px"
+                    onchange="_rptSaveDaily()">
+                  <span style="font-size:11px;color:var(--muted)">day(s) before</span>
+                </div>
+              </div>
+              <div style="display:flex;gap:4px;margin-bottom:6px">
+                <input type="text" id="rpt-watch-input" placeholder="Ticker, e.g. AAPL"
+                  style="flex:1;padding:4px 8px;font-size:11px;background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:4px;text-transform:uppercase"
+                  onkeydown="if(event.key==='Enter'){event.preventDefault();_rptAddWatchTicker()}">
+                <button class="btn btn-ghost btn-sm" onclick="_rptAddWatchTicker()" style="font-size:11px;padding:3px 8px">Add</button>
+              </div>
+              <div id="rpt-watch-list" style="display:flex;flex-direction:column;gap:3px"></div>
+            </div>
             <div style="display:flex;gap:8px;padding-top:4px">
               <button class="btn btn-ghost btn-sm" onclick="reportsPreview('options')">Preview</button>
               <button class="btn btn-primary btn-sm" onclick="reportsSendNow('options')">Send Now</button>
@@ -27552,12 +27572,63 @@ function _rptApplyConfig(cfg) {
   document.getElementById('rpt-content-earnings').checked = !!opt.include_earnings;
   document.getElementById('rpt-content-exdiv').checked    = !!opt.include_exdiv;
 
+  // Watchlist
+  _rptWatchTickers = Array.isArray(opt.watch_tickers) ? JSON.parse(JSON.stringify(opt.watch_tickers)) : [];
+  const daysEl = document.getElementById('rpt-alert-days');
+  if (daysEl) daysEl.value = opt.alert_days_before ?? 1;
+  _rptRenderWatchList();
+
   document.getElementById('rpt-eod-enabled').checked = !!eod.enabled;
   const eodCh = eod.channels || ['agentmail'];
   document.getElementById('rpt-eod-ch-agentmail').checked = eodCh.includes('agentmail');
   document.getElementById('rpt-eod-ch-telegram').checked  = eodCh.includes('telegram');
   document.getElementById('rpt-eod-ch-discord').checked   = eodCh.includes('discord');
   document.getElementById('rpt-eod-channels').textContent = eodCh.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(' · ') || '—';
+}
+
+let _rptWatchTickers = []; // [{ticker, earnings, exdiv}]
+
+function _rptRenderWatchList() {
+  const el = document.getElementById('rpt-watch-list');
+  if (!el) return;
+  if (!_rptWatchTickers.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--muted);font-style:italic;padding:2px 0">No tickers added</div>';
+    return;
+  }
+  el.innerHTML = _rptWatchTickers.map((w, i) => `
+    <div style="display:flex;align-items:center;gap:6px;padding:3px 6px;background:var(--hover-bg,rgba(128,128,128,.08));border-radius:4px">
+      <span style="font-size:11px;font-weight:600;color:var(--text);min-width:52px">${w.ticker}</span>
+      <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted);cursor:pointer">
+        <input type="checkbox" ${w.earnings ? 'checked' : ''} onchange="_rptWatchToggle(${i},'earnings',this.checked)"> Earnings
+      </label>
+      <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted);cursor:pointer">
+        <input type="checkbox" ${w.exdiv ? 'checked' : ''} onchange="_rptWatchToggle(${i},'exdiv',this.checked)"> Ex-Div
+      </label>
+      <button onclick="_rptRemoveWatchTicker(${i})" style="margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0 2px" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function _rptAddWatchTicker() {
+  const inp = document.getElementById('rpt-watch-input');
+  if (!inp) return;
+  const ticker = inp.value.trim().toUpperCase().replace(/[^A-Z0-9.]/g, '');
+  if (!ticker) return;
+  if (_rptWatchTickers.some(w => w.ticker === ticker)) { inp.value = ''; return; }
+  _rptWatchTickers.push({ticker, earnings: true, exdiv: false});
+  inp.value = '';
+  _rptRenderWatchList();
+  _rptSaveDaily();
+}
+
+function _rptRemoveWatchTicker(idx) {
+  _rptWatchTickers.splice(idx, 1);
+  _rptRenderWatchList();
+  _rptSaveDaily();
+}
+
+function _rptWatchToggle(idx, field, val) {
+  if (_rptWatchTickers[idx]) _rptWatchTickers[idx][field] = val;
+  _rptSaveDaily();
 }
 
 let _rptSaveTimer = null;
@@ -27578,10 +27649,12 @@ async function _rptSaveDaily() {
       schedule_days:    days,
       schedule_hour:    isNaN(hour)   ? 13 : hour,
       schedule_minute:  isNaN(minute) ? 0  : minute,
-      include_options:  !!document.getElementById('rpt-content-options')?.checked,
-      include_stocks:   !!document.getElementById('rpt-content-stocks')?.checked,
-      include_earnings: !!document.getElementById('rpt-content-earnings')?.checked,
-      include_exdiv:    !!document.getElementById('rpt-content-exdiv')?.checked,
+      include_options:   !!document.getElementById('rpt-content-options')?.checked,
+      include_stocks:    !!document.getElementById('rpt-content-stocks')?.checked,
+      include_earnings:  !!document.getElementById('rpt-content-earnings')?.checked,
+      include_exdiv:     !!document.getElementById('rpt-content-exdiv')?.checked,
+      watch_tickers:     JSON.parse(JSON.stringify(_rptWatchTickers)),
+      alert_days_before: parseInt(document.getElementById('rpt-alert-days')?.value ?? 1) || 1,
     };
     const summary = document.getElementById('rpt-options-sched-summary');
     if (summary) summary.textContent = _rptSchedSummary(days, cfg.schedule_hour, cfg.schedule_minute);

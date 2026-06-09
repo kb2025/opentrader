@@ -1483,6 +1483,17 @@ async def on_startup():
             """)
         except Exception:
             pass
+    # Migrate report_config: add watch_tickers + alert_days_before if missing
+    if DB_URL:
+        try:
+            pool = await _get_db_pool()
+            await pool.execute("""
+                ALTER TABLE report_config
+                  ADD COLUMN IF NOT EXISTS watch_tickers     TEXT    NOT NULL DEFAULT '[]',
+                  ADD COLUMN IF NOT EXISTS alert_days_before INTEGER NOT NULL DEFAULT 1
+            """)
+        except Exception:
+            pass
     # execution_events — Code Insights telemetry store (30-day retention)
     if DB_URL:
         try:
@@ -11836,12 +11847,87 @@ async def _get_sgov_alert() -> dict | None:
         return None
 
 
+async def _fetch_watchlist_alerts(watch_tickers: list, alert_days_before: int) -> list[dict]:
+    """Return [{ticker, event, date, days_until}] for watched tickers within the alert window."""
+    from datetime import date as _date
+    alerts: list[dict] = []
+    if not watch_tickers:
+        return alerts
+    today   = _date.today()
+    cutoff  = max(1, int(alert_days_before))
+
+    tickers_earn  = [w["ticker"] for w in watch_tickers if w.get("earnings")]
+    tickers_exdiv = [w["ticker"] for w in watch_tickers if w.get("exdiv")]
+
+    # Ex-div from dividend_meta
+    if tickers_exdiv:
+        try:
+            pool = await _get_db_pool()
+            rows = await pool.fetch(
+                "SELECT ticker, ex_date FROM dividend_meta WHERE ticker = ANY($1)", tickers_exdiv
+            )
+            for r in rows:
+                if not r["ex_date"]:
+                    continue
+                days = (r["ex_date"] - today).days
+                if 0 <= days <= cutoff:
+                    alerts.append({"ticker": r["ticker"], "event": "Ex-Dividend",
+                                   "date": str(r["ex_date"]), "days_until": days})
+        except Exception:
+            pass
+
+    # Earnings: option_positions DB first, then DataClient fallback
+    if tickers_earn:
+        found: dict[str, str] = {}
+        try:
+            pool = await _get_db_pool()
+            rows = await pool.fetch(
+                """SELECT DISTINCT ON (underlying) underlying, next_earnings_date
+                   FROM option_positions
+                   WHERE underlying = ANY($1) AND next_earnings_date IS NOT NULL
+                   ORDER BY underlying, next_earnings_date""",
+                tickers_earn,
+            )
+            for r in rows:
+                found[r["underlying"]] = r["next_earnings_date"].isoformat()
+        except Exception:
+            pass
+
+        for ticker in [t for t in tickers_earn if t not in found]:
+            try:
+                from shared.data_client import DataClient
+                dc = DataClient()
+                d  = await dc.earnings(ticker) or {}
+                entries = d.get("upcoming") or d.get("earnings") or []
+                if entries:
+                    dt_str = entries[0].get("date") or entries[0].get("report_date") or ""
+                    if dt_str:
+                        found[ticker] = dt_str
+            except Exception:
+                pass
+
+        for ticker, dt_str in found.items():
+            try:
+                from datetime import date as _d2
+                dt   = _d2.fromisoformat(str(dt_str)[:10])
+                days = (dt - today).days
+                if 0 <= days <= cutoff:
+                    alerts.append({"ticker": ticker, "event": "Earnings",
+                                   "date": str(dt), "days_until": days})
+            except Exception:
+                pass
+
+    alerts.sort(key=lambda a: (a["days_until"], a["ticker"]))
+    return alerts
+
+
 def _build_daily_report_html(
-    positions:       list[dict],
-    sgov_alert:      dict | None = None,
+    positions:        list[dict],
+    sgov_alert:       dict | None = None,
     equity_positions: list[dict] | None = None,
-    exdiv_map:       dict | None = None,   # ticker → ex_date string
-    config:          dict | None = None,
+    exdiv_map:        dict | None = None,   # ticker → ex_date string
+    config:           dict | None = None,
+    watchlist_alerts: list[dict] | None = None,
 ) -> str:
     """Build the HTML daily report. Sections are controlled by config flags."""
     from datetime import date as _date
@@ -12072,6 +12158,35 @@ def _build_daily_report_html(
     if n_eq:   meta_parts.append(f"{n_eq} stock position{'s' if n_eq!=1 else ''}")
     meta_str = " &middot; ".join(meta_parts) or "No positions"
 
+    # ── Watchlist alerts section ─────────────────────────────────────────────
+    watch_section = ""
+    if watchlist_alerts:
+        def _when_label(days):
+            if days == 0:   return "Today"
+            if days == 1:   return "Tomorrow"
+            return f"{days}d"
+        def _when_style(days):
+            if days == 0:   return "color:#c0392b;font-weight:bold"
+            if days == 1:   return "color:#e67e22;font-weight:bold"
+            return ""
+        rows_html = "".join(
+            f'<tr>'
+            f'<td><strong>{a["ticker"]}</strong></td>'
+            f'<td>{a["event"]}</td>'
+            f'<td>{a["date"]}</td>'
+            f'<td style="{_when_style(a["days_until"])}">{_when_label(a["days_until"])}</td>'
+            f'</tr>'
+            for a in watchlist_alerts
+        )
+        watch_section = f"""
+<div style="background:#fff8e1;border:1px solid #f9a825;border-radius:6px;padding:12px 16px;margin-bottom:18px">
+  <h3 style="margin:0 0 8px;color:#e65100;font-size:13px">&#9888; Watchlist Alerts ({len(watchlist_alerts)})</h3>
+  <table>
+    <thead><tr><th>Ticker</th><th>Event</th><th>Date</th><th>When</th></tr></thead>
+    <tbody>{rows_html}</tbody>
+  </table>
+</div>"""
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>{report_title}</title>
 <style>
@@ -12089,6 +12204,7 @@ def _build_daily_report_html(
 <h2>{report_title}</h2>
 <div class="meta">Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")} ET &nbsp;&middot;&nbsp;
   {meta_str} &nbsp;&middot;&nbsp; Signals: OVTLYR</div>
+{watch_section}
 {opts_section}
 {equity_section}
 </body></html>"""
@@ -12254,9 +12370,19 @@ async def email_options_report_auto(token: str = ""):
         except Exception:
             pass
 
+    # Watchlist alerts
+    watchlist_alerts: list[dict] = []
+    _watch = cfg.get("watch_tickers") or []
+    if _watch:
+        try:
+            watchlist_alerts = await _fetch_watchlist_alerts(_watch, cfg.get("alert_days_before", 1))
+        except Exception:
+            pass
+
     html = _build_daily_report_html(
         positions, sgov_alert=sgov_alert,
         equity_positions=equity_positions, exdiv_map=exdiv_map, config=cfg,
+        watchlist_alerts=watchlist_alerts or None,
     )
     channels   = list(cfg.get("channels") or ["agentmail"])
     recipient  = cfg.get("recipient") or ""
@@ -12494,7 +12620,16 @@ async def preview_options_report(token: str = ""):
         except Exception:
             pass
 
-    if not positions and not equity_positions:
+    # Watchlist alerts
+    _watch2 = cfg.get("watch_tickers") or []
+    _walerts: list[dict] = []
+    if _watch2:
+        try:
+            _walerts = await _fetch_watchlist_alerts(_watch2, cfg.get("alert_days_before", 1))
+        except Exception:
+            pass
+
+    if not positions and not equity_positions and not _walerts:
         return {"html": None, "position_count": 0,
                 "generated_at": datetime.now().isoformat(),
                 "message": "No active positions"}
@@ -12502,6 +12637,7 @@ async def preview_options_report(token: str = ""):
     html = _build_daily_report_html(
         positions, sgov_alert=sgov_alert,
         equity_positions=equity_positions, exdiv_map=exdiv_map, config=cfg,
+        watchlist_alerts=_walerts or None,
     )
     return {"html": html, "position_count": len(positions),
             "equity_count": len(equity_positions) if equity_positions else 0,
@@ -12635,6 +12771,8 @@ async def _get_daily_report_config() -> dict:
         "include_options":  True,
         "include_earnings": False,
         "include_exdiv":    False,
+        "watch_tickers":    [],
+        "alert_days_before": 1,
     }
     if DB_URL:
         try:
@@ -12648,6 +12786,11 @@ async def _get_daily_report_config() -> dict:
                 d.pop("updated_at", None)
                 if d.get("channels") is not None:
                     d["channels"] = list(d["channels"])
+                if d.get("watch_tickers") is not None:
+                    try:
+                        d["watch_tickers"] = json.loads(d["watch_tickers"])
+                    except Exception:
+                        d["watch_tickers"] = []
                 return {**defaults, **d}
         except Exception:
             pass
@@ -12708,13 +12851,15 @@ async def save_reports_config(body: dict, token: str = ""):
                          (report_type, enabled, channels, recipient,
                           schedule_days, schedule_hour, schedule_minute,
                           include_stocks, include_options, include_earnings, include_exdiv,
+                          watch_tickers, alert_days_before,
                           updated_at)
-                       VALUES ('daily_report', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+                       VALUES ('daily_report', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
                        ON CONFLICT (report_type) DO UPDATE SET
                          enabled=$1, channels=$2, recipient=$3,
                          schedule_days=$4, schedule_hour=$5, schedule_minute=$6,
                          include_stocks=$7, include_options=$8, include_earnings=$9,
-                         include_exdiv=$10, updated_at=NOW()""",
+                         include_exdiv=$10, watch_tickers=$11, alert_days_before=$12,
+                         updated_at=NOW()""",
                     bool(daily_cfg.get("enabled", True)),
                     list(daily_cfg.get("channels", ["agentmail"])),
                     daily_cfg.get("recipient", ""),
@@ -12725,6 +12870,8 @@ async def save_reports_config(body: dict, token: str = ""):
                     bool(daily_cfg.get("include_options", True)),
                     bool(daily_cfg.get("include_earnings", False)),
                     bool(daily_cfg.get("include_exdiv", False)),
+                    json.dumps(daily_cfg.get("watch_tickers") or []),
+                    int(daily_cfg.get("alert_days_before") or 1),
                 )
             except Exception:
                 pass

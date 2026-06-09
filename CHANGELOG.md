@@ -3,6 +3,9 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## v4.0.86
+- feat: daily report watchlist alerts — add tickers with per-ticker earnings/ex-div checkboxes and configurable "alert N days before" window; highlighted section appears at top of report when events fall within the window
+
 ## v4.0.85 - 2026-06-08
 - fix: session cookie extended to 7 days (was 24h); 401 responses redirect to /login instead of showing error in container
 
