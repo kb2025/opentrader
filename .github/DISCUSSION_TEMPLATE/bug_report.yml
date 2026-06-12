@@ -1,0 +1,89 @@
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before You Post
+        I do as much testing as possible, but I am one person building and maintaining this entire
+        platform. Bugs will happen. Clear, detailed reports are the fastest path to a fix — thank you
+        for taking the time.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe what you observed.
+      placeholder: "When I... the platform..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: "I expected..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can someone reliably trigger this?
+      placeholder: |
+        1. Go to...
+        2. Click...
+        3. See error
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: OpenTrader version
+      description: Check the bottom-right of the dashboard.
+      placeholder: "e.g. v4.0.86"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: broker
+    attributes:
+      label: Broker / account type
+      options:
+        - Tradier (paper)
+        - Tradier (live)
+        - Alpaca (paper)
+        - Alpaca (live)
+        - Webull (paper)
+        - Webull (live)
+        - Not broker-related
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste output from `podman logs ot-<container>` if available. This will be formatted as code automatically.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: conduct
+    attributes:
+      label: Acknowledgment
+      options:
+        - label: >
+            I have searched existing discussions and this bug has not already been reported.
+          required: true
+        - label: >
+            I understand this is a solo-developer project maintained by one person. I will be
+            patient and constructive, and I will not demand immediate fixes or timelines.
+          required: true
+        - label: >
+            I agree to communicate respectfully. Rude, dismissive, or entitled behavior will
+            result in my post being removed.
+          required: true

@@ -1,0 +1,62 @@
+title: "[Feature Request]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before You Post
+        Thank you for taking the time to suggest an improvement. Please fill out the sections below
+        and check the acknowledgment at the bottom before submitting.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the gap or friction you're experiencing. Be specific.
+      placeholder: "When I try to... I can't... because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed feature or improvement
+      description: Describe what you'd like to see built or changed.
+      placeholder: "It would be great if..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Any workarounds or other approaches you've thought about?
+      placeholder: "I tried... but..."
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: OpenTrader version
+      description: Check the bottom-right of the dashboard.
+      placeholder: "e.g. v4.0.86"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: conduct
+    attributes:
+      label: Acknowledgment
+      options:
+        - label: >
+            I have searched existing discussions and this idea has not already been posted.
+          required: true
+        - label: >
+            I understand this is a solo-developer project maintained by one person. I will be
+            patient and constructive, and I will not demand timelines or immediate responses.
+          required: true
+        - label: >
+            I agree to communicate respectfully. Rude, dismissive, or entitled behavior will
+            result in my post being removed.
+          required: true
