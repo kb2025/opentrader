@@ -371,6 +371,10 @@ select option{background:var(--surface2)}
         <span class="nav-dot" style="background:#22d3ee"></span>
         Portfolio Analytics
       </div>
+      <div class="nav-item" draggable="true" onclick="navigate('page-resources-newsfeed')" data-page="page-resources-newsfeed">
+        <span class="nav-dot" style="background:#fb923c"></span>
+        News Feed
+      </div>
       <div class="nav-parent" id="nav-parent-sectorinsight" onclick="_siNavToggle()">
         <span class="nav-dot" style="background:#a78bfa"></span>
         Market Insights
@@ -5397,6 +5401,49 @@ select option{background:var(--surface2)}
       </div>
     </div><!-- /page-resources-groups -->
 
+    <!-- ── page-resources-newsfeed ── -->
+    <div class="page" id="page-resources-newsfeed">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--fg)">News Feed</div>
+          <div style="font-size:11px;color:var(--muted)">Sentiment-scored headlines · last 7 days · most recent first</div>
+        </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span id="nf-updated" style="font-size:10px;color:var(--dim)"></span>
+          <button class="btn btn-ghost btn-sm" onclick="loadNewsFeedPage()">↻ Refresh</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start">
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#34d399">▲ Trending Up</span>
+            <span id="nf-up-count" style="font-size:10px;color:var(--dim)"></span>
+          </div>
+          <div id="nf-up" style="display:flex;flex-direction:column;gap:6px">
+            <div class="empty-state" style="font-size:11px;padding:20px">Loading…</div>
+          </div>
+        </div>
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#f87171">▼ Trending Down</span>
+            <span id="nf-down-count" style="font-size:10px;color:var(--dim)"></span>
+          </div>
+          <div id="nf-down" style="display:flex;flex-direction:column;gap:6px">
+            <div class="empty-state" style="font-size:11px;padding:20px">Loading…</div>
+          </div>
+        </div>
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#60a5fa">● Current Positions</span>
+            <span id="nf-pos-count" style="font-size:10px;color:var(--dim)"></span>
+          </div>
+          <div id="nf-pos" style="display:flex;flex-direction:column;gap:6px">
+            <div class="empty-state" style="font-size:11px;padding:20px">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /page-resources-newsfeed -->
+
   </div><!-- end .content -->
 </div><!-- end .main -->
 
@@ -5685,6 +5732,7 @@ const PAGE_TITLES = {
   'page-resources-library':    'Library',
   'page-resources-backtester': 'Backtester',
   'page-resources-groups':     'Sector Groups',
+  'page-resources-newsfeed':   'News Feed',
   'page-macro-hub':            'Macro Hub',
 };
 
@@ -5840,6 +5888,7 @@ function navigate(pageId) {
     case 'page-resources-library':    loadLibraryResourcePage(); break;
     case 'page-resources-backtester': loadBacktesterPage();      break;
     case 'page-resources-groups':     loadMarketGroupsPage();    break;
+    case 'page-resources-newsfeed':   loadNewsFeedPage();        break;
     case 'page-macro-hub':            loadMacroHubPage();        break;
   }
 }
@@ -7242,9 +7291,72 @@ function _pgRenderList(el) {
   el.innerHTML = _pgGroups.map(g => _pgCardHTML(g, true)).join('');
 }
 
+
+function _pgPieHTML(g) {
+  const palette = ['#60a5fa','#34d399','#fbbf24','#a78bfa','#f87171','#fb923c','#22d3ee','#e879f9',
+                   '#4ade80','#f472b6','#818cf8','#a3e635'];
+  let slices;
+  if (g.subs && g.subs.length) {
+    const subsTotal = g.subs.reduce((s, sub) => s + (sub.investment_amount || sub.holdings.length || 1), 0);
+    slices = g.subs.map((s, i) => ({
+      label: s.name,
+      value: s.investment_amount || s.holdings.length || 1,
+      color: s.color || palette[i % palette.length],
+    }));
+    if (g.holdings.length) {
+      const directVal = g.investment_amount ? Math.max(0, g.investment_amount - subsTotal) : g.holdings.length;
+      if (directVal > 0) slices.unshift({
+        label: g.name + ' (direct)',
+        value: directVal,
+        color: g.color || palette[slices.length % palette.length],
+      });
+    }
+  } else if (g.holdings.length) {
+    slices = g.holdings.map((h, i) => ({
+      label: h.ticker, value: h.effective_pct || 1, color: palette[i % palette.length],
+    }));
+  } else {
+    return '';
+  }
+  if (!slices || !slices.length) return '';
+  const total = slices.reduce((s, sl) => s + sl.value, 0);
+  if (!total) return '';
+  const cx = 50, cy = 50, r = 44, hole = 16;
+  let angle = -Math.PI / 2;
+  const paths = slices.map(sl => {
+    const sweep = (sl.value / total) * 2 * Math.PI;
+    const end = angle + sweep;
+    let p;
+    if (slices.length === 1) {
+      p = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${sl.color}" opacity=".9"/>`;
+    } else {
+      const x1 = cx + r*Math.cos(angle), y1 = cy + r*Math.sin(angle);
+      const x2 = cx + r*Math.cos(end),   y2 = cy + r*Math.sin(end);
+      p = `<path d="M${cx},${cy} L${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 ${sweep>Math.PI?1:0},1 ${x2.toFixed(1)},${y2.toFixed(1)} Z" fill="${sl.color}" opacity=".9" stroke="var(--surface)" stroke-width="1"/>`;
+    }
+    angle = end;
+    return p;
+  }).join('');
+  const legend = slices.map(sl => {
+    const pct = (sl.value / total * 100).toFixed(0);
+    return `<div style="display:flex;align-items:center;gap:4px">
+      <div style="width:6px;height:6px;border-radius:50%;background:${sl.color};flex-shrink:0"></div>
+      <span style="font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sl.label}&nbsp;<span style="color:var(--fg);font-weight:600">${pct}%</span></span>
+    </div>`;
+  }).join('');
+  return `<div style="flex-shrink:0;display:flex;flex-direction:column;align-self:stretch;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;min-width:120px">
+    <div style="flex:1;display:flex;align-items:center;justify-content:center">
+      <svg width="100" height="100" viewBox="0 0 100 100">
+        ${paths}
+        <circle cx="${cx}" cy="${cy}" r="${hole}" fill="var(--surface2)"/>
+      </svg>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px;width:100%;margin-top:8px">${legend}</div>
+  </div>`;
+}
+
 function _pgCardHTML(g, showSubs) {
   const c = g.color || '#60a5fa';
-  const allocs = g.holdings.map(h => h.effective_pct || 0);
   const barHTML = _pgAllocBar(g.holdings, g.color, 'height:14px;border-radius:4px;overflow:hidden;margin-top:6px');
   const acctChips = (g.accounts||[]).map(a =>
     `<span style="padding:1px 7px;border-radius:3px;font-size:10px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">${a.account_label}</span>`
@@ -7258,7 +7370,8 @@ function _pgCardHTML(g, showSubs) {
         ${g.subs.map(s => _pgCardHTML(s, false)).join('')}
        </div>`
     : '';
-  return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${c};border-radius:8px;padding:14px 16px;margin-bottom:12px">
+  const pieHTML = showSubs ? _pgPieHTML(g) : '';
+  const mainContent = `
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="font-size:14px;font-weight:700;color:var(--fg);flex:1">${g.name}</div>
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
@@ -7279,7 +7392,10 @@ function _pgCardHTML(g, showSubs) {
       }).join('')}
       ${g.holdings.length > 20 ? `<span style="font-size:10px;color:var(--dim)">+${g.holdings.length-20} more</span>` : ''}
     </div>
-    ${subsHTML}
+    ${subsHTML}`;
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ${c};border-radius:8px;padding:14px 16px;margin-bottom:12px;display:flex;align-items:stretch;gap:14px">
+    <div style="flex:1;min-width:0">${mainContent}</div>
+    ${pieHTML}
   </div>`;
 }
 
@@ -14944,6 +15060,112 @@ function _slRender(data) {
 let _mgTab     = 'sectors';
 let _mgData    = [];
 let _mgSortCol = 'perf_1d';
+// ── News Feed Dashboard ───────────────────────────────────────────────────────
+
+async function loadNewsFeedPage() {
+  const setLoading = id => { document.getElementById(id).innerHTML = '<div class="empty-state" style="font-size:11px;padding:20px">Loading…</div>'; };
+  ['nf-up','nf-down','nf-pos'].forEach(setLoading);
+  document.getElementById('nf-up-count').textContent = '';
+  document.getElementById('nf-down-count').textContent = '';
+  document.getElementById('nf-pos-count').textContent = '';
+
+  const [sentData, posData, macroData] = await Promise.allSettled([
+    apiFetch('/api/market/news-sentiment?limit=2000&days=7'),
+    apiFetch('/api/positions/signals').catch(() => ({})),
+    apiFetch('/api/market/macro-news?limit=20').catch(() => ({})),
+  ]);
+
+  const articles = sentData.status === 'fulfilled' ? (sentData.value.articles || []) : [];
+  const macroArticles = (macroData.status === 'fulfilled' ? (macroData.value.articles || []) : [])
+    .map(a => ({ ...a, overall_score: 0, ticker: a.source || '' }));
+
+  // Deduplicate macro into articles pool if not already present
+  const seen = new Set(articles.map(a => a.title));
+  for (const a of macroArticles) if (!seen.has(a.title)) { seen.add(a.title); articles.push(a); }
+
+  // Collect open position tickers
+  const posTickers = new Set();
+  if (posData.status === 'fulfilled') {
+    const pd = posData.value;
+    (pd.positions || pd.data || []).forEach(p => {
+      const sym = (p.symbol || p.ticker || '').toUpperCase();
+      if (sym) posTickers.add(sym);
+    });
+    // Also check nested broker results
+    if (Array.isArray(pd)) pd.forEach(r => (r.data?.items || r.data?.positions || []).forEach(p => {
+      const sym = (p.symbol || '').toUpperCase(); if (sym) posTickers.add(sym);
+    }));
+  }
+
+  const byTs = (a, b) => (b.ts || b.pub_ts || '').localeCompare(a.ts || a.pub_ts || '');
+  const up   = articles.filter(a => (a.overall_score || 0) >  0.10).sort(byTs);
+  const down = articles.filter(a => (a.overall_score || 0) < -0.10).sort(byTs);
+  const pos  = posTickers.size
+    ? articles.filter(a => a.ticker && posTickers.has(a.ticker.toUpperCase())).sort(byTs)
+    : [];
+
+  const timeAgo = ts => {
+    if (!ts) return '';
+    const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+    if (diff < 3600)  return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return Math.floor(diff/86400) + 'd ago';
+  };
+
+  const scoreColor = s => s >= 0.3 ? '#34d399' : s >= 0.1 ? '#86efac' : s <= -0.3 ? '#f87171' : s <= -0.1 ? '#fca5a5' : '#94a3b8';
+  const scoreBg    = s => s >= 0.1 ? 'rgba(52,211,153,.12)' : s <= -0.1 ? 'rgba(248,113,113,.12)' : 'rgba(148,163,184,.1)';
+  const borderCol  = s => s >= 0.1 ? '#34d399' : s <= -0.1 ? '#f87171' : '#475569';
+
+  const articleCard = a => {
+    const score = a.overall_score || 0;
+    const ticker = (a.ticker || '').toUpperCase();
+    const tickerBadge = ticker
+      ? `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(96,165,250,.15);border:1px solid rgba(96,165,250,.3);color:#60a5fa">${_escHtml(ticker)}</span>`
+      : '';
+    const scoreBadge = score !== 0
+      ? `<span style="font-size:9px;font-weight:600;padding:1px 5px;border-radius:3px;background:${scoreBg(score)};color:${scoreColor(score)}">${score > 0 ? '+' : ''}${score.toFixed(2)}</span>`
+      : '';
+    const fbText = _escHtml(ticker.slice(0, 3));
+    const logoHTML = ticker
+      ? `<img src="https://assets.parqet.com/logos/symbol/${encodeURIComponent(ticker)}"
+           style="width:28px;height:28px;border-radius:5px;object-fit:contain;flex-shrink:0;background:var(--surface);padding:2px"
+           data-fb="${fbText}"
+           onerror="const d=document.createElement('div');d.style.cssText='width:28px;height:28px;border-radius:5px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--muted);flex-shrink:0';d.textContent=this.dataset.fb;this.replaceWith(d)">`
+      : `<div style="width:28px;height:28px;border-radius:5px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">📰</div>`;
+    const title = a.title || '(no title)';
+    const rawUrl = a.url || '';
+    const url   = /^https?:\/\//i.test(rawUrl) ? rawUrl : '#';
+    const src   = a.source || '';
+    const ago   = timeAgo(a.ts || a.pub_ts || '');
+    return `<div style="border-left:3px solid ${borderCol(score)};background:var(--surface2);border-radius:0 6px 6px 0;padding:9px 11px;display:flex;align-items:flex-start;gap:8px">
+      ${logoHTML}
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:5px">
+          ${tickerBadge}${scoreBadge}
+          <span style="flex:1"></span>
+          <span style="font-size:9px;color:var(--dim)">${ago}</span>
+        </div>
+        <a href="${url}" target="_blank" rel="noopener" style="font-size:11px;font-weight:600;color:var(--fg);text-decoration:none;line-height:1.45;display:block;margin-bottom:3px">${_escHtml(title)}</a>
+        <div style="font-size:10px;color:var(--dim)">${_escHtml(src)}</div>
+      </div>
+    </div>`;
+  };
+
+  const renderPanel = (id, countId, items, emptyMsg) => {
+    document.getElementById(countId).textContent = items.length ? `(${items.length})` : '';
+    document.getElementById(id).innerHTML = items.length
+      ? items.map(articleCard).join('')
+      : `<div class="empty-state" style="font-size:11px;padding:20px">${emptyMsg}</div>`;
+  };
+
+  renderPanel('nf-up',   'nf-up-count',   up,   'No bullish news in the last 7 days');
+  renderPanel('nf-down', 'nf-down-count', down, 'No bearish news in the last 7 days');
+  renderPanel('nf-pos',  'nf-pos-count',  pos,
+    posTickers.size ? 'No recent news for your open positions' : 'No open positions detected');
+
+  document.getElementById('nf-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
 let _mgSortDir = -1; // -1 = desc, 1 = asc
 
 async function loadMarketGroupsPage() {

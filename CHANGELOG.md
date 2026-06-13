@@ -3,6 +3,12 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## v4.0.87
+- fix: XSS in news feed article cards — escape title/source/ticker via _escHtml, validate url scheme (reject javascript:), move ticker fallback text to data-fb attribute to eliminate inline JS string injection v4.0.87
+- fix: daily report duplicate sends — add per-day idempotency guard (report:daily:sent:{date} Redis key, 24h TTL); manual trigger bypasses guard via force=True; scheduler silently skips if already sent v4.0.87
+- fix: scheduler cron overrides lost on restart — _publish_jobs now preserves cron_hour/cron_minute/cron_days; _reload_loop gains cron trigger path; save_reports_config publishes scheduler:reload so live reschedule takes effect immediately v4.0.87
+- fix: import logging in risk_clustering looked dead after structlog migration — added comment clarifying it backs logging.basicConfig() in main() v4.0.87
+
 ## v4.0.86
 - feat: daily report watchlist alerts — add tickers with per-ticker earnings/ex-div checkboxes and configurable "alert N days before" window; highlighted section appears at top of report when events fall within the window
 

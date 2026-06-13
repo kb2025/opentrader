@@ -12216,9 +12216,15 @@ def _build_options_report_html(positions: list[dict], sgov_alert: dict | None = 
 
 
 @app.post("/api/options/report/email/auto")
-async def email_options_report_auto(token: str = ""):
+async def email_options_report_auto(token: str = "", force: bool = False):
     """Generate and email the options report from DB — called by the scheduler."""
     check_token(token)
+    # Idempotency guard: only send once per calendar day unless force=True
+    _idem_redis = await get_redis()
+    _today      = datetime.now(TZ).date().isoformat()
+    _sent_key   = f"report:daily:sent:{_today}"
+    if not force and await _idem_redis.get(_sent_key):
+        return {"ok": True, "message": f"Report already sent today ({_today}) — skipped"}
     positions = await get_option_positions(status="active")
     if not positions:
         try:
@@ -12388,6 +12394,11 @@ async def email_options_report_auto(token: str = ""):
     recipient  = cfg.get("recipient") or ""
     body = OptionsReportBody(html=html, count=len(positions))
     result = await email_options_report(body, token=token)
+    # Mark sent for today so duplicate scheduler firings are suppressed
+    try:
+        await _idem_redis.set(_sent_key, "1", ex=86400)
+    except Exception:
+        pass
     # Log to report_log
     try:
         date_str = datetime.now().strftime("%Y-%m-%d")
@@ -12733,7 +12744,7 @@ async def preview_eod_report(token: str = ""):
 async def trigger_options_report(token: str = ""):
     """Manually fire the 1pm options report."""
     check_token(token)
-    return await email_options_report_auto(token=token)
+    return await email_options_report_auto(token=token, force=True)
 
 
 @app.post("/api/reports/trigger/eod")
@@ -12884,6 +12895,7 @@ async def save_reports_config(body: dict, token: str = ""):
             "cron_days":   daily_cfg.get("schedule_days", "mon-fri"),
         }
         await redis.set("scheduler:job:options_report", json.dumps(sched_rec))
+        await redis.publish("scheduler:reload", "options_report")
         # Keep legacy key for older code paths
         await redis.set("report_config:options_1pm", json.dumps(daily_cfg))
 
@@ -14192,23 +14204,26 @@ async def get_macro_news(limit: int = 15):
 # ── Feature 5: News sentiment ─────────────────────────────────────────────────
 
 @app.get("/api/market/news-sentiment")
-async def get_news_sentiment(category: str = "", ticker: str = "", limit: int = 20):
-    """Return latest news sentiment articles."""
+async def get_news_sentiment(category: str = "", ticker: str = "", limit: int = 20, days: int = 1):
+    """Return latest news sentiment articles. days=1 uses Redis cache; days>1 queries DB directly."""
+    days = max(1, min(days, 30))
+    limit = max(1, min(limit, 5000))
     _redis = await get_redis()
-    cached = await _redis.get("news_sentiment:latest")
-    if cached and not ticker:
-        by_cat = json.loads(cached)
-        if category and category in by_cat:
-            return {"articles": by_cat[category][:limit], "source": "cache"}
-        elif not category:
-            merged = []
-            for arts in by_cat.values():
-                merged.extend(arts)
-            merged.sort(key=lambda x: abs(x.get("overall_score", 0)), reverse=True)
-            return {"articles": merged[:limit], "source": "cache"}
+    if days == 1 and not ticker:
+        cached = await _redis.get("news_sentiment:latest")
+        if cached:
+            by_cat = json.loads(cached)
+            if category and category in by_cat:
+                return {"articles": by_cat[category][:limit], "source": "cache"}
+            elif not category:
+                merged = []
+                for arts in by_cat.values():
+                    merged.extend(arts)
+                merged.sort(key=lambda x: x.get("ts", ""), reverse=True)
+                return {"articles": merged[:limit], "source": "cache"}
 
     pool  = await _get_db_pool()
-    where = "ts >= NOW() - INTERVAL '24 hours'"
+    where = f"ts >= NOW() - INTERVAL '{days} days'"
     args: list = []
     if category:
         where += f" AND category = ${len(args)+1}"

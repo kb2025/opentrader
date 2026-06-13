@@ -469,6 +469,10 @@ class Scheduler(BaseAgent):
                 "intraday_end":         existing.get("intraday_end"),
                 "intraday_interval_min": existing.get("intraday_interval_min"),
                 "intraday_days":        existing.get("intraday_days"),
+                # Preserve cron override fields written by save_reports_config / UI
+                "cron_hour":            existing.get("cron_hour"),
+                "cron_minute":          existing.get("cron_minute"),
+                "cron_days":            existing.get("cron_days"),
                 # Preserve execution history — written by @tracked on each run
                 "last_run":             existing.get("last_run"),
                 "last_status":          existing.get("last_status"),
@@ -513,6 +517,9 @@ class Scheduler(BaseAgent):
                         record = _json.loads(raw)
                         minutes          = record.get("minutes")
                         seconds          = record.get("seconds")
+                        cron_hour        = record.get("cron_hour")
+                        cron_minute      = record.get("cron_minute")
+                        cron_days        = record.get("cron_days", "mon-fri")
                         intraday_start   = record.get("intraday_start")
                         intraday_end     = record.get("intraday_end")
                         intraday_iv      = record.get("intraday_interval_min")
@@ -537,6 +544,16 @@ class Scheduler(BaseAgent):
                             self.apscheduler.reschedule_job(job_id, trigger=trigger)
                             log.info("scheduler.job_rescheduled_intraday", job_id=job_id,
                                      start=intraday_start, end=intraday_end, interval=intraday_iv)
+                        elif cron_hour is not None and cron_minute is not None:
+                            self.apscheduler.reschedule_job(
+                                job_id,
+                                trigger=CronTrigger(
+                                    hour=int(cron_hour), minute=int(cron_minute),
+                                    day_of_week=cron_days, timezone=TZ,
+                                ),
+                            )
+                            log.info("scheduler.job_rescheduled_cron", job_id=job_id,
+                                     hour=cron_hour, minute=cron_minute, days=cron_days)
                         elif minutes is not None:
                             self.apscheduler.reschedule_job(
                                 job_id, trigger=IntervalTrigger(minutes=minutes, timezone=TZ)

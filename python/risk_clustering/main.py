@@ -9,7 +9,7 @@ Results are stored in stock_risk_clusters (TimescaleDB) and published to Redis.
 """
 import asyncio
 import json
-import logging
+import logging  # load-bearing: logging.basicConfig() in main() uses this
 import os
 from datetime import date
 
@@ -20,8 +20,9 @@ from shared.base_agent   import BaseAgent
 from shared.redis_client import STREAMS, GROUPS, ensure_consumer_group
 from shared.data_client  import DataClient
 from shared.assignments  import load_active_assignments
+import structlog
 
-log = logging.getLogger("risk-clustering")
+log = structlog.get_logger("risk-clustering")
 
 CONSUMER_NAME = os.getenv("HOSTNAME", "risk-clustering-0")
 TRIGGER_JOB   = "run_risk_clustering"
@@ -153,7 +154,7 @@ class RiskClusteringAgent(BaseAgent):
                 feat["volatility"]    = float(np.std(log_ret) * np.sqrt(252))
                 feat["price_change"]  = float((closes[-1] - closes[0]) / closes[0] * 100)
         except Exception as e:
-            log.debug(f"risk-clustering.bars_err ticker={ticker} {e}")
+            log.debug("risk-clustering.bars_err", ticker=ticker, error=str(e))
 
         try:
             fund = await dc.fundamentals(ticker)
@@ -166,7 +167,7 @@ class RiskClusteringAgent(BaseAgent):
                 feat["fcf_yield"]      = _flt(fund.get("free_cashflow_yield"))
                 feat["earnings_yield"] = _flt(fund.get("earnings_yield"))
         except Exception as e:
-            log.debug(f"risk-clustering.fund_err ticker={ticker} {e}")
+            log.debug("risk-clustering.fund_err", ticker=ticker, error=str(e))
 
         # Require at least volatility + one fundamental to count
         has_price  = feat.get("volatility") is not None
