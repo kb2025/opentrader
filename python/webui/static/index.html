@@ -990,6 +990,48 @@ select option{background:var(--surface2)}
           </div>
         </div>
       </div>
+
+      <!-- Panel 8: Custom Report Builder -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Custom Report Builder</span>
+          <span style="font-size:11px;color:var(--muted)">Compose &amp; export a tailored report</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="previewReport()">Preview</button>
+            <button class="btn btn-primary btn-sm" onclick="generateReport()">Generate PDF</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px 16px">
+          <div style="margin-bottom:12px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Report Title</div>
+            <input id="custom-report-title" type="text" placeholder="My Custom Report"
+              style="width:100%;max-width:360px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--fg);font-size:12px;box-sizing:border-box">
+          </div>
+          <div style="margin-bottom:14px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Components</div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg);cursor:pointer">
+                <input type="checkbox" id="rpt-comp-pnl" checked> P&amp;L Summary
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg);cursor:pointer">
+                <input type="checkbox" id="rpt-comp-signals" checked> Signal History
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg);cursor:pointer">
+                <input type="checkbox" id="rpt-comp-sentiment"> Sentiment Chart
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg);cursor:pointer">
+                <input type="checkbox" id="rpt-comp-holdings"> Top Holdings
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg);cursor:pointer">
+                <input type="checkbox" id="rpt-comp-news"> News Feed
+              </label>
+            </div>
+          </div>
+          <div id="report-preview" style="border:1px solid var(--border);border-radius:6px;padding:16px;background:var(--surface2);min-height:80px;font-size:12px;color:var(--muted)">
+            Select components above and click Preview to see a layout summary.
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Reports preview / view modal -->
@@ -2163,6 +2205,28 @@ select option{background:var(--surface2)}
     ════════════════════════════════════════ -->
     <div class="page" id="page-trading-trades">
       <div id="trades-page-container"></div>
+
+      <!-- Panel 1: Trade Visualization -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Trade Visualization</span>
+          <span style="font-size:11px;color:var(--muted)">Candlestick chart with entry &amp; exit markers</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <input id="trade-viz-ticker" type="text" placeholder="AAPL" maxlength="10"
+              style="width:80px;padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--fg);font-size:12px;text-transform:uppercase">
+            <select id="trade-viz-days" style="padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--fg);font-size:12px">
+              <option value="30">30d</option>
+              <option value="90" selected>90d</option>
+              <option value="180">180d</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="loadTradeViz()">Load Chart</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px 16px">
+          <div id="trade-viz-msg" style="font-size:12px;color:var(--muted);margin-bottom:8px">Enter a ticker and click Load Chart.</div>
+          <div id="trade-viz-chart" style="height:400px;width:100%;"></div>
+        </div>
+      </div>
     </div>
 
     <!-- ════════════════════════════════════════
@@ -4104,6 +4168,23 @@ select option{background:var(--surface2)}
           </table>
         </div>
       </div>
+      <!-- Panel 3: Prediction Market Signals -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Prediction Market Signals</span>
+          <span style="font-size:11px;color:var(--muted)">Polymarket live contract prices</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="loadPolymarketSignals('')" style="font-size:11px;padding:3px 8px">All</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadPolymarketSignals('macro')" style="font-size:11px;padding:3px 8px">Macro</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadPolymarketSignals('earnings')" style="font-size:11px;padding:3px 8px">Earnings</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadPolymarketSignals('merger')" style="font-size:11px;padding:3px 8px">Merger</button>
+            <button class="btn btn-primary btn-sm" onclick="loadPolymarketSignals('')">Refresh</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px 16px">
+          <div id="polymarket-signals-list"><div style="font-size:12px;color:var(--muted)">Loading prediction market signals…</div></div>
+        </div>
+      </div>
     </div><!-- /page-trading-alerts -->
 
 
@@ -4488,6 +4569,27 @@ select option{background:var(--surface2)}
               <tr><td colspan="9" class="empty-state">No strategies saved yet — use Strategy Engineer to create one</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Panel 7: Strategy Visualizer -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Strategy Visualizer</span>
+          <span style="font-size:11px;color:var(--muted)">Read-only signal flow diagram</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <select id="strategy-viz-select" style="padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--fg);font-size:12px">
+              <option value="">— select strategy —</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="loadStrategyGraph(document.getElementById('strategy-viz-select').value)">Visualize</button>
+            <button class="btn btn-ghost btn-sm" onclick="_loadStrategyVizList()">↻</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px 16px">
+          <div id="strategy-viz-params" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+          <div id="strategy-graph" style="height:350px;width:100%;position:relative;overflow:hidden;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
+            <canvas id="strategy-graph-cvs" style="width:100%;height:100%"></canvas>
+          </div>
         </div>
       </div>
     </div>
@@ -5004,6 +5106,59 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- Panel 4: M&A Deal Tracker -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">M&amp;A Deal Tracker</span>
+          <span style="font-size:11px;color:var(--muted)">Recent merger &amp; acquisition filings</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="loadMADeals(30)" id="ma-btn-30" style="font-size:11px;padding:3px 8px">Last 30d</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadMADeals(90)" id="ma-btn-90" style="font-size:11px;padding:3px 8px">Last 90d</button>
+            <button class="btn btn-primary btn-sm" onclick="loadMADeals(30)">Refresh</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
+              <th style="padding:8px 12px;text-align:left;color:var(--muted)">Date</th>
+              <th style="padding:8px 8px;text-align:left;color:var(--muted)">Type</th>
+              <th style="padding:8px 8px;text-align:left;color:var(--muted)">Acquirer / Target</th>
+              <th style="padding:8px 8px;text-align:left;color:var(--muted)">Tickers</th>
+              <th style="padding:8px 8px;text-align:right;color:var(--muted)">Filing</th>
+            </tr></thead>
+            <tbody id="ma-deals-tbody">
+              <tr><td colspan="5" style="padding:24px;text-align:center;color:var(--muted);font-size:12px">Click Refresh to load M&amp;A deals.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Panel 5: Corporate Relationship Map -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Corporate Relationship Map</span>
+          <span style="font-size:11px;color:var(--muted)">Subsidiaries · competitors · partners</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <input id="rel-map-ticker" type="text" placeholder="AAPL" maxlength="10"
+              style="width:80px;padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--fg);font-size:12px;text-transform:uppercase">
+            <button class="btn btn-primary btn-sm" onclick="loadRelationshipMap(document.getElementById('rel-map-ticker').value.trim().toUpperCase())">Map</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px 16px">
+          <div id="rel-map-msg" style="font-size:12px;color:var(--muted);margin-bottom:8px">Enter a ticker and click Map to visualize corporate relationships.</div>
+          <div id="relationship-map-canvas" style="height:400px;width:100%;position:relative;overflow:hidden;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
+            <canvas id="rel-map-cvs" style="width:100%;height:100%"></canvas>
+            <div id="rel-map-tooltip" style="display:none;position:absolute;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:11px;color:var(--fg);pointer-events:none;z-index:10"></div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:8px;font-size:10px;color:var(--muted)">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#3b82f6;margin-right:4px"></span>Self</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:4px"></span>Subsidiary</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;margin-right:4px"></span>Competitor</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#eab308;margin-right:4px"></span>Partner</span>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /page-analytics -->
 
     <!-- ════════════════════════════════════════
@@ -5100,6 +5255,27 @@ select option{background:var(--surface2)}
       </div>
       <!-- chart grid — 2 wide -->
       <div id="mh-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px"></div>
+
+      <!-- Panel 6: Universe Scanner -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Universe Scanner</span>
+          <span style="font-size:11px;color:var(--muted)">RSI · Volume · Momentum alerts</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <button class="btn btn-ghost btn-sm" id="scanner-rules-toggle" onclick="_toggleScannerRules()" style="font-size:11px;padding:3px 8px">Rules</button>
+            <button class="btn btn-primary btn-sm" onclick="runScan()">Run Scan</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadScannerAlerts()">↻ Refresh</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px 16px">
+          <div id="scanner-rules-panel" style="display:none;margin-bottom:12px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Scan Rules (JSON)</div>
+            <textarea id="scanner-rules-json" rows="5"
+              style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--fg);font-size:11px;padding:8px;box-sizing:border-box;font-family:monospace;resize:vertical">{"rsi_low": 30, "rsi_high": 70, "vol_ratio_min": 1.5, "momentum_days": 5}</textarea>
+          </div>
+          <div id="scanner-alerts-list"><div style="font-size:12px;color:var(--muted)">Click Run Scan or Refresh to load scanner alerts.</div></div>
+        </div>
+      </div>
     </div><!-- /page-si-market-health -->
 
 
@@ -5378,6 +5554,21 @@ select option{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- Panel 2: Geopolitics & Risk Monitor -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">Geopolitics &amp; Risk Monitor</span>
+          <span style="font-size:11px;color:var(--muted)">GPRI index &amp; geopolitical event feed</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <button class="btn btn-primary btn-sm" onclick="loadGeopolitics()">Load GPRI</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px 16px">
+          <div id="gpri-msg" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+          <div id="gpri-chart" style="height:200px;margin-bottom:12px"></div>
+          <div id="geo-events-list"><div style="font-size:12px;color:var(--muted)">Click Load GPRI to fetch geopolitical risk data.</div></div>
+        </div>
+      </div>
     </div><!-- /page-macro-hub -->
 
     <!-- ── page-resources-groups ── -->
@@ -29940,6 +30131,550 @@ async function _pgDcaDelete() {
     document.getElementById('pg-dca-modal').style.display = 'none';
   } catch(e) { _showToast(`Delete failed: ${e.message||e}`, 'error'); }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Panel 1 — Trade Visualization
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadTradeViz() {
+  const ticker = (document.getElementById('trade-viz-ticker').value || '').trim().toUpperCase();
+  const days   = document.getElementById('trade-viz-days').value || '90';
+  const msgEl  = document.getElementById('trade-viz-msg');
+  const chartEl = document.getElementById('trade-viz-chart');
+  if (!ticker) { msgEl.textContent = 'Enter a ticker first.'; return; }
+  msgEl.textContent = 'Loading…';
+  try {
+    const d = await apiFetch(`/api/trades/viz/${ticker}?days=${days}`);
+    if (!d || !d.candles || !d.candles.length) {
+      msgEl.textContent = 'No chart data returned for ' + ticker;
+      return;
+    }
+    msgEl.textContent = '';
+    const candles = d.candles || [];
+    const trades  = d.trades  || [];
+    const candleTrace = {
+      type: 'candlestick',
+      x:    candles.map(c => c.date),
+      open: candles.map(c => c.open),
+      high: candles.map(c => c.high),
+      low:  candles.map(c => c.low),
+      close:candles.map(c => c.close),
+      name: ticker,
+      increasing: { line: { color: '#22c55e' } },
+      decreasing: { line: { color: '#ef4444' } },
+    };
+    const entries = trades.filter(t => t.side === 'entry' || t.action === 'buy');
+    const exits   = trades.filter(t => t.side === 'exit'  || t.action === 'sell');
+    const entryTrace = {
+      type: 'scatter', mode: 'markers', name: 'Entry',
+      x: entries.map(t => t.date), y: entries.map(t => t.price),
+      marker: { symbol: 'triangle-up', size: 10, color: '#22c55e' },
+      text: entries.map(t => `Entry @ ${t.price}${t.pnl != null ? ' PnL: $'+t.pnl.toFixed(2) : ''}`),
+      hovertemplate: '%{text}<extra></extra>',
+    };
+    const exitTrace = {
+      type: 'scatter', mode: 'markers', name: 'Exit',
+      x: exits.map(t => t.date), y: exits.map(t => t.price),
+      marker: { symbol: 'triangle-down', size: 10, color: '#ef4444' },
+      text: exits.map(t => `Exit @ ${t.price}${t.pnl != null ? ' PnL: $'+t.pnl.toFixed(2) : ''}`),
+      hovertemplate: '%{text}<extra></extra>',
+    };
+    const layout = {
+      paper_bgcolor: 'transparent', plot_bgcolor: '#1a1a2e',
+      font: { color: '#cdd6f4', size: 11 },
+      xaxis: { gridcolor: '#2a2a4a', rangeslider: { visible: false } },
+      yaxis: { gridcolor: '#2a2a4a' },
+      margin: { l: 50, r: 20, t: 20, b: 30 },
+      legend: { orientation: 'h', y: -0.1 },
+      showlegend: true,
+    };
+    if (typeof Plotly !== 'undefined') {
+      Plotly.newPlot(chartEl, [candleTrace, entryTrace, exitTrace], layout, { responsive: true, displayModeBar: false });
+    } else {
+      msgEl.textContent = 'Plotly not loaded — cannot render chart.';
+    }
+  } catch(e) {
+    msgEl.textContent = 'Error: ' + (e.message || e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Panel 2 — Geopolitics & Risk Monitor
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadGeopolitics() {
+  const msgEl    = document.getElementById('gpri-msg');
+  const chartEl  = document.getElementById('gpri-chart');
+  const eventsEl = document.getElementById('geo-events-list');
+  msgEl.textContent = 'Loading…';
+  try {
+    const [gpriData, eventsData] = await Promise.all([
+      apiFetch('/api/research/geopolitics'),
+      apiFetch('/api/research/geopolitics/events'),
+    ]);
+    msgEl.textContent = '';
+    // GPRI chart
+    if (gpriData && gpriData.dates && typeof Plotly !== 'undefined') {
+      const trace = {
+        type: 'scatter', mode: 'lines', name: 'GPRI',
+        x: gpriData.dates, y: gpriData.values,
+        line: { color: '#f97316', width: 2 },
+        fill: 'tozeroy', fillcolor: 'rgba(249,115,22,0.1)',
+      };
+      Plotly.newPlot(chartEl, [trace], {
+        paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+        font: { color: '#cdd6f4', size: 10 },
+        xaxis: { gridcolor: '#2a2a4a', showgrid: true },
+        yaxis: { gridcolor: '#2a2a4a', showgrid: true },
+        margin: { l: 45, r: 10, t: 10, b: 25 },
+        showlegend: false,
+      }, { responsive: true, displayModeBar: false });
+    } else {
+      chartEl.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:20px">No GPRI data available.</div>';
+    }
+    // Events list
+    const events = eventsData && eventsData.events ? eventsData.events : (Array.isArray(eventsData) ? eventsData : []);
+    if (!events.length) {
+      eventsEl.innerHTML = '<div style="font-size:12px;color:var(--muted)">No geopolitical events found.</div>';
+    } else {
+      eventsEl.innerHTML = events.slice(0, 20).map(ev =>
+        `<div style="border-bottom:1px solid var(--border);padding:6px 0">
+          <a href="${ev.url || '#'}" target="_blank" rel="noopener" style="color:var(--primary);font-size:12px;text-decoration:none">${_escHtml(ev.title || '')}</a>
+          <span style="float:right;font-size:11px;color:var(--muted)">${_escHtml(ev.domain || ev.source || '')}</span>
+        </div>`
+      ).join('');
+    }
+  } catch(e) {
+    msgEl.textContent = 'Error: ' + (e.message || e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Panel 3 — Polymarket Signals
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadPolymarketSignals(category) {
+  if (category === undefined) category = '';
+  const listEl = document.getElementById('polymarket-signals-list');
+  listEl.innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
+  try {
+    const d = await apiFetch(`/api/sentiment/polymarket?category=${encodeURIComponent(category)}`);
+    const signals = d && d.signals ? d.signals : (Array.isArray(d) ? d : []);
+    if (!signals.length) {
+      listEl.innerHTML = '<div style="font-size:12px;color:var(--muted)">No prediction market signals found.</div>';
+      return;
+    }
+    listEl.innerHTML = signals.map(s => {
+      const yes = typeof s.yes_price === 'number' ? s.yes_price : 0.5;
+      const pct = (yes * 100).toFixed(0);
+      const barColor = yes >= 0.5 ? '#22c55e' : '#ef4444';
+      const vol = s.volume != null ? _fmtCompact(s.volume) : '—';
+      const catLabel = s.category ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:var(--surface2);color:var(--muted);margin-left:6px;text-transform:uppercase">${_escHtml(s.category)}</span>` : '';
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:11px;font-weight:700;color:${barColor};min-width:52px">YES ${pct}%</span>
+          <span style="font-size:11px;color:var(--muted);min-width:72px">VOL ${vol}</span>
+          <span style="font-size:12px;color:var(--fg);flex:1">${_escHtml(s.question || s.title || '')}</span>
+          ${catLabel}
+        </div>
+        <div style="height:4px;border-radius:2px;background:var(--surface2);overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${barColor};transition:width .3s"></div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    listEl.innerHTML = `<div style="font-size:12px;color:var(--danger)">Error: ${_escHtml(e.message || String(e))}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Panel 4 — M&A Deal Tracker
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadMADeals(days) {
+  if (!days) days = 30;
+  const tbody = document.getElementById('ma-deals-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Loading…</td></tr>';
+  try {
+    const d = await apiFetch(`/api/research/ma-deals?days=${days}`);
+    const deals = d && d.deals ? d.deals : (Array.isArray(d) ? d : []);
+    if (!deals.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--muted);font-size:12px">No deals found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = deals.map(deal => {
+      const link = deal.deal_url ? `<a href="${_escHtml(deal.deal_url)}" target="_blank" rel="noopener" style="color:var(--primary);font-size:11px;text-decoration:none">📄 SEC Filing</a>` : '—';
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px 12px;font-size:12px;color:var(--fg)">${_escHtml(deal.date || '')}</td>
+        <td style="padding:8px 8px;font-size:12px;color:var(--muted)">${_escHtml(deal.type || '')}</td>
+        <td style="padding:8px 8px;font-size:12px;color:var(--fg)">${_escHtml(deal.acquirer || '')}${deal.target ? ' → ' + _escHtml(deal.target) : ''}</td>
+        <td style="padding:8px 8px;font-size:12px;color:var(--primary);font-weight:600">${_escHtml((deal.tickers || []).join(', '))}</td>
+        <td style="padding:8px 8px;text-align:right">${link}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--danger);font-size:12px">Error: ${_escHtml(e.message || String(e))}</td></tr>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Panel 5 — Corporate Relationship Map
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadRelationshipMap(ticker) {
+  const msgEl = document.getElementById('rel-map-msg');
+  if (!ticker) { msgEl.textContent = 'Enter a ticker first.'; return; }
+  msgEl.textContent = 'Loading relationships for ' + ticker + '…';
+  try {
+    const d = await apiFetch(`/api/market/relationships/${ticker}`);
+    const nodes = d && d.nodes ? d.nodes : [];
+    const edges = d && d.edges ? d.edges : [];
+    if (!nodes.length) { msgEl.textContent = 'No relationship data for ' + ticker; return; }
+    msgEl.textContent = '';
+    _drawRelationshipGraph(nodes, edges);
+  } catch(e) {
+    msgEl.textContent = 'Error: ' + (e.message || e);
+  }
+}
+
+function _drawRelationshipGraph(nodes, edges) {
+  const container = document.getElementById('relationship-map-canvas');
+  const cvs = document.getElementById('rel-map-cvs');
+  const tooltip = document.getElementById('rel-map-tooltip');
+  const W = container.clientWidth || 600;
+  const H = container.clientHeight || 400;
+  cvs.width  = W;
+  cvs.height = H;
+  const ctx = cvs.getContext('2d');
+  // Assign initial positions in a circle
+  const cx = W / 2, cy = H / 2, r = Math.min(W, H) * 0.32;
+  nodes.forEach((n, i) => {
+    if (n.type === 'self') { n.x = cx; n.y = cy; }
+    else {
+      const ang = (2 * Math.PI * i) / nodes.length;
+      n.x = cx + r * Math.cos(ang);
+      n.y = cy + r * Math.sin(ang);
+    }
+    n.vx = 0; n.vy = 0;
+  });
+  const nodeById = {};
+  nodes.forEach(n => { nodeById[n.id || n.ticker || n.name] = n; });
+  const colorMap = { self: '#3b82f6', subsidiary: '#22c55e', competitor: '#ef4444', partner: '#eab308' };
+  // Simple spring-force simulation (100 iterations)
+  for (let iter = 0; iter < 100; iter++) {
+    // Repulsion
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[j].x - nodes[i].x || 0.1;
+        const dy = nodes[j].y - nodes[i].y || 0.1;
+        const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+        const f = 3000 / (dist * dist);
+        nodes[i].vx -= f * dx / dist;
+        nodes[i].vy -= f * dy / dist;
+        nodes[j].vx += f * dx / dist;
+        nodes[j].vy += f * dy / dist;
+      }
+    }
+    // Attraction along edges
+    edges.forEach(e => {
+      const a = nodeById[e.source] || nodeById[e.from];
+      const b = nodeById[e.target] || nodeById[e.to];
+      if (!a || !b) return;
+      const dx = b.x - a.x; const dy = b.y - a.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      const f = (dist - 120) * 0.04;
+      a.vx += f * dx / dist; a.vy += f * dy / dist;
+      b.vx -= f * dx / dist; b.vy -= f * dy / dist;
+    });
+    // Center gravity
+    nodes.forEach(n => {
+      n.vx += (cx - n.x) * 0.005;
+      n.vy += (cy - n.y) * 0.005;
+    });
+    // Apply, dampen, clamp
+    nodes.forEach(n => {
+      if (n.type === 'self') { n.x = cx; n.y = cy; return; }
+      n.x += n.vx * 0.5; n.y += n.vy * 0.5;
+      n.vx *= 0.7; n.vy *= 0.7;
+      n.x = Math.max(40, Math.min(W - 40, n.x));
+      n.y = Math.max(20, Math.min(H - 20, n.y));
+    });
+  }
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // Edges
+    edges.forEach(e => {
+      const a = nodeById[e.source] || nodeById[e.from];
+      const b = nodeById[e.target] || nodeById[e.to];
+      if (!a || !b) return;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = 'rgba(148,163,184,0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+    // Nodes
+    nodes.forEach(n => {
+      const nr = n.type === 'self' ? 18 : 12;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, nr, 0, 2 * Math.PI);
+      ctx.fillStyle = colorMap[n.type] || '#6b7280';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = `${n.type === 'self' ? 11 : 9}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.ticker || n.id || n.name || '', n.x, n.y);
+    });
+  }
+  draw();
+  // Hover tooltip
+  cvs.onmousemove = function(e) {
+    const rect = cvs.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const my = (e.clientY - rect.top)  * (H / rect.height);
+    let found = null;
+    nodes.forEach(n => {
+      const nr = n.type === 'self' ? 18 : 12;
+      const dx = mx - n.x, dy = my - n.y;
+      if (dx*dx + dy*dy <= nr*nr) found = n;
+    });
+    if (found) {
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX - container.getBoundingClientRect().left + 10) + 'px';
+      tooltip.style.top  = (e.clientY - container.getBoundingClientRect().top  + 10) + 'px';
+      tooltip.textContent = (found.name || found.ticker || found.id) + (found.type ? ' (' + found.type + ')' : '');
+    } else {
+      tooltip.style.display = 'none';
+    }
+  };
+  cvs.onmouseleave = function() { tooltip.style.display = 'none'; };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Panel 6 — Universe Scanner
+// ══════════════════════════════════════════════════════════════════════════════
+function _toggleScannerRules() {
+  const p = document.getElementById('scanner-rules-panel');
+  p.style.display = p.style.display === 'none' ? '' : 'none';
+}
+
+async function loadScannerAlerts() {
+  const listEl = document.getElementById('scanner-alerts-list');
+  listEl.innerHTML = '<div style="font-size:12px;color:var(--muted)">Loading…</div>';
+  try {
+    const d = await apiFetch('/api/scanner/alerts');
+    const alerts = d && d.alerts ? d.alerts : (Array.isArray(d) ? d : []);
+    if (!alerts.length) {
+      listEl.innerHTML = '<div style="font-size:12px;color:var(--muted)">No scanner alerts at this time.</div>';
+      return;
+    }
+    listEl.innerHTML = alerts.map(a => {
+      const rsi = a.rsi != null ? a.rsi.toFixed(1) : '—';
+      const volRatio = a.vol_ratio != null ? a.vol_ratio.toFixed(1) + 'x' : '—';
+      const mom = a.momentum != null ? (a.momentum >= 0 ? '+' : '') + a.momentum.toFixed(1) + '%' : '—';
+      const oversold  = a.rsi != null && a.rsi < 30;
+      const overbought = a.rsi != null && a.rsi > 70;
+      const bg = oversold ? 'rgba(34,197,94,0.08)' : overbought ? 'rgba(239,68,68,0.08)' : 'transparent';
+      const badge = oversold ? '<span style="font-size:10px;color:#22c55e;font-weight:700">OVERSOLD</span>' :
+                    overbought ? '<span style="font-size:10px;color:#ef4444;font-weight:700">OVERBOUGHT</span>' : '';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border);background:${bg};border-radius:4px;margin-bottom:2px;flex-wrap:wrap">
+        <span style="font-size:12px;font-weight:700;color:var(--fg);min-width:56px">${_escHtml(a.ticker || '')}</span>
+        <span style="font-size:11px;color:var(--muted)">RSI: ${rsi}</span>
+        <span style="font-size:11px;color:var(--muted)">Vol: ${volRatio}</span>
+        <span style="font-size:11px;color:var(--muted)">Mom: ${mom}</span>
+        <span style="font-size:11px;color:var(--primary)">⚡</span>
+        <span style="flex:1"></span>
+        ${badge}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    listEl.innerHTML = `<div style="font-size:12px;color:var(--danger)">Error: ${_escHtml(e.message || String(e))}</div>`;
+  }
+}
+
+async function runScan() {
+  const rulesEl = document.getElementById('scanner-rules-json');
+  let rules = {};
+  try { rules = JSON.parse(rulesEl ? rulesEl.value : '{}'); } catch(_) {}
+  try {
+    await apiFetch('/api/scanner/run', { method: 'POST', body: JSON.stringify({ rules }) });
+    showToast('Scan triggered', 'success');
+    setTimeout(loadScannerAlerts, 1500);
+  } catch(e) {
+    showToast('Scan error: ' + (e.message || e), 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Panel 7 — Strategy Visualizer
+// ══════════════════════════════════════════════════════════════════════════════
+async function _loadStrategyVizList() {
+  try {
+    const d = await apiFetch('/api/strategies');
+    const strategies = d && d.strategies ? d.strategies : (Array.isArray(d) ? d : []);
+    const sel = document.getElementById('strategy-viz-select');
+    sel.innerHTML = '<option value="">— select strategy —</option>' +
+      strategies.map(s => `<option value="${_escHtml(s.id || s.family_id || s.name)}">${_escHtml(s.name || s.id || '')}</option>`).join('');
+  } catch(_) {}
+}
+
+async function loadStrategyGraph(familyId) {
+  if (!familyId) return;
+  const paramsEl = document.getElementById('strategy-viz-params');
+  paramsEl.textContent = 'Loading…';
+  try {
+    const d = await apiFetch('/api/strategies');
+    const strategies = d && d.strategies ? d.strategies : (Array.isArray(d) ? d : []);
+    const strat = strategies.find(s => (s.id || s.family_id || s.name) === familyId) || {};
+    const conf    = strat.min_confidence != null ? (strat.min_confidence * 100).toFixed(0) + '%' : '—';
+    const posSize = strat.position_size  != null ? '$' + strat.position_size : '—';
+    const stop    = strat.stop_pct       != null ? strat.stop_pct + '%' : '—';
+    const tp      = strat.tp_pct         != null ? strat.tp_pct   + '%' : '—';
+    paramsEl.innerHTML = `Confidence ≥ <b>${conf}</b> &nbsp; Position: <b>${posSize}</b> &nbsp; Stop: <b>${stop}</b> &nbsp; TP: <b>${tp}</b>`;
+    _drawStrategyDAG([
+      { label: 'Signals',                       color: '#6366f1' },
+      { label: `Filter\nConf ≥ ${conf}`,        color: '#0891b2' },
+      { label: `Size\n${posSize}`,               color: '#059669' },
+      { label: `Risk\nStop ${stop} / TP ${tp}`, color: '#d97706' },
+      { label: 'Broker',                         color: '#7c3aed' },
+    ]);
+  } catch(e) {
+    paramsEl.textContent = 'Error: ' + (e.message || e);
+  }
+}
+
+function _drawStrategyDAG(nodes) {
+  const cvs = document.getElementById('strategy-graph-cvs');
+  const container = document.getElementById('strategy-graph');
+  const W = container.clientWidth || 600;
+  const H = container.clientHeight || 350;
+  cvs.width = W; cvs.height = H;
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const boxW = 110, boxH = 48, gap = 20;
+  const totalW = nodes.length * boxW + (nodes.length - 1) * gap;
+  const startX = (W - totalW) / 2;
+  const y = (H - boxH) / 2;
+  nodes.forEach((n, i) => {
+    const x = startX + i * (boxW + gap);
+    // Arrow
+    if (i > 0) {
+      const prevX = startX + (i - 1) * (boxW + gap) + boxW;
+      ctx.beginPath();
+      ctx.moveTo(prevX + 2, y + boxH / 2);
+      ctx.lineTo(x - 2, y + boxH / 2);
+      ctx.strokeStyle = 'rgba(148,163,184,0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Arrowhead
+      ctx.beginPath();
+      ctx.moveTo(x - 2, y + boxH / 2);
+      ctx.lineTo(x - 8, y + boxH / 2 - 4);
+      ctx.lineTo(x - 8, y + boxH / 2 + 4);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(148,163,184,0.5)';
+      ctx.fill();
+    }
+    // Box
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x, y, boxW, boxH, 6) : ctx.rect(x, y, boxW, boxH);
+    ctx.fillStyle = n.color + '22';
+    ctx.fill();
+    ctx.strokeStyle = n.color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Label (multi-line)
+    const lines = n.label.split('\n');
+    ctx.fillStyle = '#e2e8f0';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (lines.length === 1) {
+      ctx.font = '12px sans-serif';
+      ctx.fillText(lines[0], x + boxW / 2, y + boxH / 2);
+    } else {
+      ctx.font = '11px sans-serif';
+      ctx.fillText(lines[0], x + boxW / 2, y + boxH / 2 - 8);
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(lines[1], x + boxW / 2, y + boxH / 2 + 9);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Panel 8 — Custom Report Builder
+// ══════════════════════════════════════════════════════════════════════════════
+function previewReport() {
+  const title = document.getElementById('custom-report-title').value.trim() || 'Custom Report';
+  const components = _getReportComponents();
+  const previewEl  = document.getElementById('report-preview');
+  if (!components.length) {
+    previewEl.innerHTML = '<span style="color:var(--muted)">Select at least one component.</span>';
+    return;
+  }
+  previewEl.innerHTML = `
+    <div style="font-size:13px;font-weight:700;color:var(--fg);margin-bottom:8px">${_escHtml(title)}</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${components.map((c, i) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface2);border-radius:4px;border:1px solid var(--border)">
+        <span style="font-size:10px;color:var(--muted);min-width:18px">${i+1}.</span>
+        <span style="font-size:12px;color:var(--fg)">${_escHtml(_rptCompLabel(c))}</span>
+      </div>`).join('')}
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">${components.length} component(s) selected &mdash; click Generate PDF to export.</div>`;
+}
+
+async function generateReport() {
+  const title      = document.getElementById('custom-report-title').value.trim() || 'Custom Report';
+  const components = _getReportComponents();
+  if (!components.length) { showToast('Select at least one component', 'warning'); return; }
+  try {
+    await apiFetch('/api/reports/custom/generate', { method: 'POST', body: JSON.stringify({ title, components }) });
+    showToast('Report generated (coming soon — endpoint not yet active)', 'info');
+  } catch(_) {
+    showToast('Custom report generation coming soon', 'info');
+  }
+}
+
+function _getReportComponents() {
+  const map = [
+    ['rpt-comp-pnl',       'pnl_summary'],
+    ['rpt-comp-signals',   'signal_history'],
+    ['rpt-comp-sentiment', 'sentiment_chart'],
+    ['rpt-comp-holdings',  'top_holdings'],
+    ['rpt-comp-news',      'news_feed'],
+  ];
+  return map.filter(([id]) => document.getElementById(id) && document.getElementById(id).checked).map(([, key]) => key);
+}
+
+function _rptCompLabel(key) {
+  const labels = { pnl_summary: 'P&L Summary', signal_history: 'Signal History', sentiment_chart: 'Sentiment Chart', top_holdings: 'Top Holdings', news_feed: 'News Feed' };
+  return labels[key] || key;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Shared helpers for new panels
+// ══════════════════════════════════════════════════════════════════════════════
+// Note: _escHtml is already defined earlier in this file.
+function _fmtCompact(n) {
+  if (n == null) return '—';
+  if (n >= 1e9) return '$' + (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K';
+  return '$' + n;
+}
+
+// Auto-load panels when their page is navigated to
+(function() {
+  const _origNavigate = window.navigate;
+  if (typeof _origNavigate === 'function') {
+    window.navigate = function(pageId) {
+      _origNavigate(pageId);
+      if (pageId === 'page-trading-alerts') { try { loadPolymarketSignals(''); } catch(_) {} }
+      if (pageId === 'page-plan-library')   { try { _loadStrategyVizList(); } catch(_) {} }
+      if (pageId === 'page-si-market-health') { try { loadScannerAlerts(); } catch(_) {} }
+    };
+  }
+})();
 </script>
 
 </body>

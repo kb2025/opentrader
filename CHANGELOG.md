@@ -3,6 +3,18 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## v4.0.89
+- feat: Polymarket scraper — PolymarketScraperAgent fetches active prediction markets, filters by finance keywords, persists to polymarket_signals DB table; GET /api/sentiment/polymarket endpoint v4.0.89
+- feat: M&A deals scraper — MADealsScraperAgent pulls SC TO-T/S-4/8-K filings from SEC EDGAR ATOM feed, extracts acquirer/target, persists to ma_deals table; GET /api/research/ma-deals endpoint v4.0.89
+- feat: Universe scanner agent — ScannerAgent evaluates RSI-14/vol_ratio/momentum/price rules across configurable universe, publishes to scanner.alerts stream and Redis sorted set; GET /api/scanner/alerts + POST /api/scanner/run + rules management v4.0.89
+- feat: DBnomics connector — free access to 100+ macro data providers (ECB, Eurostat, IMF, BIS); GET /api/market-data/dbnomics/search + GET /api/market-data/dbnomics/{provider}/{dataset}/{series} v4.0.89
+- feat: AkShare connector — HK and China A-share OHLCV via akshare library; GET /api/market-data/asia/{ticker} v4.0.89
+- feat: RL trading agent — tabular Q-learning agent (5×5×5 state grid, 5 actions) trains on OHLCV factor history; GET /api/predictor/rl-signal/{ticker} + POST /api/predictor/rl-signal/{ticker}/train v4.0.89
+- feat: Geopolitics monitor — GPRI + GPRH from FRED, GDELT conflict event feed; GET /api/research/geopolitics + /events v4.0.89
+- feat: Corporate relationship map — D3-style Canvas force graph in equity research; GET /api/market/relationships/{ticker} resolves SEC EDGAR CIK v4.0.89
+- feat: Trade visualization — Plotly candlestick with entry/exit markers from completed_trades; GET /api/trades/viz/{ticker} v4.0.89
+- feat: 8 new WebUI panels — Trade Viz, Geopolitics, Polymarket Signals, M&A Deals, Relationship Map, Scanner Alerts, Strategy Visualizer, Report Builder v4.0.89
+
 ## v4.0.88
 - feat: paper trading engine — PaperTrader agent subscribes to predictor.signals, simulates fills, tracks positions in Redis, persists to paper_trades DB table, publishes to paper.fills stream v4.0.88
 - feat: smart order engine — SmartOrderEngine slices large orders into TWAP/VWAP child orders with configurable slices and interval v4.0.88

@@ -22,6 +22,10 @@ STREAMS = {
     # Broker gateway streams
     "broker_commands": "broker.commands",
     "broker_fills":    "broker.fills",
+    # Paper trading
+    "paper_fills":     "paper.fills",
+    # Scanner alerts
+    "scanner_alerts":  "scanner.alerts",
 }
 
 # Consumer group names
@@ -40,6 +44,10 @@ GROUPS = {
     "scraper-macro-regime":     "scraper-macro-regime-group",
     "scraper-eodhd-news":       "scraper-eodhd-news-group",
     "scraper-finnhub-insider":  "scraper-finnhub-insider-group",
+    "scraper-polymarket":       "scraper-polymarket-group",
+    "scraper-ma-deals":         "scraper-ma-deals-group",
+    "scraper-scanner":          "scraper-scanner-group",
+    "paper-trader":             "paper-trader-group",
     "aggregator":         "aggregator-group",
     "review":             "review-agent-group",
     # Broker gateway

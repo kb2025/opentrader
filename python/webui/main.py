@@ -20416,6 +20416,686 @@ async def research_factors(ticker: str, lookback_days: int = 90, token: str = ""
         await _r.aclose()
 
 
+# Geopolitics — GPRI and macro conflict signals
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/research/geopolitics")
+async def get_geopolitics(token: str = ""):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        _fred_key = os.getenv("FRED_API_KEY", "")
+        if not _fred_key:
+            return {"error": "FRED_API_KEY not configured", "gpri": None}
+
+        cache_key = "research:geopolitics"
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        async with _aiohttp.ClientSession() as session:
+            result = {"gpri": None, "gprh": None, "updated": datetime.now(timezone.utc).isoformat()}
+
+            for series_id in ["GPRI", "GPRH"]:
+                url = (
+                    f"https://api.stlouisfed.org/fred/series/observations"
+                    f"?series_id={series_id}&api_key={_fred_key}&limit=12&sort_order=desc&file_type=json"
+                )
+                try:
+                    async with session.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            obs = data.get("observations", [])
+                            history = []
+                            for o in obs:
+                                try:
+                                    history.append({"date": o["date"], "value": float(o["value"])})
+                                except (ValueError, KeyError):
+                                    pass
+                            latest = history[0]["value"] if history else None
+                            result[series_id.lower()] = {"latest": latest, "history": history}
+                except Exception:
+                    pass
+
+        await _r.set(cache_key, json.dumps(result), ex=3600)
+        return result
+    finally:
+        await _r.aclose()
+
+
+@app.get("/api/research/geopolitics/events")
+async def get_geopolitics_events(token: str = ""):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        cache_key = "research:geopolitics:events"
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        events = []
+        try:
+            url = (
+                "https://api.gdeltproject.org/api/v2/doc/doc"
+                "?query=war+conflict+sanctions+geopolitical&mode=artlist&maxrecords=20&format=json&timespan=7d"
+            )
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        articles = data.get("articles", [])
+                        for a in articles:
+                            events.append({
+                                "title": a.get("title", ""),
+                                "url": a.get("url", ""),
+                                "seendate": a.get("seendate", ""),
+                                "domain": a.get("domain", ""),
+                            })
+        except Exception:
+            pass
+
+        result = {"events": events, "count": len(events)}
+        await _r.set(cache_key, json.dumps(result), ex=1800)
+        return result
+    finally:
+        await _r.aclose()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Corporate Relationship Map
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/market/relationships/{ticker}")
+async def get_market_relationships(ticker: str, token: str = ""):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        ticker = ticker.upper()
+        cache_key = f"market:relationships:{ticker}"
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        minimal = {
+            "ticker": ticker,
+            "nodes": [{"id": ticker, "label": ticker, "type": "self"}],
+            "edges": [],
+        }
+
+        try:
+            async with _aiohttp.ClientSession() as session:
+                # Resolve ticker -> CIK via SEC EDGAR full-text search
+                search_url = (
+                    f"https://efts.sec.gov/LATEST/search-index?q={ticker}&forms=10-K"
+                    f"&dateRange=custom&startdt=2020-01-01&enddt=2025-01-01"
+                )
+                headers = {"User-Agent": "OpenTrader research@opentrader.app"}
+                cik = None
+                async with session.get(search_url, headers=headers, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        hits = data.get("hits", {}).get("hits", [])
+                        for hit in hits:
+                            s = hit.get("_source", {})
+                            if s.get("entity_name", "").upper() == ticker or ticker in s.get("display_names", []):
+                                cik_raw = s.get("entity_id", "")
+                                if cik_raw:
+                                    cik = str(cik_raw).zfill(10)
+                                break
+
+                nodes = [{"id": ticker, "label": ticker, "type": "self"}]
+                edges = []
+
+                if cik:
+                    sub_url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+                    async with session.get(sub_url, headers=headers, timeout=_aiohttp.ClientTimeout(total=10)) as resp2:
+                        if resp2.status == 200:
+                            sub_data = await resp2.json(content_type=None)
+                            company_name = sub_data.get("name", ticker)
+                            nodes[0]["label"] = company_name
+
+                            former_names = sub_data.get("formerNames", [])
+                            for fn in former_names[:3]:
+                                node_id = fn.get("name", "")
+                                if node_id:
+                                    nodes.append({"id": node_id, "label": node_id, "type": "former"})
+                                    edges.append({"source": ticker, "target": node_id, "type": "formerly"})
+
+                result = {"ticker": ticker, "nodes": nodes, "edges": edges}
+        except Exception:
+            result = {**minimal, "error": "relationship data unavailable"}
+
+        await _r.set(cache_key, json.dumps(result), ex=86400)
+        return result
+    finally:
+        await _r.aclose()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Trade Visualization — OHLCV price chart with trade entry/exit overlays
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/trades/viz/{ticker}")
+async def get_trade_viz(ticker: str, days: int = 90, token: str = ""):
+    check_token(token)
+    import aiohttp as _aiohttp
+    ticker = ticker.upper()
+    MARKET_DATA_URL = os.getenv("MARKET_DATA_URL", "http://ot-market-data:8090")
+    ohlcv = []
+    trades = []
+
+    # Fetch OHLCV from market data gateway
+    try:
+        async with _aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{MARKET_DATA_URL}/ohlcv/{ticker}?days={days}",
+                timeout=_aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json(content_type=None)
+                    ohlcv = data if isinstance(data, list) else data.get("bars", data.get("data", []))
+    except Exception:
+        pass
+
+    # Fetch trades from DB
+    try:
+        pool = await asyncpg.create_pool(DB_URL, min_size=1, max_size=3)
+        try:
+            rows = await pool.fetch(
+                """
+                SELECT id, ticker, direction, qty, entry_price, exit_price, entry_ts, exit_ts, pnl
+                FROM completed_trades
+                WHERE ticker=$1 AND entry_ts >= NOW() - ($2 || ' days')::INTERVAL
+                ORDER BY entry_ts
+                """,
+                ticker,
+                str(days),
+            )
+            for row in rows:
+                trades.append({
+                    "entry_ts": row["entry_ts"].isoformat() if row["entry_ts"] else None,
+                    "exit_ts": row["exit_ts"].isoformat() if row["exit_ts"] else None,
+                    "direction": row["direction"],
+                    "entry_price": float(row["entry_price"]) if row["entry_price"] is not None else None,
+                    "exit_price": float(row["exit_price"]) if row["exit_price"] is not None else None,
+                    "pnl": float(row["pnl"]) if row["pnl"] is not None else None,
+                    "qty": row["qty"],
+                })
+        finally:
+            await pool.close()
+    except Exception:
+        pass
+
+    return {"ticker": ticker, "ohlcv": ohlcv, "trades": trades}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Polymarket — Prediction market signals
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/sentiment/polymarket")
+async def get_polymarket_signals(token: str = "", category: str = ""):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        cache_key = f"sentiment:polymarket:{category}"
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        signals = []
+        # Try DB first
+        try:
+            pool = await asyncpg.create_pool(DB_URL, min_size=1, max_size=3)
+            try:
+                query = """
+                    SELECT market_id, ticker, question, yes_price, no_price, volume, category, scraped_at
+                    FROM polymarket_signals
+                    WHERE scraped_at > NOW() - INTERVAL '24 hours'
+                """
+                params = []
+                if category:
+                    query += " AND category=$1"
+                    params.append(category)
+                query += " ORDER BY volume DESC LIMIT 50"
+                rows = await pool.fetch(query, *params)
+                for row in rows:
+                    signals.append({
+                        "market_id": row["market_id"],
+                        "ticker": row["ticker"],
+                        "question": row["question"],
+                        "yes_price": float(row["yes_price"]) if row["yes_price"] is not None else None,
+                        "no_price": float(row["no_price"]) if row["no_price"] is not None else None,
+                        "volume": float(row["volume"]) if row["volume"] is not None else None,
+                        "category": row["category"],
+                        "scraped_at": row["scraped_at"].isoformat() if row["scraped_at"] else None,
+                    })
+            finally:
+                await pool.close()
+        except Exception:
+            pass
+
+        # Fallback: live Polymarket API
+        if not signals:
+            try:
+                async with _aiohttp.ClientSession() as session:
+                    async with session.get(
+                        "https://gamma-api.polymarket.com/markets?active=true&limit=30",
+                        timeout=_aiohttp.ClientTimeout(total=10),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json(content_type=None)
+                            markets = data if isinstance(data, list) else data.get("markets", [])
+                            for m in markets:
+                                cat = m.get("category", "")
+                                if category and cat.lower() != category.lower():
+                                    continue
+                                outcome_prices = m.get("outcomePrices", [])
+                                signals.append({
+                                    "market_id": m.get("id", ""),
+                                    "ticker": m.get("slug", ""),
+                                    "question": m.get("question", ""),
+                                    "yes_price": outcome_prices[0] if outcome_prices else None,
+                                    "no_price": outcome_prices[1] if len(outcome_prices) > 1 else None,
+                                    "volume": m.get("volume", 0),
+                                    "category": cat,
+                                    "scraped_at": None,
+                                })
+            except Exception:
+                pass
+
+        result = {"signals": signals, "count": len(signals)}
+        await _r.set(cache_key, json.dumps(result), ex=300)
+        return result
+    finally:
+        await _r.aclose()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# M&A Analytics — Merger and acquisition deal tracking
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/research/ma-deals")
+async def get_ma_deals(token: str = "", days: int = 30):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        cache_key = f"research:ma-deals:{days}"
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        deals = []
+        # Try DB first
+        try:
+            pool = await asyncpg.create_pool(DB_URL, min_size=1, max_size=3)
+            try:
+                rows = await pool.fetch(
+                    """
+                    SELECT acquirer, target, form_type, filing_date, deal_url, tickers, scraped_at
+                    FROM ma_deals
+                    WHERE scraped_at > NOW() - ($1 || ' days')::INTERVAL
+                    ORDER BY scraped_at DESC LIMIT 50
+                    """,
+                    str(days),
+                )
+                for row in rows:
+                    deals.append({
+                        "acquirer": row["acquirer"],
+                        "target": row["target"],
+                        "form_type": row["form_type"],
+                        "filing_date": row["filing_date"].isoformat() if row["filing_date"] else None,
+                        "deal_url": row["deal_url"],
+                        "tickers": row["tickers"],
+                        "scraped_at": row["scraped_at"].isoformat() if row["scraped_at"] else None,
+                    })
+            finally:
+                await pool.close()
+        except Exception:
+            pass
+
+        # Fallback: SEC EDGAR search for SC 13D/14D filings
+        if not deals:
+            try:
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+                today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                async with _aiohttp.ClientSession() as session:
+                    for form in ["SC+13D", "SC+14D"]:
+                        feed_url = (
+                            f"https://efts.sec.gov/LATEST/search-index?forms={form}"
+                            f"&dateRange=custom&startdt={cutoff}&enddt={today_str}"
+                        )
+                        async with session.get(feed_url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                            if resp.status == 200:
+                                data = await resp.json(content_type=None)
+                                hits = data.get("hits", {}).get("hits", [])
+                                for hit in hits[:25]:
+                                    src = hit.get("_source", {})
+                                    file_num = src.get("file_num", "")
+                                    deals.append({
+                                        "acquirer": src.get("entity_name", ""),
+                                        "target": file_num,
+                                        "form_type": src.get("form_type", form.replace("+", " ")),
+                                        "filing_date": src.get("period_of_report", ""),
+                                        "deal_url": (
+                                            f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany"
+                                            f"&filenum={file_num}&type={form}&dateb=&owner=include&count=40"
+                                        ),
+                                        "tickers": [],
+                                        "scraped_at": None,
+                                    })
+            except Exception:
+                pass
+
+        updated = datetime.now(timezone.utc).isoformat()
+        result = {"deals": deals, "count": len(deals), "updated": updated}
+        await _r.set(cache_key, json.dumps(result), ex=3600)
+        return result
+    finally:
+        await _r.aclose()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Universe Scanner — real-time scan alerts
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/scanner/alerts")
+async def get_scanner_alerts(token: str = ""):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        key = f"scanner:alerts:{today}"
+        raw = await _r.zrangebyscore(key, "-inf", "+inf", withscores=True, start=0, num=100)
+        alerts = []
+        for member, score in raw:
+            try:
+                obj = json.loads(member)
+                obj["_score"] = score
+                alerts.append(obj)
+            except Exception:
+                alerts.append({"raw": member, "_score": score})
+        return {"alerts": alerts, "date": today, "count": len(alerts)}
+    finally:
+        await _r.aclose()
+
+
+@app.post("/api/scanner/run")
+async def run_scanner(request: Request):
+    body = await request.json()
+    check_token(body.get("token", ""))
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        universe = body.get("universe", [])
+        rules = body.get("rules", [])
+        msg = json.dumps({"job": "scrape_scanner", "universe": universe, "rules": rules})
+        await _r.xadd("system.commands", {"data": msg})
+        return {"status": "triggered", "universe_size": len(universe)}
+    finally:
+        await _r.aclose()
+
+
+_SCAN_RULES_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "config", "scan_rules.json")
+_DEFAULT_SCAN_RULES = [
+    {"field": "volume_ratio", "op": ">", "value": 2.0, "label": "Volume Surge"},
+    {"field": "rsi_14", "op": "<", "value": 30, "label": "Oversold RSI"},
+    {"field": "rsi_14", "op": ">", "value": 70, "label": "Overbought RSI"},
+    {"field": "price_change_pct", "op": ">", "value": 5.0, "label": "Price Breakout +5%"},
+    {"field": "price_change_pct", "op": "<", "value": -5.0, "label": "Price Drop -5%"},
+]
+
+
+@app.get("/api/scanner/rules")
+async def get_scanner_rules(token: str = ""):
+    check_token(token)
+    try:
+        rules_path = os.path.abspath(_SCAN_RULES_PATH)
+        if os.path.exists(rules_path):
+            with open(rules_path) as f:
+                rules = json.load(f)
+        else:
+            rules = _DEFAULT_SCAN_RULES
+        return {"rules": rules}
+    except Exception as exc:
+        log.error("scanner.rules.read.error", error=str(exc))
+        return {"rules": _DEFAULT_SCAN_RULES}
+
+
+@app.post("/api/scanner/rules")
+async def save_scanner_rules(request: Request):
+    body = await request.json()
+    check_token(body.get("token", ""))
+    rules = body.get("rules", [])
+    for rule in rules:
+        if not all(k in rule for k in ("field", "op", "value")):
+            raise HTTPException(status_code=400, detail="Each rule must have 'field', 'op', and 'value' keys")
+    try:
+        rules_path = os.path.abspath(_SCAN_RULES_PATH)
+        os.makedirs(os.path.dirname(rules_path), exist_ok=True)
+        with open(rules_path, "w") as f:
+            json.dump(rules, f, indent=2)
+        return {"status": "ok", "rules": rules}
+    except Exception as exc:
+        log.error("scanner.rules.write.error", error=str(exc))
+        raise HTTPException(status_code=500, detail=f"Failed to save rules: {exc}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DBnomics — 100+ macro data providers
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/market-data/dbnomics/search")
+async def dbnomics_search(q: str, token: str = "", limit: int = 10):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        cache_key = f"dbnomics:search:{q}:{limit}"
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        series = []
+        total = 0
+        try:
+            url = f"https://api.db.nomics.world/v22/series?q={q}&limit={limit}"
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        items = data.get("series", {})
+                        docs = items.get("docs", []) if isinstance(items, dict) else []
+                        total = items.get("num_found", len(docs)) if isinstance(items, dict) else len(docs)
+                        for s in docs:
+                            series.append({
+                                "provider_code": s.get("provider_code", ""),
+                                "dataset_code": s.get("dataset_code", ""),
+                                "series_code": s.get("series_code", ""),
+                                "name": s.get("series_name", s.get("name", "")),
+                            })
+        except Exception as exc:
+            log.warning("dbnomics.search.error", q=q, error=str(exc))
+
+        result = {"series": series, "total": total}
+        await _r.set(cache_key, json.dumps(result), ex=3600)
+        return result
+    finally:
+        await _r.aclose()
+
+
+@app.get("/api/market-data/dbnomics/{provider}/{dataset}/{series_id}")
+async def dbnomics_series(provider: str, dataset: str, series_id: str, token: str = "", observations: int = 24):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        cache_key = f"dbnomics:{provider}:{dataset}:{series_id}"
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        result = {"name": "", "provider": provider, "observations": []}
+        try:
+            url = f"https://api.db.nomics.world/v22/series/{provider}/{dataset}/{series_id}?observations=1&limit={observations}"
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=_aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        series_list = data.get("series", {}).get("docs", [])
+                        if series_list:
+                            s = series_list[0]
+                            result["name"] = s.get("series_name", s.get("name", ""))
+                            periods = s.get("period", [])
+                            values = s.get("value", [])
+                            obs_list = []
+                            for p, v in zip(periods, values):
+                                try:
+                                    obs_list.append({"period": p, "value": float(v) if v is not None and v != "NA" else None})
+                                except (ValueError, TypeError):
+                                    obs_list.append({"period": p, "value": None})
+                            result["observations"] = obs_list
+        except Exception as exc:
+            log.warning("dbnomics.series.error", provider=provider, dataset=dataset, series_id=series_id, error=str(exc))
+
+        await _r.set(cache_key, json.dumps(result), ex=3600)
+        return result
+    finally:
+        await _r.aclose()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Asia Markets — AkShare connector proxy
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/market-data/asia/{ticker}")
+async def get_asia_market_data(ticker: str, market: str = "hk", days: int = 30, token: str = ""):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        cache_key = f"asia:ohlcv:{market}:{ticker}:{days}"
+        cached = await _r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        MARKET_DATA_URL = os.getenv("MARKET_DATA_URL", "http://ot-market-data:8090")
+        bars = []
+
+        # Try market data gateway first
+        try:
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{MARKET_DATA_URL}/data?type=ohlcv_asia&ticker={ticker}&market={market}&days={days}",
+                    timeout=_aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        bars = data if isinstance(data, list) else data.get("bars", [])
+        except Exception:
+            pass
+
+        # Fallback: direct akshare
+        if not bars:
+            try:
+                import akshare as ak  # type: ignore
+                start_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y%m%d")
+                end_date = datetime.now(timezone.utc).strftime("%Y%m%d")
+
+                def _fetch_asia():
+                    if market.lower() == "hk":
+                        df = ak.stock_hk_hist(symbol=ticker, period="daily", start_date=start_date, end_date=end_date, adjust="")
+                    else:
+                        df = ak.stock_zh_a_hist(symbol=ticker, period="daily", start_date=start_date, end_date=end_date, adjust="")
+                    return df.to_dict(orient="records")
+
+                rows = await asyncio.get_event_loop().run_in_executor(None, _fetch_asia)
+                for row in rows:
+                    bars.append({
+                        "date": str(row.get("日期", row.get("date", ""))),
+                        "open": row.get("开盘", row.get("open", None)),
+                        "high": row.get("最高", row.get("high", None)),
+                        "low": row.get("最低", row.get("low", None)),
+                        "close": row.get("收盘", row.get("close", None)),
+                        "volume": row.get("成交量", row.get("volume", None)),
+                    })
+            except ImportError:
+                pass
+            except Exception as exc:
+                log.warning("asia.akshare.error", ticker=ticker, market=market, error=str(exc))
+
+        result = {"ticker": ticker, "market": market, "bars": bars}
+        await _r.set(cache_key, json.dumps(result), ex=1800)
+        return result
+    finally:
+        await _r.aclose()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Reinforcement Learning — Q-learning trading signal
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/predictor/rl-signal/{ticker}")
+async def get_rl_signal_endpoint(ticker: str, token: str = "", retrain: bool = False):
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import aiohttp as _aiohttp
+    _r = await _aioredis.from_url(os.getenv("REDIS_URL", "redis://ot-redis:6379/0"), encoding="utf-8", decode_responses=True)
+    try:
+        ticker = ticker.upper()
+        cache_key = f"rl:signal:{ticker}"
+
+        if not retrain:
+            cached = await _r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+
+        try:
+            from predictor.rl_agent import get_rl_signal as _get_rl_signal  # type: ignore
+            result = await _get_rl_signal(ticker, force_retrain=retrain)
+        except Exception as exc:
+            log.error("rl.signal.error", ticker=ticker, error=str(exc))
+            raise HTTPException(status_code=503, detail=f"RL signal unavailable: {exc}")
+
+        await _r.set(cache_key, json.dumps(result), ex=3600)
+        return result
+    finally:
+        await _r.aclose()
+
+
+@app.post("/api/predictor/rl-signal/{ticker}/train")
+async def train_rl_signal(ticker: str, request: Request):
+    body = await request.json()
+    check_token(body.get("token", ""))
+    ticker = ticker.upper()
+    try:
+        from predictor.rl_agent import train_from_factors  # type: ignore
+        lookback_days = body.get("lookback_days", 180)
+        await train_from_factors(ticker, lookback_days=lookback_days)
+        trained_at = datetime.now(timezone.utc).isoformat()
+        return {"status": "ok", "ticker": ticker, "trained_at": trained_at}
+    except Exception as exc:
+        log.error("rl.train.error", ticker=ticker, error=str(exc))
+        raise HTTPException(status_code=503, detail=f"RL training failed: {exc}")
+
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     with open("/app/webui/static/index.html") as f:
