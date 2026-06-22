@@ -268,6 +268,7 @@ select option{background:var(--surface2)}
 .ai-msg-user .ai-msg-bubble{background:rgba(59,130,246,.18);border:1px solid rgba(59,130,246,.3);border-bottom-right-radius:4px;color:var(--text)}
 .ai-msg-typing .ai-msg-bubble{color:var(--muted);font-style:italic}
 </style>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 </head>
 <body>
 
@@ -3145,6 +3146,21 @@ select option{background:var(--surface2)}
         </div>
         <div id="vol-surface-body" class="card-body" style="padding:14px 16px">
           <div style="font-size:12px;color:var(--muted)">Enter a ticker in Chain Analytics above, then click Load Surface.</div>
+        </div>
+      </div>
+
+      <!-- 3D IV Surface -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="padding:10px 16px;flex-wrap:wrap;gap:8px">
+          <span class="card-title">3D IV Surface</span>
+          <span style="font-size:11px;color:var(--muted)">Interactive 3-D implied volatility landscape</span>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <button class="btn btn-primary btn-sm" onclick="loadIVSurface((document.getElementById('chain-ticker')||{}).value||'')">3D IV Surface</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px 16px">
+          <div id="iv-surface-chart" style="height:420px;width:100%;"></div>
+          <div id="iv-surface-msg" style="font-size:12px;color:var(--muted);margin-top:4px">Enter a ticker in Chain Analytics above, then click 3D IV Surface.</div>
         </div>
       </div>
 
@@ -26971,6 +26987,102 @@ async function loadVolSurface() {
     el.innerHTML = html;
   } catch(e) {
     el.innerHTML = '<div style="font-size:12px;color:var(--muted)">Volatility surface unavailable</div>';
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 3D IV Surface — Plotly interactive chart
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function loadIVSurface(ticker) {
+  ticker = (ticker || '').trim().toUpperCase();
+  const msgEl   = document.getElementById('iv-surface-msg');
+  const chartEl = document.getElementById('iv-surface-chart');
+  if (!chartEl) return;
+
+  if (!ticker) {
+    if (msgEl) msgEl.textContent = 'Enter a ticker in Chain Analytics above first.';
+    return;
+  }
+  if (msgEl) msgEl.textContent = 'Fetching 3D surface data…';
+
+  const token = getToken();
+  try {
+    const data = await apiFetch(`/api/options/volatility-surface/${ticker}?token=${encodeURIComponent(token)}`);
+    if (data.error) {
+      if (msgEl) msgEl.textContent = data.error;
+      return;
+    }
+
+    const strikes     = data.strikes     || [];
+    const expirations = data.expirations || [];
+    const callSurf    = data.call_surface || [];
+    const putSurf     = data.put_surface  || [];
+
+    if (!strikes.length || !expirations.length) {
+      if (msgEl) msgEl.textContent = 'No surface data available.';
+      return;
+    }
+
+    // Convert surface matrices: callSurf[expIdx][strikeIdx] -> z[expIdx][strikeIdx]
+    // Plotly surface: x = strikes (columns), y = expirations (rows), z = matrix[rows][cols]
+    const callZ = callSurf.map(row => row.map(v => v != null ? v : null));
+    const putZ  = putSurf.map(row  => row.map(v => v != null ? v : null));
+
+    // Short expiry labels for y-axis
+    const expLabels = expirations.map(e => { const p = e.split('-'); return p.length === 3 ? `${p[1]}/${p[2]}` : e; });
+
+    const callTrace = {
+      type: 'surface',
+      name: 'Calls',
+      x: strikes,
+      y: expLabels,
+      z: callZ,
+      colorscale: 'RdYlBu',
+      reversescale: true,
+      colorbar: { title: 'IV %', thickness: 14, len: 0.6 },
+      hovertemplate: 'Strike: $%{x}<br>Expiry: %{y}<br>IV: %{z:.1f}%<extra>Calls</extra>',
+    };
+
+    const putTrace = {
+      type: 'surface',
+      name: 'Puts',
+      x: strikes,
+      y: expLabels,
+      z: putZ,
+      colorscale: 'Viridis',
+      visible: 'legendonly',
+      colorbar: { title: 'IV %', thickness: 14, len: 0.6, x: 1.06 },
+      hovertemplate: 'Strike: $%{x}<br>Expiry: %{y}<br>IV: %{z:.1f}%<extra>Puts</extra>',
+    };
+
+    const layout = {
+      title: { text: `${ticker} IV Surface`, font: { color: '#e4e8f1', size: 14 } },
+      paper_bgcolor: '#13161f',
+      plot_bgcolor:  '#13161f',
+      font: { color: '#e4e8f1', size: 11 },
+      margin: { l: 0, r: 0, t: 40, b: 0 },
+      scene: {
+        xaxis: { title: { text: 'Strike', font: { color: '#6b7394' } }, gridcolor: '#232738', zerolinecolor: '#232738', color: '#6b7394' },
+        yaxis: { title: { text: 'Expiry', font: { color: '#6b7394' } }, gridcolor: '#232738', zerolinecolor: '#232738', color: '#6b7394' },
+        zaxis: { title: { text: 'IV %',   font: { color: '#6b7394' } }, gridcolor: '#232738', zerolinecolor: '#232738', color: '#6b7394' },
+        bgcolor: '#0b0d14',
+      },
+      showlegend: true,
+      legend: { x: 0, y: 1, bgcolor: 'rgba(19,22,31,0.8)', bordercolor: '#232738', borderwidth: 1 },
+    };
+
+    const config = { responsive: true, displayModeBar: true, displaylogo: false };
+
+    if (typeof Plotly !== 'undefined') {
+      Plotly.newPlot('iv-surface-chart', [callTrace, putTrace], layout, config);
+      if (msgEl) msgEl.textContent = `${ticker} · ${strikes.length} strikes × ${expirations.length} expirations · Updated ${new Date(data.updated).toLocaleTimeString()}`;
+    } else {
+      if (msgEl) msgEl.textContent = 'Plotly library not loaded.';
+    }
+  } catch(e) {
+    if (msgEl) msgEl.textContent = '3D surface unavailable.';
   }
 }
 

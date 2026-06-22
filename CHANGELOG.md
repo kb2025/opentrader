@@ -3,6 +3,14 @@
 All notable changes to OpenTrader will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — versioning follows [Semantic Versioning](https://semver.org/).
 
+## v4.0.88
+- feat: paper trading engine — PaperTrader agent subscribes to predictor.signals, simulates fills, tracks positions in Redis, persists to paper_trades DB table, publishes to paper.fills stream v4.0.88
+- feat: smart order engine — SmartOrderEngine slices large orders into TWAP/VWAP child orders with configurable slices and interval v4.0.88
+- feat: factor discovery — compute_factor_ic() computes momentum_20, RSI-14, vol_ratio, BB%B, mean_rev_5, price_to_sma50 IC/IR/hit-rate against forward returns; /api/research/factors/{ticker} endpoint with 15-min cache v4.0.88
+- feat: webhook signal intake — POST /webhook/signal accepts TradingView / external signals, validates HMAC secret, publishes to predictor.signals stream v4.0.88
+- feat: full Black-Scholes Greeks — GET /api/options/greeks returns delta/gamma/theta/vega/rho + intrinsic/time-value; solves IV via Newton-Raphson when market_price provided v4.0.88
+- feat: 3D IV surface chart — Plotly interactive surface (calls + puts) rendered from /api/options/volatility-surface data, with toggle and dark-theme styling in Options tab v4.0.88
+
 ## v4.0.87
 - fix: XSS in news feed article cards — escape title/source/ticker via _escHtml, validate url scheme (reject javascript:), move ticker fallback text to data-fb attribute to eliminate inline JS string injection v4.0.87
 - fix: daily report duplicate sends — add per-day idempotency guard (report:daily:sent:{date} Redis key, 24h TTL); manual trigger bypasses guard via force=True; scheduler silently skips if already sent v4.0.87

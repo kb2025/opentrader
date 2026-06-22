@@ -20206,6 +20206,216 @@ async def set_predictor_schedule(body: dict):
         await _r.aclose()
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Webhook Signal Intake — external signal ingestion (TradingView, custom)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/webhook/signal")
+async def webhook_signal(request: Request):
+    """Accept an external trading signal (TradingView, custom bots) and publish to predictor.signals."""
+    import redis.asyncio as _aioredis
+
+    _whk = os.getenv("WEBHOOK_SECRET", "")
+    if not _whk:
+        return JSONResponse(status_code=503, content={"error": "Webhook not configured — set WEBHOOK_SECRET"})
+
+    body = await request.json()
+
+    # Validate token — accept from X-Webhook-Secret header OR 'secret' body field
+    _hdr_tok  = request.headers.get("X-Webhook-Secret", "")
+    _body_tok = body.get("secret", "")
+    _candidate = _hdr_tok or _body_tok
+    if not _candidate or not hmac.compare_digest(_candidate, _whk):
+        raise HTTPException(status_code=401, detail="Invalid webhook secret")
+
+    ticker    = (body.get("ticker") or "").strip().upper()
+    direction = (body.get("direction") or "").strip().lower()
+    source    = (body.get("source") or "external").strip()
+
+    if not ticker:
+        raise HTTPException(status_code=400, detail="ticker is required")
+    if direction not in ("long", "short"):
+        raise HTTPException(status_code=400, detail="direction must be 'long' or 'short'")
+
+    confidence = body.get("confidence")
+    if confidence is None:
+        confidence = 0.7
+    confidence = float(confidence)
+    if not (0.0 <= confidence <= 1.0):
+        raise HTTPException(status_code=400, detail="confidence must be between 0.0 and 1.0")
+
+    entry  = body.get("entry")
+    stop   = body.get("stop")
+    target = body.get("target")
+
+    log.info("webhook.signal", ticker=ticker, direction=direction, source=source)
+
+    _r = await _aioredis.from_url(
+        os.getenv("REDIS_URL", "redis://ot-redis:6379/0"),
+        encoding="utf-8", decode_responses=True,
+    )
+    try:
+        payload = {
+            "ticker":      ticker,
+            "direction":   direction,
+            "confidence":  str(confidence),
+            "asset_class": "equity",
+            "source":      f"webhook:{source}",
+            "ttl_ms":      "30000",
+            "issued_by":   "webhook",
+        }
+        if entry  is not None: payload["entry"]  = str(entry)
+        if stop   is not None: payload["stop"]   = str(stop)
+        if target is not None: payload["target"] = str(target)
+        await _r.xadd(STREAMS["signals"], payload)
+    finally:
+        await _r.aclose()
+
+    return {"status": "ok", "ticker": ticker, "direction": direction, "stream": "predictor.signals"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Options — Full Black-Scholes Greeks
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/options/greeks")
+async def options_greeks(
+    spot: float, strike: float, T: float,
+    option_type: str = "call",
+    r: float = 0.045,
+    sigma: float | None = None,
+    market_price: float | None = None,
+    token: str = "",
+):
+    """Full Black-Scholes Greeks: delta, gamma, theta, vega, rho plus intrinsic/time-value."""
+    check_token(token)
+    import math as _m
+
+    if spot <= 0 or strike <= 0:
+        raise HTTPException(status_code=400, detail="spot and strike must be positive")
+
+    opt = option_type.lower().strip()
+    if opt not in ("call", "put"):
+        raise HTTPException(status_code=400, detail="option_type must be 'call' or 'put'")
+
+    if sigma is None:
+        if market_price is not None:
+            def _bs_price(S, K, t, sig, ri, o):
+                if t <= 0 or sig <= 0:
+                    return max(0.0, S - K) if o == "call" else max(0.0, K - S)
+                st  = _m.sqrt(t)
+                d1_ = (_m.log(S / K) + (ri + 0.5 * sig ** 2) * t) / (sig * st)
+                d2_ = d1_ - sig * st
+                nc  = lambda x: (1 + _m.erf(x / _m.sqrt(2))) / 2
+                er  = _m.exp(-ri * t)
+                return S * nc(d1_) - K * er * nc(d2_) if o == "call" else K * er * nc(-d2_) - S * nc(-d1_)
+
+            def _bs_vega_fn(S, K, t, sig, ri):
+                if t <= 0 or sig <= 0:
+                    return 0.0
+                d1_ = (_m.log(S / K) + (ri + 0.5 * sig ** 2) * t) / (sig * _m.sqrt(t))
+                return S * _m.exp(-0.5 * d1_ ** 2) / _m.sqrt(2 * _m.pi) * _m.sqrt(t)
+
+            sig = 0.20
+            for _ in range(100):
+                diff_ = _bs_price(spot, strike, T, sig, r, opt) - market_price
+                if abs(diff_) < 1e-6:
+                    break
+                vg = _bs_vega_fn(spot, strike, T, sig, r)
+                if abs(vg) < 1e-8:
+                    break
+                sig = max(0.001, min(5.0, sig - diff_ / vg))
+            sigma = sig
+        else:
+            sigma = 0.20
+
+    if sigma <= 0:
+        raise HTTPException(status_code=400, detail="sigma must be positive")
+
+    intrinsic = max(0.0, spot - strike) if opt == "call" else max(0.0, strike - spot)
+    if T <= 0:
+        return {
+            "delta": round(1.0 if (opt == "call" and spot > strike) else (0.0 if opt == "call" else (-1.0 if spot < strike else 0.0)), 6),
+            "gamma": 0.0, "theta": 0.0, "vega": 0.0, "rho": 0.0,
+            "implied_vol": round(sigma, 6),
+            "d1": 0.0, "d2": 0.0,
+            "intrinsic":  round(intrinsic, 6),
+            "time_value": 0.0,
+        }
+
+    _nc  = lambda x: (1 + _m.erf(x / _m.sqrt(2))) / 2
+    _phi = lambda x: _m.exp(-0.5 * x * x) / _m.sqrt(2 * _m.pi)
+
+    sq_T = _m.sqrt(T)
+    d1   = (_m.log(spot / strike) + (r + 0.5 * sigma ** 2) * T) / (sigma * sq_T)
+    d2   = d1 - sigma * sq_T
+    er   = _m.exp(-r * T)
+
+    if opt == "call":
+        delta    = _nc(d1)
+        rho      = strike * T * er * _nc(d2) / 100
+        theta    = (-(spot * _phi(d1) * sigma) / (2 * sq_T) - r * strike * er * _nc(d2)) / 365
+        price_bs = spot * _nc(d1) - strike * er * _nc(d2)
+    else:
+        delta    = _nc(d1) - 1
+        rho      = -strike * T * er * _nc(-d2) / 100
+        theta    = (-(spot * _phi(d1) * sigma) / (2 * sq_T) + r * strike * er * _nc(-d2)) / 365
+        price_bs = strike * er * _nc(-d2) - spot * _nc(-d1)
+
+    gamma      = _phi(d1) / (spot * sigma * sq_T)
+    vega       = spot * _phi(d1) * sq_T / 100
+    time_value = max(0.0, price_bs - intrinsic)
+
+    return {
+        "delta":       round(delta,      6),
+        "gamma":       round(gamma,      6),
+        "theta":       round(theta,      6),
+        "vega":        round(vega,       6),
+        "rho":         round(rho,        6),
+        "implied_vol": round(sigma,      6),
+        "d1":          round(d1,         6),
+        "d2":          round(d2,         6),
+        "intrinsic":   round(intrinsic,  6),
+        "time_value":  round(time_value, 6),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Factor Research — IC / IR scoring for alpha factor discovery
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/research/factors/{ticker}")
+async def research_factors(ticker: str, lookback_days: int = 90, token: str = ""):
+    """Alpha factor IC/IR scoring for a ticker over a lookback window."""
+    check_token(token)
+    import redis.asyncio as _aioredis
+    import json as _json
+    from predictor.factors import compute_factor_ic
+
+    cache_key = f"research:factors:{ticker.upper()}:{lookback_days}"
+    _r = await _aioredis.from_url(
+        os.getenv("REDIS_URL", "redis://ot-redis:6379/0"),
+        encoding="utf-8", decode_responses=True,
+    )
+    try:
+        cached = await _r.get(cache_key)
+        if cached:
+            return JSONResponse(content=_json.loads(cached))
+
+        try:
+            result = await compute_factor_ic(ticker, lookback_days)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            log.error("research.factors.error", ticker=ticker, error=str(exc))
+            raise HTTPException(status_code=503, detail="Factor computation unavailable")
+
+        await _r.set(cache_key, _json.dumps(result), ex=900)
+        return result
+    finally:
+        await _r.aclose()
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     with open("/app/webui/static/index.html") as f:
