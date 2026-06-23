@@ -10395,6 +10395,41 @@ function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap, por
   const bp     = _fmtUsd(bal.buying_power ?? bal.cash_power ?? bal.margin?.stock_buying_power ?? null);
   const acctKey = acct.label.replace(/[^a-zA-Z0-9]/g, '_');
 
+  // ── Margin metrics row ───────────────────────────────────────────────────
+  const _mPct  = bal.maintenance_margin_pct ?? null;
+  const _iPct  = bal.initial_margin_pct ?? null;
+  const _lev   = bal.leverage_ratio ?? null;
+  const _dtBp  = bal.day_trade_bp ?? null;
+  const _pdt   = bal.pattern_day_trader ?? false;
+  const _mult  = bal.multiplier != null ? parseFloat(bal.multiplier) : null;
+  const _mParts = [];
+  if (_mPct != null) {
+    const _mc = _mPct < 25 ? 'var(--green)' : _mPct < 60 ? 'var(--amber)' : 'var(--red)';
+    _mParts.push(`<span style="white-space:nowrap"><span style="color:var(--muted)">Maint&nbsp;Margin</span>&nbsp;<strong style="color:${_mc}">${_mPct.toFixed(1)}%</strong></span>`);
+  }
+  if (_iPct != null) {
+    _mParts.push(`<span style="white-space:nowrap"><span style="color:var(--muted)">Init&nbsp;Margin</span>&nbsp;<strong>${_iPct.toFixed(1)}%</strong></span>`);
+  }
+  if (_lev != null) {
+    const _lc = _lev < 1.2 ? 'var(--green)' : _lev < 2.0 ? 'var(--amber)' : 'var(--red)';
+    _mParts.push(`<span style="white-space:nowrap"><span style="color:var(--muted)">Leverage</span>&nbsp;<strong style="color:${_lc}">${_lev.toFixed(2)}×</strong></span>`);
+  }
+  if (_dtBp) {
+    _mParts.push(`<span style="white-space:nowrap"><span style="color:var(--muted)">Day&nbsp;Trade&nbsp;BP</span>&nbsp;<strong style="color:var(--blue)">${_fmtUsd(_dtBp)}</strong></span>`);
+  }
+  if (_mult != null) {
+    const _ml = _mult >= 4 ? '4× PDT' : _mult >= 2 ? '2× Margin' : '1× Cash';
+    const _mc2 = _mult >= 4 ? 'var(--amber)' : _mult >= 2 ? '#60a5fa' : 'var(--muted)';
+    _mParts.push(`<span class="chip" style="font-size:10px;padding:1px 6px;color:${_mc2};background:rgba(99,102,241,.1)">${_ml}</span>`);
+  }
+  if (_pdt) {
+    _mParts.push(`<span class="chip chip-amber" style="font-size:10px;padding:1px 6px" title="Pattern Day Trader — 4 round trips in 5 days">PDT</span>`);
+  }
+  const _marginRow = _mParts.length
+    ? `<div style="padding:5px 16px 5px;font-size:11px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;border-top:1px solid var(--border);background:rgba(255,255,255,.015)">${_mParts.join('')}</div>`
+    : '';
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Filter to equity positions only — options are tracked on the Options dashboard
   const equityPositions = (acct.positions || []).filter(_isEquityPosition);
 
@@ -10539,6 +10574,7 @@ function _renderUnifiedCard(acct, signalMap, sentMap, sectorMap, journalMap, por
           data-collapse-btn onclick="_toggleUnifiedCard(this,'${acctKey}')">▲</button>
       </div>
     </div>
+    ${_marginRow}
     ${heatmap}
     <div class="unified-card-body table-wrap" style="padding:0">
       <table>

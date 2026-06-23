@@ -5002,6 +5002,30 @@ async def _fetch_positions_from_gateway() -> dict:
             pos = bal.pop("positions", [])
         bal.pop("raw", None)
 
+        # ── Compute broker-normalized margin metrics ───────────────────────
+        _eq    = float(bal.get("equity") or bal.get("total_equity") or bal.get("portfolio_value") or 0)
+        _pv    = float(bal.get("portfolio_value") or _eq)
+        _maint = float(bal.get("maintenance_margin") or 0)
+        _init  = float(bal.get("initial_margin") or bal.get("current_requirement") or 0)
+        _lmv   = float(bal.get("long_market_value") or 0)
+        _dt_bp = float(
+            bal.get("daytrading_buying_power") or
+            ((bal.get("pdt") or {}).get("day_trade_buying_power")) or 0
+        )
+        _t_margin     = bal.get("margin") or {}
+        _t_maint_call = float(_t_margin.get("maintenance_call") or 0)
+        if _maint and _pv > 0:
+            bal["maintenance_margin_pct"] = round(_maint / _pv * 100, 1)
+        elif _t_maint_call > 0 and _eq > 0:
+            bal["maintenance_margin_pct"] = round(_t_maint_call / _eq * 100, 1)
+        if _init and (_pv or _eq) > 0:
+            bal["initial_margin_pct"] = round(_init / (_pv or _eq) * 100, 1)
+        if _lmv and _eq > 0:
+            bal["leverage_ratio"] = round(_lmv / _eq, 2)
+        if _dt_bp:
+            bal["day_trade_bp"] = _dt_bp
+        # ─────────────────────────────────────────────────────────────────
+
         enriched_pos = []
         for p in pos:
             p = dict(p)

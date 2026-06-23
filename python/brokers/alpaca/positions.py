@@ -20,14 +20,28 @@ class AlpacaPositions:
 
     async def get_balances(self) -> dict:
         account = await self.get_account()
+        def _f(k):
+            v = account.get(k)
+            return float(v) if v not in (None, "") else None
         return {
-            "cash":            float(account.get("cash", 0)),
-            "buying_power":    float(account.get("buying_power", 0)),
-            "equity":          float(account.get("equity", 0)),
-            "portfolio_value": float(account.get("portfolio_value", 0)),
-            "daytrade_count":  account.get("daytrade_count", 0),
-            "account_status":  account.get("status", ""),
-            "raw":             account,
+            "cash":                    float(account.get("cash", 0)),
+            "buying_power":            float(account.get("buying_power", 0)),
+            "equity":                  float(account.get("equity", 0)),
+            "portfolio_value":         float(account.get("portfolio_value", 0)),
+            "daytrade_count":          account.get("daytrade_count", 0),
+            "account_status":          account.get("status", ""),
+            # Margin fields
+            "regt_buying_power":       _f("regt_buying_power"),
+            "daytrading_buying_power": _f("daytrading_buying_power"),
+            "initial_margin":          _f("initial_margin"),
+            "maintenance_margin":      _f("maintenance_margin"),
+            "last_maintenance_margin": _f("last_maintenance_margin"),
+            "long_market_value":       _f("long_market_value"),
+            "short_market_value":      _f("short_market_value"),
+            "multiplier":              account.get("multiplier"),
+            "pattern_day_trader":      account.get("pattern_day_trader"),
+            "sma":                     _f("sma"),
+            "raw":                     account,
         }
 
     async def get_positions(self) -> list[dict]:
